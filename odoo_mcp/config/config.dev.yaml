@@ -1,0 +1,51 @@
+# Development Configuration for Odoo MCP Server
+
+# Odoo Connection Details (REQUIRED)
+odoo_url: "http://localhost:8069"  # Replace with your Odoo instance URL
+database: "your_dev_db"           # Replace with your Odoo database name
+username: "admin"                 # Replace with your Odoo username
+api_key: "admin"                  # Replace with your Odoo user's API key or password
+
+# Server Settings
+protocol: "xmlrpc"                # 'xmlrpc' or 'jsonrpc' - Protocol to use for Odoo communication
+connection_type: "stdio"          # 'stdio' or 'sse' - How the MCP server communicates with the client
+host: "127.0.0.1"                 # Host for SSE server (if connection_type is 'sse')
+port: 8080                        # Port for SSE server (if connection_type is 'sse')
+
+# Connection Pool Settings
+pool_size: 5                      # Max number of connections to Odoo
+timeout: 30                       # Max seconds to wait for a connection from the pool
+connection_health_interval: 60    # Seconds between health checks for idle connections
+retry_count: 3                    # Max number of retries for establishing a connection
+# base_retry_delay: 1.0           # Initial delay in seconds for retry backoff (handled in code)
+
+# Session Management
+session_timeout: 3600             # Session inactivity timeout in seconds (1 hour)
+session_cleanup_interval: 300     # How often to check for expired sessions (5 minutes)
+# auth_token_lifetime: 3600       # Lifetime for authentication tokens (if implemented)
+
+# Security Settings
+requests_per_minute: 120          # Max requests allowed per minute (0 or less to disable)
+tls_version: "TLSv1.3"            # Preferred TLS version (enforcement depends on libraries)
+# allowed_origins: ["*"]          # For SSE: List of allowed origins (CORS)
+
+# Performance Settings
+cache_maxsize: 128                # Default max number of items in LRU/TTL caches
+cache_ttl: 300                    # Default time-to-live for cached items in seconds (5 minutes)
+# cache_type: "cachetools"        # Explicitly choose 'cachetools' or 'functools' (auto-detected in code)
+
+# Logging Configuration
+log_level: "DEBUG"                # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+log_file: null                    # Path to log file (null or empty to log to console)
+log_format: "%(asctime)s - %(levelname)s - [%(name)s] - %(message)s"
+log_mask_sensitive: true          # Enable masking of sensitive data in logs
+
+# Error Notification (Example - requires implementation)
+# notification_enabled: false
+# notification_type: "email" # or "slack", etc.
+# notification_config:
+#   smtp_server: "smtp.example.com"
+#   smtp_port: 587
+#   smtp_user: "notify@example.com"
+#   smtp_password: "password"
+#   recipient: "admin@example.com"

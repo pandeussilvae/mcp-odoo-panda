@@ -1,0 +1,51 @@
+# Production Configuration for Odoo MCP Server
+# NOTE: Ensure sensitive values (api_key, passwords) are managed securely,
+# e.g., via environment variables, secrets management tools, or encrypted config.
+
+# Odoo Connection Details (REQUIRED - Use Environment Variables or Secure Vault)
+odoo_url: "https://your-odoo-instance.com"  # Replace with your PRODUCTION Odoo instance URL (HTTPS recommended)
+database: "your_prod_db"                 # Replace with your PRODUCTION Odoo database name
+username: "odoo_mcp_user"               # Replace with a dedicated API user for MCP
+api_key: "__ENV_ODOO_API_KEY__"         # Placeholder: Load from Environment Variable ODOO_API_KEY or secure source
+
+# Server Settings
+protocol: "xmlrpc"                # 'xmlrpc' or 'jsonrpc'
+connection_type: "stdio"          # 'stdio' or 'sse'
+host: "0.0.0.0"                   # Host for SSE server (listen on all interfaces if using SSE)
+port: 8080                        # Port for SSE server
+
+# Connection Pool Settings
+pool_size: 10                     # Adjust based on expected load and Odoo server capacity
+timeout: 30                       # Max seconds to wait for a connection
+connection_health_interval: 60    # Seconds between health checks
+retry_count: 3                    # Max connection retries
+
+# Session Management
+session_timeout: 7200             # Session inactivity timeout in seconds (2 hours)
+session_cleanup_interval: 600     # How often to check for expired sessions (10 minutes)
+# auth_token_lifetime: 7200       # Lifetime for authentication tokens (if implemented)
+
+# Security Settings
+requests_per_minute: 300          # Adjust based on expected load and Odoo API limits
+tls_version: "TLSv1.3"            # Enforce TLS 1.3 if possible (requires compatible client/server/OpenSSL)
+# ca_cert_path: "/path/to/custom/ca.pem" # Optional: Path to custom CA bundle if needed
+# client_cert_path: "/path/to/client.crt" # Optional: Path to client certificate
+# client_key_path: "/path/to/client.key"  # Optional: Path to client private key
+# allowed_origins: ["https://your-frontend.com"] # For SSE: Restrict origins
+
+# Performance Settings
+cache_maxsize: 256                # Increase cache size for production
+cache_ttl: 600                    # Increase TTL for cached items (10 minutes)
+
+# Logging Configuration
+log_level: "INFO"                 # Production logging level (INFO, WARNING, ERROR, CRITICAL)
+log_file: "odoo_mcp_server.log"   # Log to a file in the runtime directory, or configure absolute path (e.g., /var/log/odoo_mcp/server.log) ensure permissions are correct.
+log_format: "%(asctime)s - %(levelname)s - [%(name)s] - %(message)s"
+log_mask_sensitive: true          # IMPORTANT: Keep masking enabled in production
+
+# Error Notification (Configure if needed)
+# notification_enabled: true
+# notification_type: "email" # or "slack", etc.
+# notification_config:
+#   # ... (Load sensitive details securely) ...
+#   recipient: "sysadmin@example.com"
