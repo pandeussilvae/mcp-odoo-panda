@@ -2,8 +2,6 @@ import logging
 from typing import Dict, Any, Optional, Tuple
 import hashlib # For basic hashing if storing tokens locally (use stronger methods for production)
 # Consider using 'cryptography' library for actual encryption
-import socket
-from xmlrpc.client import Fault, ProtocolError as XmlRpcProtocolError
 
 # Placeholder for ConnectionPool and custom exceptions
 # from odoo_mcp.connection.connection_pool import ConnectionPool
@@ -69,10 +67,8 @@ class OdooAuthenticator:
         # TODO: Implement token caching/checking logic here if desired
 
         try:
-            # Use the connection pool to get a connection context manager
-            conn_wrapper_cm = await self._pool.get_connection()
-            # Enter the context manager to get the actual wrapper
-            async with conn_wrapper_cm as wrapper:
+            # Use the connection pool to get a connection for authentication
+            async with self._pool.get_connection() as wrapper:
                 # Assuming XMLRPCHandler is used for authentication via common.authenticate
                 connection = wrapper.connection
                 if not hasattr(connection, 'common') or not hasattr(connection.common, 'authenticate'):
@@ -98,24 +94,12 @@ class OdooAuthenticator:
         except PoolConnectionError as e: # Catch the aliased ConnectionError from the pool
              logger.error(f"Authentication failed for user '{username}': Pool connection error.", exc_info=True)
              raise NetworkError(f"Authentication failed: Could not establish connection via pool.", original_exception=e)
-        # --- Add specific exceptions from the XMLRPC call ---
-        except Fault as e:
-             logger.warning(f"Authentication failed for user '{username}' due to XML-RPC Fault: {e.faultString}")
-             # Treat Odoo-level auth failures (like wrong password) as AuthError
-             if "AccessDenied" in e.faultString or "AccessError" in e.faultString or "authenticate" in e.faultString or "Wrong login/password" in e.faultString:
-                  raise AuthError(f"Authentication failed: {e.faultString}", original_exception=e)
-             else: # Treat other faults as protocol/network issues in this context
-                  raise NetworkError(f"Authentication failed due to XML-RPC Fault: {e.faultString}", original_exception=e)
-        except (XmlRpcProtocolError, socket.gaierror, ConnectionRefusedError, OSError) as e:
-             logger.error(f"Authentication failed for user '{username}' due to network/protocol error: {e}", exc_info=True)
-             raise NetworkError(f"Authentication failed due to a network or protocol error: {e}", original_exception=e)
-        # --- End specific exceptions ---
-        except OdooMCPError as e: # Catch other specific MCP errors (less likely here)
-             logger.error(f"Authentication failed for user '{username}' due to unexpected MCP error: {e}", exc_info=True)
-             # Re-raise as NetworkError for auth context?
+        except OdooMCPError as e: # Catch other specific MCP errors (like ProtocolError from handler)
+             logger.error(f"Authentication failed for user '{username}' due to MCP error: {e}", exc_info=True)
+             # Re-raise as NetworkError or keep original type depending on context? Let's wrap in NetworkError for auth context.
              raise NetworkError(f"Authentication failed due to underlying MCP error: {e}", original_exception=e)
         except Exception as e:
-            # Catch remaining unexpected errors during authentication process
+            # Catch unexpected errors during authentication process
             logger.error(f"Unexpected error during authentication for user '{username}': {e}", exc_info=True)
             # Wrap unexpected errors in a generic NetworkError or OdooMCPError for authentication context
             raise NetworkError(f"Authentication failed due to an unexpected network or protocol error: {e}", original_exception=e)

@@ -42,6 +42,7 @@ Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: requests>=2.20.0
+Requires-Dist: httpx>=0.20.0
 Requires-Dist: PyYAML>=5.4
 Requires-Dist: pydantic>=2.0
 Provides-Extra: caching
@@ -54,6 +55,7 @@ Requires-Dist: mypy; extra == "dev"
 Requires-Dist: types-PyYAML; extra == "dev"
 Requires-Dist: types-requests; extra == "dev"
 Requires-Dist: types-cachetools; extra == "dev"
+Requires-Dist: respx; extra == "dev"
 Dynamic: license-file
 
 # mcp-odoo-panda

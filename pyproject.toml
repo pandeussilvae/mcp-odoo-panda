@@ -27,7 +27,8 @@ classifiers = [
 keywords = ["odoo", "mcp", "erp", "integration", "rpc"]
 
 dependencies = [
-    "requests>=2.20.0", # For JSONRPCHandler
+    "requests>=2.20.0", # Keep for now, maybe remove later if JSONRPC fully switches
+    "httpx>=0.20.0",    # Add httpx for async requests
     "PyYAML>=5.4",      # For loading configuration
     "pydantic>=2.0",    # For input validation
     # cachetools is optional but recommended for TTL caching
@@ -44,6 +45,7 @@ dev = [
     "types-PyYAML",
     "types-requests",
     "types-cachetools", # Add if cachetools is used
+    "respx",            # For mocking httpx requests in tests
     # "types-pydantic", # Removed as it might not exist or be needed for Pydantic v2+
 ]
 

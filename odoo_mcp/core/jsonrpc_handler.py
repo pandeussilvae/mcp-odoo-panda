@@ -1,121 +1,163 @@
-import requests
+import httpx # Import httpx
 import json
 import logging
 import asyncio
-from typing import Dict, Any
-from odoo_mcp.error_handling.exceptions import NetworkError, ProtocolError, OdooMCPError, AuthError # Import AuthError too
-from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE # Import cache manager
+import ssl # Import ssl for context creation
+from typing import Dict, Any, Optional
+
+from odoo_mcp.error_handling.exceptions import NetworkError, ProtocolError, OdooMCPError, AuthError, ConfigurationError
+from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE
 
 logger = logging.getLogger(__name__)
 
 class JSONRPCHandler:
     """
-    Handles communication with Odoo using the JSON-RPC protocol.
+    Handles communication with Odoo using the JSON-RPC protocol via HTTPX.
 
-    Manages an HTTP session using `requests` and provides a method to execute
-    RPC calls, incorporating caching for read operations.
+    Manages an asynchronous HTTP client session using `httpx.AsyncClient` and
+    provides a method to execute RPC calls, incorporating caching for read operations.
     """
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the JSONRPCHandler.
 
-        Sets up the base URL and a `requests.Session` for making HTTP calls.
-        Note: Assumes JSON-RPC endpoint is at `/jsonrpc`. Authentication details
-        (like session IDs) are expected to be handled per call or via session cookies.
+        Sets up the base URL and an `httpx.AsyncClient` for making async HTTP calls.
+        Configures TLS based on the provided configuration.
 
         Args:
             config: The server configuration dictionary. Requires 'odoo_url', 'database'.
+                    Optional TLS keys: 'tls_version', 'ca_cert_path',
+                    'client_cert_path', 'client_key_path'.
+
+        Raises:
+            ConfigurationError: If TLS configuration fails.
         """
         self.config = config
         self.odoo_url = config.get('odoo_url')
-        self.session = requests.Session()
         self.jsonrpc_url = f"{self.odoo_url}/jsonrpc"
+        self.database = config.get('database')
 
-        # --- Configure requests session for TLS ---
+        # --- Configure HTTPX AsyncClient with TLS ---
+        verify: Union[str, bool, ssl.SSLContext] = True
+        cert: Optional[Union[str, Tuple[str, str]]] = None
+        ssl_context: Optional[ssl.SSLContext] = None
+
         if self.odoo_url.startswith('https://'):
-            logger.info("Configuring TLS for JSONRPC handler (requests session).")
-            # `requests` verifies server certificates by default using certifi or system CAs.
-            # Setting `verify=True` (default) enables this.
-            # Setting `verify='/path/to/ca.pem'` uses a custom CA bundle.
-            # Setting `verify=False` disables verification (INSECURE, use with caution).
-
-            # Forcing specific TLS versions (e.g., TLS 1.3 only) with `requests` is complex.
-            # It requires mounting a custom `requests.adapters.HTTPAdapter` that uses
-            # a specially configured `urllib3.PoolManager` with a custom `ssl.SSLContext`.
-            # TODO: Implement strict TLS version enforcement for JSONRPC using a custom HTTPAdapter
-            #       if required by security policy. Consider switching to `httpx` which might offer
-            #       easier TLS context configuration for async requests.
-            # See: https://requests.readthedocs.io/en/latest/user/advanced/#transport-adapters
-            # See: https://urllib3.readthedocs.io/en/latest/user-guide.html#ssl
-
-            # Configure CA verification path
+            logger.info("Configuring TLS for JSONRPC handler (httpx client).")
             ca_cert_path = config.get('ca_cert_path')
             if ca_cert_path:
-                 self.session.verify = ca_cert_path
-                 logger.info(f"JSONRPC using custom CA bundle: {ca_cert_path}")
+                verify = ca_cert_path
+                logger.info(f"JSONRPC using custom CA bundle: {ca_cert_path}")
             else:
-                 self.session.verify = True # Default, verify using system CAs
-                 logger.info("JSONRPC using default system CA bundle for TLS verification.")
-            # Client certificate authentication (if needed)
-            client_cert = config.get('client_cert_path')
-            client_key = config.get('client_key_path')
-            if client_cert and client_key:
-                 self.session.cert = (client_cert, client_key)
-                 logger.info(f"JSONRPC using client certificate: {client_cert}")
-            elif client_cert:
-                 self.session.cert = client_cert # Cert file might contain key
-                 logger.info(f"JSONRPC using client certificate (key assumed within): {client_cert}")
+                verify = True # Default: Use certifi or system CAs
+                logger.info("JSONRPC using default CA bundle for TLS verification.")
 
-        # Authentication might be handled differently for JSON-RPC (e.g., session_id via cookies)
-        # This basic implementation assumes public methods or separate auth handling
-        self.database = config.get('database')
+            client_cert_path = config.get('client_cert_path')
+            client_key_path = config.get('client_key_path')
+            if client_cert_path and client_key_path:
+                cert = (client_cert_path, client_key_path)
+                logger.info(f"JSONRPC using client certificate: {client_cert_path}")
+            elif client_cert_path:
+                cert = client_cert_path
+                logger.info(f"JSONRPC using client certificate (key assumed within): {client_cert_path}")
+
+            # Attempt to configure specific TLS version using SSLContext
+            # httpx allows passing an SSLContext directly to verify
+            try:
+                tls_version_str = config.get('tls_version', 'TLSv1.3').upper().replace('.', '_')
+                protocol_version = ssl.PROTOCOL_TLS_CLIENT
+                context = ssl.SSLContext(protocol_version)
+                context.check_hostname = True
+                # Load default CAs unless a custom one is specified
+                if isinstance(verify, bool) and verify:
+                     context.load_default_certs(ssl.Purpose.SERVER_AUTH)
+                elif isinstance(verify, str):
+                     context.load_verify_locations(cafile=verify)
+
+                # Set minimum TLS version (best effort)
+                min_version_set = False
+                if hasattr(ssl, 'TLSVersion') and hasattr(context, 'minimum_version'):
+                    min_version = getattr(ssl.TLSVersion, tls_version_str, None)
+                    if min_version:
+                        try:
+                            context.minimum_version = min_version
+                            logger.info(f"Set minimum TLS version to {min_version.name} for httpx.")
+                            min_version_set = True
+                        except (ValueError, OSError) as e:
+                            logger.warning(f"Could not set minimum TLS version {tls_version_str} via minimum_version: {e}")
+                    else:
+                        logger.warning(f"TLS version '{config.get('tls_version')}' not mappable to ssl.TLSVersion.")
+
+                if not min_version_set:
+                    logger.info("Attempting to set TLS version using context options (fallback).")
+                    options = ssl.OP_NO_SSLv3
+                    if tls_version_str == 'TLSV1_3': options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2
+                    elif tls_version_str == 'TLSV1_2': options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+                    else: options = 0 # Rely on default
+                    if options != 0: context.options |= options
+
+                # Load client cert into context if specified
+                if cert:
+                     if isinstance(cert, tuple):
+                          context.load_cert_chain(certfile=cert[0], keyfile=cert[1])
+                     else:
+                          context.load_cert_chain(certfile=cert)
+
+                ssl_context = context
+                verify = ssl_context # Use the configured context for verification
+                logger.info("Using custom SSLContext for httpx TLS configuration.")
+
+            except Exception as e:
+                 logger.error(f"Failed to create SSL context for httpx: {e}", exc_info=True)
+                 raise ConfigurationError(f"Failed to configure TLS for httpx: {e}", original_exception=e)
+
+        # Create the AsyncClient
+        # Consider adding timeout configuration from self.config
+        request_timeout = self.config.get('timeout', 30)
+        self.async_client = httpx.AsyncClient(verify=verify, cert=cert, timeout=request_timeout)
+        logger.info(f"httpx.AsyncClient initialized. Verify={type(verify)}, Cert={cert is not None}, Timeout={request_timeout}s")
+
 
     def _prepare_payload(self, method: str, params: dict) -> dict:
         """Prepare the standard JSON-RPC 2.0 payload structure."""
         return {
-            "jsonrpc": "2.0", # Standard JSON-RPC version
+            "jsonrpc": "2.0",
             "method": method,
             "params": params,
-            "id": None,  # Or generate unique IDs if needed
+            "id": None, # Or generate unique IDs
         }
 
-    # Define methods that are generally safe to cache for JSON-RPC
-    # These might differ slightly from XML-RPC depending on API structure
     READ_METHODS = {'call'} # Assume 'call' with specific service/method might be readable
 
-    # Apply caching conditionally
     async def call(self, service: str, method: str, args: list) -> Any:
         """
-        Make a JSON-RPC call to the Odoo instance.
+        Make a JSON-RPC call to the Odoo instance using httpx.
 
-        Handles caching for potentially cacheable read methods and uses the
-        internal `requests.Session` to perform the HTTP POST request.
+        Handles caching for potentially cacheable read methods.
 
         Args:
             service: The target service name (e.g., 'object').
             method: The method to call on the service.
-            args: A list of arguments for the method. Note: Authentication details
-                  might need to be included here depending on Odoo's JSON-RPC setup.
+            args: A list of arguments for the method.
 
         Returns:
             The result returned by the Odoo JSON-RPC method.
 
         Raises:
-            AuthError: If Odoo returns an authentication/access error.
-            NetworkError: If there's a network issue during the call (timeout, connection error).
-            ProtocolError: If the response is invalid JSON or a non-auth JSON-RPC error occurs.
-            OdooMCPError: For other unexpected errors.
-            TypeError: If args cannot be made hashable for caching.
+            AuthError, NetworkError, ProtocolError, OdooMCPError, TypeError.
         """
-        # Basic check: Assume calls to 'object' service with methods like 'read', 'search' are cacheable
-        # More robust check needed based on actual JSON-RPC usage patterns.
         is_cacheable = service == 'object' and method in {'read', 'search', 'search_read', 'search_count', 'fields_get', 'default_get'}
 
         if is_cacheable and cache_manager:
             logger.debug(f"Cacheable JSON-RPC method detected: {service}.{method}. Attempting cache lookup.")
+            try:
+                hashable_args = self._make_hashable(args)
+            except TypeError as e:
+                 logger.warning(f"Could not make arguments hashable for caching {service}.{method}: {e}. Executing directly.")
+                 return await self._call_direct(service, method, args)
+
             if CACHE_TYPE == 'cachetools':
-                 # Call the cached helper method
-                 return await self._call_cached(service, method, args)
+                 return await self._call_cached(service, method, hashable_args)
             else:
                  logger.debug("Executing non-TTL cached or uncached JSON-RPC read method.")
                  return await self._call_direct(service, method, args)
@@ -124,13 +166,9 @@ class JSONRPCHandler:
             return await self._call_direct(service, method, args)
 
 
-    # Helper method for direct execution (no cache)
     async def _call_direct(self, service: str, method: str, args: list) -> Any:
          """
-         Directly execute the JSON-RPC call to Odoo without using any cache.
-
-         Uses `asyncio.to_thread` to run the synchronous `requests.post` call
-         in a separate thread to avoid blocking the event loop.
+         Directly execute the JSON-RPC call to Odoo using httpx.
 
          Args:
              service: The target service name.
@@ -141,111 +179,83 @@ class JSONRPCHandler:
              The result from the Odoo method.
 
          Raises:
-             AuthError: If Odoo returns an authentication/access error.
-             ProtocolError: If the response is invalid JSON or a non-auth JSON-RPC error occurs.
-             NetworkError: For network-level errors during the call.
-             OdooMCPError: For other unexpected errors.
+             AuthError, ProtocolError, NetworkError, OdooMCPError.
          """
-         # Note: Authentication details might need to be added to payload_params
-         # based on SessionManager/OdooAuthenticator integration. This implementation
-         # currently assumes session cookies or similar handle auth via self.session.
          payload_params = {
              "service": service,
              "method": method,
-             "args": [self.database, *args] # Simplified args structure
+             # Assuming Odoo JSON-RPC expects db as first arg in the list
+             "args": [self.database, *args]
+             # TODO: Integrate session ID from SessionManager if needed
+             # "context": {"session_id": session_id} # Example
          }
          payload = self._prepare_payload("call", payload_params)
          headers = {'Content-Type': 'application/json'}
-         request_timeout = self.config.get('timeout', 30)
 
          try:
-             response = await asyncio.to_thread(
-                 self.session.post, self.jsonrpc_url, headers=headers, json=payload, timeout=request_timeout
-             )
-             # Alternative using an async http client like httpx or aiohttp:
-             # async with self.async_session.post(self.jsonrpc_url, headers=headers, json=payload, timeout=request_timeout) as response:
-             #    response.raise_for_status()
-             #    result = await response.json()
-
+             logger.debug(f"Executing JSON-RPC (httpx): service={service}, method={method}")
+             response = await self.async_client.post(self.jsonrpc_url, headers=headers, json=payload)
              response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
              result = response.json()
 
              if result.get("error"):
                  error_data = result["error"]
                  error_message = error_data.get('message', 'Unknown JSON-RPC Error')
+                 error_code = error_data.get('code')
                  error_debug_info = error_data.get('data', {}).get('debug', '')
-                 full_error = f"{error_message} - {error_debug_info}".strip(" -")
-                 # Check for specific error types (e.g., authentication)
-                 if "AccessDenied" in str(error_data) or "AccessError" in str(error_data) or error_data.get('code') == 100: # Odoo specific code?
+                 full_error = f"Code {error_code}: {error_message} - {error_debug_info}".strip(" -")
+
+                 # Map Odoo JSON-RPC error codes/messages to custom exceptions
+                 # These codes might need adjustment based on Odoo version/specific errors
+                 if error_code == 100 or "AccessDenied" in str(error_data) or "AccessError" in str(error_data):
                       raise AuthError(f"JSON-RPC Access Denied/Error: {full_error}", original_exception=Exception(str(error_data)))
                  else:
                       raise ProtocolError(f"JSON-RPC Error Response: {full_error}", original_exception=Exception(str(error_data)))
 
              return result.get("result")
 
-         except requests.exceptions.Timeout as e:
-             raise NetworkError(f"JSON-RPC request timed out after {request_timeout} seconds", original_exception=e)
-         except requests.exceptions.ConnectionError as e:
+         except httpx.TimeoutException as e:
+             raise NetworkError(f"JSON-RPC request timed out after {self.async_client.timeout.read} seconds", original_exception=e)
+         except httpx.ConnectError as e:
               raise NetworkError(f"JSON-RPC Connection Error: Unable to connect to {self.jsonrpc_url}", original_exception=e)
-         except requests.exceptions.RequestException as e:
+         except httpx.RequestError as e: # Catch other httpx request errors
              raise NetworkError(f"JSON-RPC Network/HTTP Error: {e}", original_exception=e)
          except json.JSONDecodeError as e:
               raise ProtocolError("Failed to decode JSON-RPC response", original_exception=e)
          except Exception as e:
+              # Catch-all for unexpected errors during the call
+              logger.exception(f"An unexpected error occurred during JSON-RPC call: {e}")
               raise OdooMCPError(f"An unexpected error occurred during JSON-RPC call: {e}", original_exception=e)
 
 
-    # Helper method decorated with cachetools TTL cache (if available)
     @cache_manager.get_ttl_cache_decorator(cache_instance=cache_manager.odoo_read_cache if cache_manager and CACHE_TYPE == 'cachetools' else None)
     async def _call_cached(self, service: str, method: str, args: tuple) -> Any:
         """
         Wrapper method for cached execution using cachetools.
-
-        This method is decorated by the TTL cache decorator. It calls the direct
-        execution method `_call_direct`. The cache key is automatically
-        generated by `cachetools.keys.hashkey` based on service, method, and args.
-
-        Args:
-            service: The target service name.
-            method: The method name.
-            args: Hashable tuple of positional arguments.
-
-        Returns:
-            The result from `_call_direct`, potentially from cache.
+        Calls the direct execution method `_call_direct`.
         """
         logger.debug(f"Executing CACHED JSON-RPC call wrapper for {service}.{method}")
-        # Important: Ensure args is hashable! Convert lists inside args to tuples if necessary.
-        # The _make_hashable check is done before calling this method in `call`.
-        # try:
-        #     hashable_args = self._make_hashable(args) # Already done in call()
-        # except TypeError as e:
-        #     logger.warning(f"Could not make arguments hashable for caching {service}.{method}: {e}. Executing directly.")
-            # Fallback to direct execution if args cannot be hashed
-            # return await self._call_direct(service, method, list(args)) # Fallback handled in call()
-
-        # Call the direct method - the decorator handles caching the result.
         # Pass args as a list as expected by _call_direct
         return await self._call_direct(service, method, list(args))
 
-    # Helper to make nested structures hashable for caching keys (can be shared)
+    # Helper to make nested structures hashable (can be shared or moved to utils)
     def _make_hashable(self, item: Any) -> Any:
-        """Recursively convert mutable collection types (list, dict, set) into immutable, hashable types (tuple)."""
+        """Recursively convert mutable collection types into immutable, hashable types."""
         if isinstance(item, dict):
-            # Convert dict to sorted tuple of (key, hashable_value) pairs
             return tuple(sorted((k, self._make_hashable(v)) for k, v in item.items()))
         elif isinstance(item, list):
             return tuple(self._make_hashable(i) for i in item)
         elif isinstance(item, set):
             return tuple(sorted(self._make_hashable(i) for i in item))
-        return item
+        try:
+            hash(item)
+            return item
+        except TypeError as e:
+            logger.error(f"Attempted to hash unhashable type: {type(item).__name__}")
+            raise TypeError(f"Object of type {type(item).__name__} is not hashable and cannot be used in cache key") from e
 
-
-    # --- Original call method's error handling (now in _call_direct) ---
-    # def call(self, service: str, method: str, args: list) -> Any:
-    #     """
-    #     Makes a JSON-RPC call to Odoo.
-    #     Note: Odoo's JSON-RPC endpoint structure might vary.
-    #           This assumes a common pattern like /jsonrpc with service/method in params.
-    #           Adjust based on actual Odoo JSON-RPC API structure.
-    #     """
-    #     # ... (rest of original implementation is now in _call_direct) ...
+    async def close(self):
+        """Close the underlying httpx client session."""
+        if hasattr(self, 'async_client'):
+            await self.async_client.aclose()
+            logger.info("httpx.AsyncClient closed.")
