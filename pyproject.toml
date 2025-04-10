@@ -31,6 +31,8 @@ dependencies = [
     "httpx>=0.20.0",    # Add httpx for async requests
     "PyYAML>=5.4",      # For loading configuration
     "pydantic>=2.0",    # For input validation
+    "aiohttp>=3.8.0",   # For SSE server mode
+    "aiohttp-sse>=2.1.0", # SSE support for aiohttp
     # cachetools is optional but recommended for TTL caching
 ]
 
@@ -39,7 +41,7 @@ dependencies = [
 caching = ["cachetools>=4.2"]
 dev = [
     "pytest>=6.0",
-    "pytest-asyncio",
+    "pytest-asyncio", # Ensure this is present for async tests
     "flake8",
     "mypy",
     "types-PyYAML",

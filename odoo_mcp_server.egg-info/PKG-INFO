@@ -45,6 +45,8 @@ Requires-Dist: requests>=2.20.0
 Requires-Dist: httpx>=0.20.0
 Requires-Dist: PyYAML>=5.4
 Requires-Dist: pydantic>=2.0
+Requires-Dist: aiohttp>=3.8.0
+Requires-Dist: aiohttp-sse>=2.1.0
 Provides-Extra: caching
 Requires-Dist: cachetools>=4.2; extra == "caching"
 Provides-Extra: dev
