@@ -122,8 +122,8 @@ if __name__ == "__main__":
         "log_file": None,
         "log_format": "%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s",
         "log_mask_sensitive": True
-    }
-    print("--- Setting up Console Logging (DEBUG, Masked) ---")
+    } # Closing brace correctly indented
+    print("--- Setting up Console Logging (DEBUG, Masked) ---", file=sys.stderr) # Print to stderr
     setup_logging(example_config_console)
 
     # Test logging
@@ -141,7 +141,7 @@ if __name__ == "__main__":
     user_data = {"username": "alice", "password": "alice_password", "email": "alice@example.com"}
     logger.info("User data received: %s", user_data) # %s formatting, args masking attempt
 
-    print("\n--- Setting up File Logging (INFO, Unmasked) ---")
+    print("\n--- Setting up File Logging (INFO, Unmasked) ---", file=sys.stderr) # Print to stderr
     example_config_file = {
         "log_level": "INFO",
         "log_file": "mcp_server.log",
@@ -153,4 +153,4 @@ if __name__ == "__main__":
     logger.debug("This DEBUG message should NOT appear in the file.")
     logger.error("API Key: another_secret456") # Should NOT be masked
 
-    print(f"\nCheck the file '{example_config_file['log_file']}' for logs.")
+    print(f"\nCheck the file '{example_config_file['log_file']}' for logs.", file=sys.stderr) # Print to stderr
