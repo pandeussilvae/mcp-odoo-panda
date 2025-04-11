@@ -17,9 +17,9 @@ from odoo_mcp.connection.session_manager import SessionManager
 from odoo_mcp.security.utils import RateLimiter, mask_sensitive_data
 from odoo_mcp.error_handling.exceptions import OdooMCPError, ConfigurationError, ProtocolError, AuthError, NetworkError
 from odoo_mcp.core.logging_config import setup_logging
-# Import Pydantic validation components
-from odoo_mcp.core.request_models import validate_request_params
-from pydantic import ValidationError
+# Import Pydantic validation components (Keep for potential internal use or future needs)
+# from odoo_mcp.core.request_models import validate_request_params # No longer used in main dispatch
+from pydantic import ValidationError # Keep for general validation errors if needed elsewhere
 # Import cache manager instance
 from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE
 
@@ -191,20 +191,9 @@ class MCPServer:
                 # If acquire returns False, it means it timed out waiting
                 raise OdooMCPError("Rate limit exceeded and wait timed out. Please try again later.", code=-32000) # Custom error code
 
-            # 3. Input Validation (using Pydantic ONLY for non-standard methods)
-            validated_params = None # Initialize
-            if method not in standard_mcp_methods:
-                try:
-                    # Validate parameters based on the method using Pydantic
-                    validated_params = validate_request_params(method, raw_params)
-                    logger.debug(f"Validated params for custom method '{method}': {validated_params.dict()}")
-                except ValidationError as e:
-                    logger.warning(f"Invalid parameters for custom method '{method}': {e.errors()}")
-                    raise ProtocolError(f"Invalid parameters: {e.errors()}", code=-32602) # Invalid params
-                except KeyError:
-                    # Method exists in request but no validation model defined for it,
-                    # and it's not a standard MCP method.
-                    raise ProtocolError(f"Method not found: {method}", code=-32601) # Method not found
+            # 3. Input Validation (Removed Pydantic validation for non-standard methods)
+            #    Validation for standard MCP methods (list_tools, call_tool, etc.)
+            #    is handled within their respective logic blocks.
 
             # 4. Method Dispatching
             logger.info(f"Received request for method: {method}")
@@ -528,65 +517,15 @@ class MCPServer:
                 # Format successful Odoo result according to MCP spec
                 response["result"] = {"content": [{"type": "text", "text": json.dumps(odoo_result)}]}
 
-            # --- Custom/Original Methods (using validated_params from Pydantic) ---
-            # These are only reached if method was not 'list_tools' or 'call_tool'
-            # AND Pydantic validation succeeded.
-            elif method == "echo":
-                 # Access validated data using attribute access
-                 response["result"] = validated_params.message # Original simple response format
-            elif method == "create_session":
-                session = await self.session_manager.create_session(
-                    username=validated_params.username,
-                    api_key=validated_params.api_key
-                )
-                response["result"] = {"session_id": session.session_id, "user_id": session.user_id}
-            elif method == "destroy_session":
-                self.session_manager.destroy_session(validated_params.session_id)
-                response["result"] = True # Indicate success
-            elif method == "call_odoo":
-                # Determine authentication: session or direct credentials from validated params
-                auth_uid: Optional[int] = None
-                auth_pwd: Optional[str] = None
+            # --- No longer handling custom/original methods directly ---
+            # elif method == "echo": ... (removed)
+            # elif method == "create_session": ... (removed)
+            # elif method == "destroy_session": ... (removed)
+            # elif method == "call_odoo": ... (removed)
 
-                if validated_params.session_id:
-                    session = self.session_manager.get_session(validated_params.session_id)
-                    if not session:
-                        raise AuthError(f"Invalid or expired session ID: {validated_params.session_id}")
-                    auth_uid = session.user_id
-                    logger.info(f"Using session {validated_params.session_id} for user {auth_uid}")
-                    # WARNING: Current handler logic (especially XMLRPC) requires uid AND password for execute_kw.
-                    # When using session_id, we are falling back to the global api_key/password from config.
-                    # This might not be the desired behavior if the session implies a specific user's password/key.
-                    # TODO: Refine session handling to securely associate/retrieve the correct password/key for the session's uid,
-                    # or modify handlers if they can operate with uid only in a session context.
-                    auth_pwd = self.config.get('api_key') or self.config.get('password') # Try both common names
-                    if not auth_pwd:
-                        logger.error("CRITICAL: Using session auth but NO global api_key/password found in config for handler's execute_kw call. This will likely fail.")
-                        # Optionally, raise an error here if this fallback is unacceptable
-                        # raise ConfigurationError("Global api_key/password required in config when using session_id with current handlers.")
-                    else:
-                        logger.warning("Using session ID for UID, but falling back to global api_key/password from config for handler's execute_kw call.")
-                else:
-                    # Use explicitly provided uid/password from validated params
-                    auth_uid = validated_params.uid
-                    auth_pwd = validated_params.password # Already validated that if one exists, the other does too
-
-                # Get a connection and execute
-                async with self.pool.get_connection() as wrapper:
-                    handler_instance = wrapper.connection
-                    result = handler_instance.execute_kw(
-                        validated_params.model,
-                        validated_params.method,
-                        validated_params.args,
-                        validated_params.kwargs,
-                        uid=auth_uid,
-                        password=auth_pwd
-                    )
-                    response["result"] = result
-            # No 'else' needed here:
-            # - If it was a standard MCP method, it was handled above.
-            # - If it was a custom method with Pydantic validation, it was handled here.
-            # - If it was an unknown method, Pydantic validation (or the check before it) raised ProtocolError(-32601).
+            else:
+                 # If the method is not one of the standard MCP methods handled above
+                 raise ProtocolError(f"Method not found: {method}", code=-32601)
 
         except (ProtocolError, AuthError, NetworkError, ConfigurationError, OdooMCPError) as e:
             # Log specific MCP/Odoo related errors with potentially less noise
