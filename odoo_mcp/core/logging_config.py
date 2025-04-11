@@ -98,11 +98,11 @@ def setup_logging(config: Dict[str, Any]):
 
     # Add the masking filter if enabled
     if mask_sensitive:
-        print("Sensitive data masking is ENABLED for logging.")
+        print("Sensitive data masking is ENABLED for logging.", file=sys.stderr) # Print to stderr
         sensitive_filter = SensitiveDataFilter()
         handler.addFilter(sensitive_filter)
     else:
-         print("Sensitive data masking is DISABLED for logging.")
+         print("Sensitive data masking is DISABLED for logging.", file=sys.stderr) # Print to stderr
 
 
     # Add handler to the root logger
