@@ -864,7 +864,7 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
 def main_cli():
     """Command Line Interface entry point."""
     # Example: Allow passing config path via command line argument
-    import argparse
+    # import argparse # Already imported at the top
     parser = argparse.ArgumentParser(description="Odoo MCP Server")
     parser.add_argument(
         "-c", "--config",
