@@ -88,10 +88,11 @@ def setup_logging(config: Dict[str, Any]):
     # Create handler (console or file)
     if log_file:
         handler = logging.FileHandler(log_file, encoding='utf-8')
-        print(f"Logging configured to file: {log_file} at level {log_level_str}")
+        print(f"Logging configured to file: {log_file} at level {log_level_str}", file=sys.stderr) # Print config info to stderr
     else:
-        handler = logging.StreamHandler(sys.stdout)
-        print(f"Logging configured to console at level {log_level_str}")
+        # Ensure console logs go to stderr to avoid interfering with stdio JSON communication
+        handler = logging.StreamHandler(sys.stderr)
+        print(f"Logging configured to console (stderr) at level {log_level_str}", file=sys.stderr) # Print config info to stderr
 
     handler.setFormatter(formatter)
 
