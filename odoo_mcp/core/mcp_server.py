@@ -6,6 +6,7 @@ import signal
 from typing import Dict, Any, Optional, Type, Union, List
 import yaml
 from datetime import datetime
+import argparse # Import argparse here
 
 # Import core components
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -860,7 +861,8 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
     except Exception as e:
          logger.critical(f"Failed to start or run server: {e}", exc_info=True)
 
-if __name__ == "__main__":
+def main_cli():
+    """Command Line Interface entry point."""
     # Example: Allow passing config path via command line argument
     import argparse
     parser = argparse.ArgumentParser(description="Odoo MCP Server")
@@ -874,6 +876,15 @@ if __name__ == "__main__":
     try:
         asyncio.run(main(config_path=args.config))
     except KeyboardInterrupt:
+        # Ensure logger is configured even if main() fails early
+        if not logger.hasHandlers():
+             logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logger.info("Server stopped by user (KeyboardInterrupt).")
     finally:
+         # Ensure logger is configured even if main() fails early
+         if not logger.hasHandlers():
+              logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
          logger.info("Exiting application.")
+
+if __name__ == "__main__":
+    main_cli() # Call the CLI entry point function

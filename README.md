@@ -32,22 +32,39 @@ Questo progetto implementa un server Model Context Protocol (MCP) progettato per
 
 ## 🚀 Installazione
 
-```bash
-# Clona il repository (se non già fatto)
-# git clone <repository-url>
-# cd mcp-odoo-panda
+1.  **Clona il repository (se non già fatto):**
+    ```bash
+    # git clone <repository-url>
+    # cd mcp-odoo-panda
+    ```
 
-# Crea e attiva un ambiente virtuale (consigliato)
-python -m venv venv
-source venv/bin/activate # Su Linux/macOS
-# venv\Scripts\activate # Su Windows
+2.  **Crea e attiva un ambiente virtuale (consigliato):**
+    ```bash
+    python -m venv venv
+    source venv/bin/activate # Su Linux/macOS
+    # venv\Scripts\activate # Su Windows
+    ```
 
-# Installa il pacchetto e le dipendenze di sviluppo
-pip install -e .[dev]
+3.  **Installa le dipendenze:**
 
-# Installa anche le dipendenze per il caching se necessario
-pip install -e .[caching]
-```
+    *   **Per lo sviluppo (include testing, linting, ecc.):**
+        Installa il pacchetto in modalità modificabile (`-e`) con tutte le dipendenze di sviluppo.
+        ```bash
+        pip install -e .[dev]
+        ```
+        *(Nota: `[dev]` include le dipendenze base, `pytest`, `flake8`, `mypy`, ecc. Vedi `pyproject.toml` per la lista completa).*
+
+    *   **Per l'utilizzo con caching (consigliato):**
+        Installa il pacchetto standard con il supporto per il caching (`cachetools`).
+        ```bash
+        pip install .[caching]
+        ```
+
+    *   **Per l'utilizzo base (senza caching):**
+        Installa solo le dipendenze essenziali.
+        ```bash
+        pip install .
+        ```
 
 ## 🔧 Configurazione
 
