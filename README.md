@@ -7,7 +7,7 @@
 
 ## 📝 Descrizione
 
-Questo progetto implementa un server Message Control Program (MCP) progettato per facilitare l'integrazione e l'interazione con istanze Odoo ERP. Fornisce un'interfaccia standardizzata (JSON-RPC o XML-RPC) per eseguire operazioni su Odoo, gestendo connessioni, autenticazione e sessioni.
+Questo progetto implementa un server Model Context Protocol (MCP) progettato per facilitare l'integrazione e l'interazione con istanze Odoo ERP. Fornisce un'interfaccia standardizzata (JSON-RPC o XML-RPC) per eseguire operazioni su Odoo, gestendo connessioni, autenticazione e sessioni.
 
 ## ✨ Funzionalità Principali Attuali
 
