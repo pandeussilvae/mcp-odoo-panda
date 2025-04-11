@@ -36,6 +36,57 @@ logger = logging.getLogger(__name__)
 # Global flag to signal shutdown
 shutdown_requested = False
 
+# --- Authentication Helper ---
+async def _get_odoo_auth(
+    session_manager: SessionManager,
+    config: Dict[str, Any],
+    params: Dict[str, Any] # Changed from tool_args to be more generic
+) -> Dict[str, Union[int, str]]:
+    """
+    Determines Odoo authentication credentials (uid, password) based on
+    session_id or direct uid/password provided in the input parameters.
+
+    Returns:
+        A dictionary containing 'uid' and 'password' for the Odoo call.
+    Raises:
+        AuthError: If authentication details are missing or invalid.
+        ProtocolError: If parameter types are invalid.
+        ConfigurationError: If session auth is used but global key/pwd is missing.
+    """
+    session_id = params.get("session_id")
+    uid = params.get("uid")
+    password = params.get("password")
+
+    auth_uid: Optional[int] = None
+    auth_pwd: Optional[str] = None
+
+    if session_id:
+        if not isinstance(session_id, str):
+            raise ProtocolError("Invalid 'session_id' argument type", code=-32602)
+        session = session_manager.get_session(session_id)
+        if not session:
+            raise AuthError(f"Invalid or expired session ID: {session_id}")
+        auth_uid = session.user_id
+        # Fallback to global password/key when using session ID, as execute_kw often needs it.
+        auth_pwd = config.get('api_key') or config.get('password')
+        if not auth_pwd:
+            logger.error("CRITICAL: Using session auth but NO global api_key/password found in config.")
+            raise ConfigurationError("Global api_key/password required in config when using session_id.")
+        else:
+            logger.warning("Using session ID for UID, falling back to global api_key/password from config.")
+    elif uid is not None and password is not None:
+        if not isinstance(uid, int):
+            raise ProtocolError("Invalid 'uid' argument type", code=-32602)
+        if not isinstance(password, str):
+            raise ProtocolError("Invalid 'password' argument type", code=-32602)
+        auth_uid = uid
+        auth_pwd = password
+    else:
+        raise AuthError("Authentication required: provide either 'session_id' or both 'uid' and 'password'.")
+
+    return {"uid": auth_uid, "password": auth_pwd}
+
+
 class MCPServer:
     """
     Main MCP Server class orchestrating request handling, connection management,
@@ -124,7 +175,14 @@ class MCPServer:
                 raise ProtocolError("Unsupported JSON-RPC version.")
 
             method = request_data["method"]
-            raw_params = request_data.get("params", {})
+            raw_params = request_data.get("params", {}) # Keep raw params for standard MCP methods
+
+            # Define standard MCP methods that bypass Pydantic validation
+            standard_mcp_methods = {
+                "list_tools", "call_tool",
+                "list_resource_templates", "read_resource"
+                # "list_resources" # Not implemented yet
+            }
 
             # 2. Rate Limiting
             # Acquire token, potentially waiting up to max_wait_seconds
@@ -133,26 +191,349 @@ class MCPServer:
                 # If acquire returns False, it means it timed out waiting
                 raise OdooMCPError("Rate limit exceeded and wait timed out. Please try again later.", code=-32000) # Custom error code
 
-            # 3. Input Validation (using Pydantic)
-            try:
-                # Validate parameters based on the method
-                # This raises ValidationError if inputs are invalid
-                validated_params = validate_request_params(method, raw_params)
-                logger.debug(f"Validated params for method '{method}': {validated_params.dict()}")
-            except ValidationError as e:
-                logger.warning(f"Invalid parameters for method '{method}': {e.errors()}")
-                # Use JSON-RPC error code for invalid params
-                raise ProtocolError(f"Invalid parameters: {e.errors()}", code=-32602)
-            except KeyError:
-                # Method exists in request but no validation model defined for it
-                raise ProtocolError(f"Method not found or validation not defined: {method}", code=-32601)
+            # 3. Input Validation (using Pydantic ONLY for non-standard methods)
+            validated_params = None # Initialize
+            if method not in standard_mcp_methods:
+                try:
+                    # Validate parameters based on the method using Pydantic
+                    validated_params = validate_request_params(method, raw_params)
+                    logger.debug(f"Validated params for custom method '{method}': {validated_params.dict()}")
+                except ValidationError as e:
+                    logger.warning(f"Invalid parameters for custom method '{method}': {e.errors()}")
+                    raise ProtocolError(f"Invalid parameters: {e.errors()}", code=-32602) # Invalid params
+                except KeyError:
+                    # Method exists in request but no validation model defined for it,
+                    # and it's not a standard MCP method.
+                    raise ProtocolError(f"Method not found: {method}", code=-32601) # Method not found
 
-
-            # 4. Method Dispatching (using validated_params)
+            # 4. Method Dispatching
             logger.info(f"Received request for method: {method}")
-            if method == "echo":
-                # Access validated data using attribute access
-                response["result"] = validated_params.message
+
+            # --- Standard MCP Methods (using raw_params) ---
+            if method == "list_tools":
+                 response["result"] = {
+                     "tools": [
+                         # --- Basic Tools --- # (Keep existing tools)
+                         {
+                             "name": "echo",
+                             "description": "Replies with the message provided.",
+                             "inputSchema": { "type": "object", "properties": { "message": { "type": "string" } }, "required": ["message"] }
+                         },
+                         # --- Session Management Tools ---
+                         {
+                             "name": "create_session",
+                             "description": "Creates an Odoo session using username/API key.",
+                             "inputSchema": { "type": "object", "properties": { "username": { "type": "string" }, "api_key": { "type": "string" } }, "required": ["username", "api_key"] }
+                         },
+                         {
+                             "name": "destroy_session",
+                             "description": "Destroys an Odoo session.",
+                             "inputSchema": { "type": "object", "properties": { "session_id": { "type": "string" } }, "required": ["session_id"] }
+                         },
+                         # --- Odoo Data Interaction Tools (CRUD + Search + Method Call) ---
+                         {
+                             "name": "odoo_search_read",
+                             "description": "Searches Odoo records based on domain and returns specified fields.",
+                             "inputSchema": {
+                                 "type": "object",
+                                 "properties": {
+                                     "session_id": { "type": "string", "description": "Auth: Session ID." },
+                                     "uid": { "type": "integer", "description": "Auth: User ID." },
+                                     "password": { "type": "string", "description": "Auth: Password/API key." },
+                                     "model": { "type": "string", "description": "Odoo model name (e.g., 'res.partner')." },
+                                     "domain": { "type": "array", "description": "Odoo search domain (e.g., [['is_company', '=', True]]).", "default": [] },
+                                     "fields": { "type": "array", "items": { "type": "string" }, "description": "List of fields to return (e.g., ['name', 'email']).", "default": [] },
+                                     "limit": { "type": "integer", "description": "Maximum number of records.", "default": 80 }, # Odoo default limit
+                                     "offset": { "type": "integer", "description": "Number of records to skip.", "default": 0 },
+                                     "context": { "type": "object", "description": "Odoo context dictionary.", "default": {} }
+                                 },
+                                 "required": ["model"] # Auth handled separately
+                             }
+                         },
+                         {
+                             "name": "odoo_read",
+                             "description": "Reads specific fields for given Odoo record IDs.",
+                             "inputSchema": {
+                                 "type": "object",
+                                 "properties": {
+                                     "session_id": { "type": "string", "description": "Auth: Session ID." },
+                                     "uid": { "type": "integer", "description": "Auth: User ID." },
+                                     "password": { "type": "string", "description": "Auth: Password/API key." },
+                                     "model": { "type": "string", "description": "Odoo model name." },
+                                     "ids": { "type": "array", "items": { "type": "integer" }, "description": "List of record IDs to read." },
+                                     "fields": { "type": "array", "items": { "type": "string" }, "description": "List of fields to return.", "default": [] },
+                                     "context": { "type": "object", "description": "Odoo context dictionary.", "default": {} }
+                                 },
+                                 "required": ["model", "ids"]
+                             }
+                         },
+                         {
+                             "name": "odoo_create",
+                             "description": "Creates a new record in an Odoo model.",
+                             "inputSchema": {
+                                 "type": "object",
+                                 "properties": {
+                                     "session_id": { "type": "string", "description": "Auth: Session ID." },
+                                     "uid": { "type": "integer", "description": "Auth: User ID." },
+                                     "password": { "type": "string", "description": "Auth: Password/API key." },
+                                     "model": { "type": "string", "description": "Odoo model name." },
+                                     "values": { "type": "object", "description": "Dictionary of field values for the new record." },
+                                     "context": { "type": "object", "description": "Odoo context dictionary.", "default": {} }
+                                 },
+                                 "required": ["model", "values"]
+                             }
+                         },
+                         {
+                             "name": "odoo_write",
+                             "description": "Updates existing Odoo records.",
+                             "inputSchema": {
+                                 "type": "object",
+                                 "properties": {
+                                     "session_id": { "type": "string", "description": "Auth: Session ID." },
+                                     "uid": { "type": "integer", "description": "Auth: User ID." },
+                                     "password": { "type": "string", "description": "Auth: Password/API key." },
+                                     "model": { "type": "string", "description": "Odoo model name." },
+                                     "ids": { "type": "array", "items": { "type": "integer" }, "description": "List of record IDs to update." },
+                                     "values": { "type": "object", "description": "Dictionary of field values to update." },
+                                     "context": { "type": "object", "description": "Odoo context dictionary.", "default": {} }
+                                 },
+                                 "required": ["model", "ids", "values"]
+                             }
+                         },
+                         {
+                             "name": "odoo_unlink",
+                             "description": "Deletes Odoo records.",
+                             "inputSchema": {
+                                 "type": "object",
+                                 "properties": {
+                                     "session_id": { "type": "string", "description": "Auth: Session ID." },
+                                     "uid": { "type": "integer", "description": "Auth: User ID." },
+                                     "password": { "type": "string", "description": "Auth: Password/API key." },
+                                     "model": { "type": "string", "description": "Odoo model name." },
+                                     "ids": { "type": "array", "items": { "type": "integer" }, "description": "List of record IDs to delete." },
+                                     "context": { "type": "object", "description": "Odoo context dictionary.", "default": {} }
+                                 },
+                                 "required": ["model", "ids"]
+                             }
+                         },
+                         {
+                             "name": "odoo_call_method",
+                             "description": "Calls a specific method on Odoo records.",
+                             "inputSchema": {
+                                 "type": "object",
+                                 "properties": {
+                                     "session_id": { "type": "string", "description": "Auth: Session ID." },
+                                     "uid": { "type": "integer", "description": "Auth: User ID." },
+                                     "password": { "type": "string", "description": "Auth: Password/API key." },
+                                     "model": { "type": "string", "description": "Odoo model name." },
+                                     "method": { "type": "string", "description": "Name of the method to call on the model/records." },
+                                     "ids": { "type": "array", "items": { "type": "integer" }, "description": "List of record IDs to call the method on (can be empty for model methods)." },
+                                     "args": { "type": "array", "description": "Positional arguments for the method.", "default": [] },
+                                     "kwargs": { "type": "object", "description": "Keyword arguments for the method.", "default": {} },
+                                     "context": { "type": "object", "description": "Odoo context dictionary.", "default": {} }
+                                 },
+                                 "required": ["model", "method", "ids"] # ids required even if empty list
+                             }
+                         }
+                         # Potential future tools: get_report, etc.
+                     ]
+                 }
+            elif method == "list_resource_templates":
+                 response["result"] = {
+                     "resourceTemplates": [
+                         {
+                             "uriTemplate": "odoo://{model}/{id}", # RFC 6570 template
+                             "name": "Odoo Record",
+                             "description": "Represents a single record in an Odoo model.",
+                             "mimeType": "application/json",
+                             # Define expected parameters for resolving the template in read_resource
+                             "inputSchema": {
+                                 "type": "object",
+                                 "properties": {
+                                     "uri": {"type": "string", "description": "The specific URI matching the template (e.g., 'odoo://res.partner/123')."},
+                                     # Add auth params needed by our read_resource implementation
+                                     "session_id": { "type": "string", "description": "Auth: Session ID." },
+                                     "uid": { "type": "integer", "description": "Auth: User ID." },
+                                     "password": { "type": "string", "description": "Auth: Password/API key." }
+                                 },
+                                 "required": ["uri"] # Auth handled by _get_odoo_auth logic
+                             }
+                         }
+                     ]
+                 }
+            elif method == "read_resource":
+                 uri = raw_params.get("uri")
+                 if not uri or not isinstance(uri, str):
+                     raise ProtocolError("Missing or invalid 'uri' parameter for read_resource", code=-32602)
+
+                 # Parse URI: odoo://{model}/{id}
+                 if not uri.startswith("odoo://"):
+                     raise ProtocolError(f"Invalid URI scheme for read_resource: {uri}", code=-32602)
+                 parts = uri[len("odoo://"):].split('/')
+                 if len(parts) != 2:
+                     raise ProtocolError(f"Invalid URI format for read_resource: {uri}. Expected odoo://model/id", code=-32602)
+                 model_name, id_str = parts
+                 try:
+                     record_id = int(id_str)
+                 except ValueError:
+                     raise ProtocolError(f"Invalid record ID in URI for read_resource: {id_str}", code=-32602)
+
+                 logger.info(f"Received read_resource request for URI: {uri} (Model: {model_name}, ID: {record_id})")
+
+                 # Get Authentication Details (using raw_params which include uri, session_id, uid, password)
+                 auth_details = await _get_odoo_auth(self.session_manager, self.config, raw_params)
+                 auth_uid = auth_details["uid"]
+                 auth_pwd = auth_details["password"]
+
+                 # Fetch record data using 'read'
+                 async with self.pool.get_connection() as wrapper:
+                     handler_instance = wrapper.connection
+                     # Fetch all readable fields by default. Consider adding optional 'fields' param?
+                     record_data = handler_instance.execute_kw(
+                         model_name, "read", [[record_id]], {}, # Read all fields for the given ID
+                         uid=auth_uid, password=auth_pwd
+                     )
+
+                 if not record_data: # Odoo read returns empty list if ID not found or no access
+                     # Use a specific MCP error code? RESOURCE_NOT_FOUND? Using generic for now.
+                     raise OdooMCPError(f"Resource not found or access denied: {uri}", code=-32001) # Custom code
+
+                 # Format response according to MCP ReadResource spec
+                 response["result"] = {
+                     "contents": [
+                         {
+                             "uri": uri,
+                             "mimeType": "application/json",
+                             # Odoo 'read' returns a list containing one dict
+                             "text": json.dumps(record_data[0])
+                         }
+                     ]
+                 }
+
+            elif method == "call_tool":
+                tool_name = raw_params.get("name")
+                tool_args = raw_params.get("arguments", {}) # Arguments for the specific tool
+
+                if not tool_name:
+                    raise ProtocolError("Missing 'name' parameter for call_tool", code=-32602)
+                if not isinstance(tool_args, dict):
+                     raise ProtocolError("'arguments' parameter must be an object", code=-32602)
+
+                logger.info(f"Received call_tool request for tool: {tool_name}")
+
+                # --- Tool Dispatching ---
+                odoo_result: Any = None # Variable to hold result from Odoo calls
+
+                # Basic Tools
+                if tool_name == "echo":
+                    msg = tool_args.get("message")
+                    if not isinstance(msg, str): raise ProtocolError("Invalid args for 'echo'", code=-32602)
+                    odoo_result = msg # Simple echo
+                # Session Management
+                elif tool_name == "create_session":
+                    username = tool_args.get("username")
+                    api_key = tool_args.get("api_key")
+                    if not (isinstance(username, str) and isinstance(api_key, str)):
+                        raise ProtocolError("Invalid args for 'create_session'", code=-32602)
+                    session = await self.session_manager.create_session(username=username, api_key=api_key)
+                    odoo_result = {"session_id": session.session_id, "user_id": session.user_id}
+                elif tool_name == "destroy_session":
+                    session_id = tool_args.get("session_id")
+                    if not isinstance(session_id, str): raise ProtocolError("Invalid args for 'destroy_session'", code=-32602)
+                    self.session_manager.destroy_session(session_id)
+                    odoo_result = True # Indicate success
+                # Odoo Data Interaction
+                elif tool_name in ["odoo_search_read", "odoo_read", "odoo_create", "odoo_write", "odoo_unlink", "odoo_call_method"]:
+                    # Get Authentication Details using helper (passing tool_args)
+                    auth_details = await _get_odoo_auth(self.session_manager, self.config, tool_args)
+                    auth_uid = auth_details["uid"]
+                    auth_pwd = auth_details["password"]
+
+                    # Extract common parameters
+                    model = tool_args.get("model")
+                    context = tool_args.get("context", {})
+                    if not isinstance(model, str): raise ProtocolError(f"Missing or invalid 'model' for {tool_name}", code=-32602)
+                    if not isinstance(context, dict): raise ProtocolError(f"Invalid 'context' for {tool_name}", code=-32602)
+
+                    # Get a connection and execute specific Odoo method
+                    async with self.pool.get_connection() as wrapper:
+                        handler_instance = wrapper.connection # This is XMLRPCHandler or JSONRPCHandler
+
+                        if tool_name == "odoo_search_read":
+                            domain = tool_args.get("domain", [])
+                            fields = tool_args.get("fields", [])
+                            limit = tool_args.get("limit", 80)
+                            offset = tool_args.get("offset", 0)
+                            if not isinstance(domain, list): raise ProtocolError("Invalid 'domain'", code=-32602)
+                            if not isinstance(fields, list): raise ProtocolError("Invalid 'fields'", code=-32602)
+                            if not isinstance(limit, int): raise ProtocolError("Invalid 'limit'", code=-32602)
+                            if not isinstance(offset, int): raise ProtocolError("Invalid 'offset'", code=-32602)
+                            odoo_result = handler_instance.execute_kw(
+                                model, "search_read", [domain, fields], {"limit": limit, "offset": offset, "context": context},
+                                uid=auth_uid, password=auth_pwd
+                            )
+                        elif tool_name == "odoo_read":
+                            ids = tool_args.get("ids")
+                            fields = tool_args.get("fields", [])
+                            if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids): raise ProtocolError("Invalid 'ids'", code=-32602)
+                            if not isinstance(fields, list): raise ProtocolError("Invalid 'fields'", code=-32602)
+                            odoo_result = handler_instance.execute_kw(
+                                model, "read", [ids, fields], {"context": context},
+                                uid=auth_uid, password=auth_pwd
+                            )
+                        elif tool_name == "odoo_create":
+                            values = tool_args.get("values")
+                            if not isinstance(values, dict): raise ProtocolError("Invalid 'values'", code=-32602)
+                            odoo_result = handler_instance.execute_kw(
+                                model, "create", [values], {"context": context},
+                                uid=auth_uid, password=auth_pwd
+                            ) # Returns the ID of the created record
+                        elif tool_name == "odoo_write":
+                            ids = tool_args.get("ids")
+                            values = tool_args.get("values")
+                            if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids): raise ProtocolError("Invalid 'ids'", code=-32602)
+                            if not isinstance(values, dict): raise ProtocolError("Invalid 'values'", code=-32602)
+                            odoo_result = handler_instance.execute_kw(
+                                model, "write", [ids, values], {"context": context},
+                                uid=auth_uid, password=auth_pwd
+                            ) # Returns True on success
+                        elif tool_name == "odoo_unlink":
+                            ids = tool_args.get("ids")
+                            if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids): raise ProtocolError("Invalid 'ids'", code=-32602)
+                            odoo_result = handler_instance.execute_kw(
+                                model, "unlink", [ids], {"context": context},
+                                uid=auth_uid, password=auth_pwd
+                            ) # Returns True on success
+                        elif tool_name == "odoo_call_method":
+                            method_name = tool_args.get("method")
+                            ids = tool_args.get("ids") # Can be empty list for model methods
+                            args = tool_args.get("args", [])
+                            kwargs = tool_args.get("kwargs", {})
+                            if not isinstance(method_name, str): raise ProtocolError("Invalid 'method'", code=-32602)
+                            if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids): raise ProtocolError("Invalid 'ids'", code=-32602)
+                            if not isinstance(args, list): raise ProtocolError("Invalid 'args'", code=-32602)
+                            if not isinstance(kwargs, dict): raise ProtocolError("Invalid 'kwargs'", code=-32602)
+                            # Construct arguments for execute_kw: model, method, args_list, kwargs_dict
+                            # For record methods, Odoo expects IDs as the first element in args_list
+                            execute_args = [ids] + args if ids else args # Prepend non-empty IDs list
+                            odoo_result = handler_instance.execute_kw(
+                                model, method_name, execute_args, kwargs, # Pass context within kwargs? Odoo usually merges it. Let's add it explicitly.
+                                uid=auth_uid, password=auth_pwd, context=context # Pass context here too
+                            )
+
+                else:
+                    # Tool name not recognized
+                    raise ProtocolError(f"Unknown tool name: {tool_name}", code=-32601) # Method not found equivalent
+
+                # Format successful Odoo result according to MCP spec
+                response["result"] = {"content": [{"type": "text", "text": json.dumps(odoo_result)}]}
+
+            # --- Custom/Original Methods (using validated_params from Pydantic) ---
+            # These are only reached if method was not 'list_tools' or 'call_tool'
+            # AND Pydantic validation succeeded.
+            elif method == "echo":
+                 # Access validated data using attribute access
+                 response["result"] = validated_params.message # Original simple response format
             elif method == "create_session":
                 session = await self.session_manager.create_session(
                     username=validated_params.username,
@@ -202,10 +583,14 @@ class MCPServer:
                         password=auth_pwd
                     )
                     response["result"] = result
-            # No 'else' needed here because validate_request_params already raised KeyError if method wasn't in map
+            # No 'else' needed here:
+            # - If it was a standard MCP method, it was handled above.
+            # - If it was a custom method with Pydantic validation, it was handled here.
+            # - If it was an unknown method, Pydantic validation (or the check before it) raised ProtocolError(-32601).
 
         except (ProtocolError, AuthError, NetworkError, ConfigurationError, OdooMCPError) as e:
-            logger.warning(f"Error handling request: {e}", exc_info=True if isinstance(e, (NetworkError, OdooMCPError)) else False)
+            # Log specific MCP/Odoo related errors with potentially less noise
+            logger.warning(f"Error handling request: {e}", exc_info=isinstance(e, (NetworkError, OdooMCPError))) # Log trace for Network/OdooMCP errors
             response["error"] = e.to_jsonrpc_error()
         except Exception as e:
             logger.exception(f"Unexpected internal server error: {e}")
