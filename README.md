@@ -1,9 +1,5 @@
 <div align="center">
-  <img src="assets/Odoo MCP Server.png" alt="Odoo MCP Server Logo" width="400"/> 
-  <br/>
-  <i>Odoo senza mani</i>
-  <br/>
-  <i>handless Odoo</i>
+  <img src="assets/Odoo MCP Server.png" alt="Odoo MCP Server Logo" width="100%"/> 
 </div>
 <br/>
 
