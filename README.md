@@ -20,7 +20,7 @@ Questo progetto implementa un server Message Control Program (MCP) progettato pe
 *   **Conformità MCP:** Implementa le primitive standard del Model Context Protocol:
     *   **Tools:** Espone funzionalità Odoo tramite `list_tools` e `call_tool`. Include tool specifici per operazioni CRUD (`odoo_search_read`, `odoo_read`, `odoo_create`, `odoo_write`, `odoo_unlink`) e chiamate a metodi generici (`odoo_call_method`), oltre a tool di base (`echo`, `create_session`, `destroy_session`).
     *   **Resources:** Permette l'accesso ai record Odoo come risorse tramite `list_resource_templates` (con template `odoo://{model}/{id}`) e `read_resource`.
-*   **Validazione Input:** Utilizza Pydantic per validare i parametri dei metodi *non standard* preesistenti. La validazione per i tool e le risorse MCP è gestita internamente.
+*   **Validazione Input:** La validazione dei parametri per i tool e le risorse MCP è gestita internamente alla logica dei rispettivi metodi standard (`call_tool`, `read_resource`).
 *   **Struttura Modulare:** Codice organizzato in moduli specifici (authentication, connection, core, error_handling, performance, security).
 *   **Packaging:** Configurato come pacchetto Python standard tramite `pyproject.toml`.
 *   **Testing:** Include una suite di test (`pytest`) per diverse componenti (anche se la copertura completa non è garantita).
@@ -95,15 +95,7 @@ odoo-mcp-server --config odoo_mcp/config/config.dev.yaml
     *   **Endpoint `/events` (GET):** I client stabiliscono una connessione SSE a questo endpoint. Il server invierà le *risposte* alle richieste ricevute su `/mcp` come eventi SSE a *tutti* i client connessi a `/events`.
     *   Utile per scenari web o client che necessitano di ricevere aggiornamenti asincroni.
 
-**Esempio Richiesta (JSON-RPC):**
-
-Il formato della richiesta è lo stesso per entrambe le modalità:
-
-```json
-{"jsonrpc": "2.0", "method": "call_odoo", "params": {"model": "res.partner", "method": "search_count", "args": [[["is_company", "=", true]]]}, "id": 1}
-```
-
-Consultare `odoo_mcp/examples/basic_usage.py` per un esempio di client base che interagisce con i metodi originali (potrebbe necessitare di aggiornamento per usare i tool MCP).
+Consultare `odoo_mcp/examples/basic_usage.py` per un esempio di client base (potrebbe necessitare di aggiornamento per usare i tool MCP).
 
 **🔌 Interfaccia MCP:**
 
@@ -177,8 +169,6 @@ Il server ora espone le seguenti primitive standard MCP:
   "id": 3
 }
 ```
-
-*(Nota: I metodi originali come `call_odoo` sono ancora presenti nel codice ma potrebbero essere considerati deprecati a favore dell'interfaccia `call_tool`)*.
 
 ## 💻 Connessione Client MCP (Modalità stdio)
 
