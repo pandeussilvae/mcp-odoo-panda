@@ -1,10 +1,10 @@
 # Odoo MCP Server (mcp-odoo-panda)
 
-## Descrizione
+## 📝 Descrizione
 
 Questo progetto implementa un server Message Control Program (MCP) progettato per facilitare l'integrazione e l'interazione con istanze Odoo ERP. Fornisce un'interfaccia standardizzata (JSON-RPC o XML-RPC) per eseguire operazioni su Odoo, gestendo connessioni, autenticazione e sessioni.
 
-## Funzionalità Principali Attuali
+## ✨ Funzionalità Principali Attuali
 
 *   **Protocolli Multipli:** Supporto per comunicare con Odoo tramite **XML-RPC** (protocollo standard di Odoo) e **JSON-RPC**.
 *   **Pool di Connessioni Asincrono:** Gestisce un pool di connessioni riutilizzabili verso Odoo per migliorare le prestazioni e ridurre l'overhead, utilizzando `httpx` per le chiamate asincrone (nel caso di JSON-RPC) e la libreria standard `xmlrpc.client` (adattata per l'uso asincrono).
@@ -25,7 +25,7 @@ Questo progetto implementa un server Message Control Program (MCP) progettato pe
 *   **Packaging:** Configurato come pacchetto Python standard tramite `pyproject.toml`.
 *   **Testing:** Include una suite di test (`pytest`) per diverse componenti (anche se la copertura completa non è garantita).
 
-## Installazione
+## 🚀 Installazione
 
 ```bash
 # Clona il repository (se non già fatto)
@@ -44,7 +44,7 @@ pip install -e .[dev]
 pip install -e .[caching]
 ```
 
-## Configurazione
+## 🔧 Configurazione
 
 Il server viene configurato tramite file YAML presenti nella directory `odoo_mcp/config/`.
 
@@ -69,7 +69,7 @@ Il server viene configurato tramite file YAML presenti nella directory `odoo_mcp
     *   `default_ttl`: Tempo di vita (in secondi) degli elementi nella cache.
 *   `sse_host`/`sse_port`: Indirizzo e porta per la modalità SSE.
 
-## Uso
+## ▶️ Uso
 
 Il server può essere avviato specificando il file di configurazione e la modalità di connessione desiderata (`stdio` o `sse`) all'interno del file stesso.
 
@@ -105,7 +105,7 @@ Il formato della richiesta è lo stesso per entrambe le modalità:
 
 Consultare `odoo_mcp/examples/basic_usage.py` per un esempio di client base che interagisce con i metodi originali (potrebbe necessitare di aggiornamento per usare i tool MCP).
 
-**Interfaccia MCP:**
+**🔌 Interfaccia MCP:**
 
 Il server ora espone le seguenti primitive standard MCP:
 
@@ -180,7 +180,7 @@ Il server ora espone le seguenti primitive standard MCP:
 
 *(Nota: I metodi originali come `call_odoo` sono ancora presenti nel codice ma potrebbero essere considerati deprecati a favore dell'interfaccia `call_tool`)*.
 
-## Connessione Client MCP (Modalità stdio)
+## 💻 Connessione Client MCP (Modalità stdio)
 
 I client MCP standard, come l'estensione VS Code o l'app desktop Claude, comunicano con i server MCP tramite **standard input/output (stdio)**. Per connettere un client a questo server Odoo MCP, devi configurarlo per eseguire il server Python in modalità `stdio`.
 
@@ -236,7 +236,7 @@ Dopo aver salvato questa configurazione, riavvia il client MCP (o ricarica la fi
 
 La modalità `connection_type: sse` **non è compatibile** con i client MCP standard basati su stdio. Richiede un client HTTP personalizzato che possa inviare richieste POST all'endpoint `/mcp` e ascoltare eventi sull'endpoint `/events`.
 
-## Esecuzione con Docker
+## 🐳 Esecuzione con Docker
 
 È possibile costruire ed eseguire il server MCP Odoo all'interno di un container Docker utilizzando il `Dockerfile` fornito.
 
@@ -273,7 +273,7 @@ docker run --rm -it \
 *   Il flag `-it` permette l'interattività (utile per la modalità `stdio`).
 *   **Importante:** Il codice del server (`odoo_mcp.core.mcp_server` o dove viene gestita la configurazione) deve essere in grado di leggere queste variabili d'ambiente (es. tramite `os.environ.get('ODOO_URL')`) e usarle per sovrascrivere o popolare i valori di configurazione. Se il server legge ancora *esclusivamente* dai file YAML, questo approccio non funzionerà senza modifiche al codice Python o montando un file di configurazione come volume (`-v ./percorso/config.prod.yaml:/app/odoo_mcp/config/config.prod.yaml`). Il `Dockerfile` attuale non copia i file di configurazione nell'immagine, privilegiando l'approccio con variabili d'ambiente.
 
-## Esempio Avanzato: Docker Compose con n8n come Client MCP
+## 🐳🔗 Esempio Avanzato: Docker Compose con n8n come Client MCP
 
 Questo esempio mostra come eseguire sia il server Odoo MCP che un'istanza di n8n (che funge da client MCP) utilizzando Docker Compose. Il server MCP si connetterà a un'istanza Odoo esterna.
 
@@ -372,7 +372,7 @@ Per fermare i container esegui:
 docker-compose down
 ```
 
-## Architettura
+## 🏗️ Architettura
 
 Il server è composto dai seguenti moduli principali:
 
@@ -386,7 +386,7 @@ Il server è composto dai seguenti moduli principali:
 *   **`examples`**: Codice di esempio per l'utilizzo del server.
 *   **`tests`**: Test unitari e di integrazione.
 
-## TODO / Roadmap Futura
+## 🗺️ TODO / Roadmap Futura
 
 *   **Documentazione:**
     *   Migliorare README (esempi complessi, best practice).
@@ -408,7 +408,7 @@ Il server è composto dai seguenti moduli principali:
 *   **CI/CD:**
     *   Implementare pipeline CI/CD.
 
-## Licenza
+## 📜 Licenza
 
 (Licenza MIT confermata nel file `LICENSE`)
 
