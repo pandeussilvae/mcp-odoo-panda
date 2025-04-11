@@ -84,7 +84,27 @@ try:
             self.odoo_read_cache: TTLCache = TTLCache(maxsize=default_maxsize, ttl=default_ttl)
             # Add more specific caches as needed, e.g., for specific models or methods
             # self.partner_cache: TTLCache = TTLCache(maxsize=256, ttl=600)
-            logger.info(f"CacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
+            # Initialize with placeholders, configure() will set actual values
+            self.odoo_read_cache: TTLCache = TTLCache(maxsize=1, ttl=1) # Placeholder
+            logger.info(f"CacheManager initialized (defaults: maxsize={default_maxsize}, ttl={default_ttl}s). Waiting for configuration...")
+
+        def configure(self, config: Dict[str, Any]):
+            """
+            Configure the cache manager settings from the loaded application config.
+
+            Args:
+                config: The main application configuration dictionary.
+            """
+            cache_config = config.get('cache', {}) # Look for a 'cache' section
+            self.default_maxsize = cache_config.get('default_maxsize', 128)
+            self.default_ttl = cache_config.get('default_ttl', 300)
+
+            # Recreate the main cache instance with configured settings
+            self.odoo_read_cache = TTLCache(maxsize=self.default_maxsize, ttl=self.default_ttl)
+
+            logger.info(f"CacheManager configured: default_maxsize={self.default_maxsize}, default_ttl={self.default_ttl}s")
+            logger.info(f"Recreated 'odoo_read_cache' with maxsize={self.odoo_read_cache.maxsize}, ttl={self.odoo_read_cache.ttl}s")
+            # Configure other specific caches here if they exist
 
         def get_ttl_cache_decorator(self, cache_instance: Optional[TTLCache] = None, maxsize: Optional[int] = None, ttl: Optional[int] = None) -> Callable:
             """
@@ -144,10 +164,11 @@ try:
     # TODO: Read cache settings from config if available when CacheManager is instantiated globally
     # config = ... # Assume config is loaded somehow if running standalone
     # cache_manager = CacheManager(
-    #     default_maxsize=config.get('cache_maxsize', 128),
-    #     default_ttl=config.get('cache_ttl', 300)
+    #     default_maxsize=config.get('cache', {}).get('default_maxsize', 128),
+    #     default_ttl=config.get('cache', {}).get('default_ttl', 300)
     # )
-    cache_manager = CacheManager() # Use defaults for now
+    # Instantiate globally, but configuration will be applied later via configure()
+    cache_manager = CacheManager()
     logger.info("cachetools library found. TTL caching enabled.")
     CACHE_TYPE: str = 'cachetools'
 

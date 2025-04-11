@@ -13,9 +13,15 @@ from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler
 from odoo_mcp.connection.connection_pool import ConnectionPool
 from odoo_mcp.authentication.authenticator import OdooAuthenticator
 from odoo_mcp.connection.session_manager import SessionManager
-from odoo_mcp.security.utils import RateLimiter, mask_sensitive_data, validate_request_data
+# Remove the old placeholder validate_request_data if it exists in security.utils
+from odoo_mcp.security.utils import RateLimiter, mask_sensitive_data
 from odoo_mcp.error_handling.exceptions import OdooMCPError, ConfigurationError, ProtocolError, AuthError, NetworkError
 from odoo_mcp.core.logging_config import setup_logging
+# Import Pydantic validation components
+from odoo_mcp.core.request_models import validate_request_params
+from pydantic import ValidationError
+# Import cache manager instance
+from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE
 
 # Imports for SSE mode
 try:
@@ -48,7 +54,11 @@ class MCPServer:
         self.config = config
         self.protocol_type = config.get('protocol', 'xmlrpc').lower()
         self.connection_type = config.get('connection_type', 'stdio').lower()
-        self.rate_limiter = RateLimiter(config.get('requests_per_minute', 120))
+        # Initialize RateLimiter with max wait time from config
+        self.rate_limiter = RateLimiter(
+            requests_per_minute=config.get('requests_per_minute', 120),
+            max_wait_seconds=config.get('rate_limit_max_wait_seconds', None) # Default to None (indefinite wait)
+        )
 
         # Initialize core components
         self.handler: Union[XMLRPCHandler, JSONRPCHandler]
@@ -81,15 +91,22 @@ class MCPServer:
 
     async def handle_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Handles an incoming JSON-RPC request dictionary.
+        Process a single incoming JSON-RPC request dictionary.
 
-        Performs validation, rate limiting, method dispatching, and error handling.
+        This method orchestrates the entire request lifecycle:
+        1. Basic JSON-RPC structure validation.
+        2. Rate limiting using the configured token bucket.
+        3. Input parameter validation using Pydantic models defined in `request_models.py`.
+        4. Dispatching the request to the appropriate internal handler method
+           (e.g., `echo`, `create_session`, `call_odoo`).
+        5. Handling potential errors (ProtocolError, AuthError, NetworkError, OdooMCPError,
+           ValidationError) and formatting them into JSON-RPC error responses.
 
         Args:
             request_data: The parsed JSON-RPC request dictionary.
 
         Returns:
-            A JSON-RPC response dictionary.
+            A JSON-RPC response dictionary, containing either a 'result' or an 'error' field.
         """
         response: Dict[str, Any] = {
             "jsonrpc": "2.0",
@@ -104,90 +121,85 @@ class MCPServer:
                 raise ProtocolError("Unsupported JSON-RPC version.")
 
             method = request_data["method"]
-            params = request_data.get("params", {})
+            raw_params = request_data.get("params", {})
 
             # 2. Rate Limiting
-            if not self.rate_limiter.try_acquire():
-                raise OdooMCPError("Rate limit exceeded. Please try again later.", code=-32000) # Custom error code
+            # Acquire token, potentially waiting up to max_wait_seconds
+            acquired = await self.rate_limiter.acquire()
+            if not acquired:
+                # If acquire returns False, it means it timed out waiting
+                raise OdooMCPError("Rate limit exceeded and wait timed out. Please try again later.", code=-32000) # Custom error code
 
-            # 3. Input Validation (using Pydantic if available)
-            # Example: Validate params based on the method called
-            # validate_request_data(method, params) # Implement this based on defined models
+            # 3. Input Validation (using Pydantic)
+            try:
+                # Validate parameters based on the method
+                # This raises ValidationError if inputs are invalid
+                validated_params = validate_request_params(method, raw_params)
+                logger.debug(f"Validated params for method '{method}': {validated_params.dict()}")
+            except ValidationError as e:
+                logger.warning(f"Invalid parameters for method '{method}': {e.errors()}")
+                # Use JSON-RPC error code for invalid params
+                raise ProtocolError(f"Invalid parameters: {e.errors()}", code=-32602)
+            except KeyError:
+                # Method exists in request but no validation model defined for it
+                raise ProtocolError(f"Method not found or validation not defined: {method}", code=-32601)
 
-            # 4. Method Dispatching
+
+            # 4. Method Dispatching (using validated_params)
             logger.info(f"Received request for method: {method}")
             if method == "echo":
-                response["result"] = params.get("message", "echo!")
+                # Access validated data using attribute access
+                response["result"] = validated_params.message
             elif method == "create_session":
-                # Requires username/api_key in params
                 session = await self.session_manager.create_session(
-                    username=params.get("username"),
-                    api_key=params.get("api_key")
+                    username=validated_params.username,
+                    api_key=validated_params.api_key
                 )
                 response["result"] = {"session_id": session.session_id, "user_id": session.user_id}
             elif method == "destroy_session":
-                session_id = params.get("session_id")
-                if not session_id: raise ProtocolError("Missing 'session_id' parameter for destroy_session.")
-                self.session_manager.destroy_session(session_id)
+                self.session_manager.destroy_session(validated_params.session_id)
                 response["result"] = True # Indicate success
             elif method == "call_odoo":
-                # Requires model, method, args, potentially session_id or uid/password
-                model = params.get("model")
-                odoo_method = params.get("method")
-                odoo_args = params.get("args", [])
-                odoo_kwargs = params.get("kwargs", {})
-                session_id = params.get("session_id")
-
-                if not model or not odoo_method:
-                    raise ProtocolError("Missing 'model' or 'method' parameter for call_odoo.")
-
-                # Determine authentication: session or direct credentials
+                # Determine authentication: session or direct credentials from validated params
                 auth_uid: Optional[int] = None
                 auth_pwd: Optional[str] = None
 
-                if session_id:
-                    session = self.session_manager.get_session(session_id)
+                if validated_params.session_id:
+                    session = self.session_manager.get_session(validated_params.session_id)
                     if not session:
-                        raise AuthError(f"Invalid or expired session ID: {session_id}")
+                        raise AuthError(f"Invalid or expired session ID: {validated_params.session_id}")
                     auth_uid = session.user_id
-                    # We might need the original password/key if the handler requires it per call
-                    # This highlights a design choice: does the handler use UID only, or UID+pwd?
-                    # Assuming for now the handler can operate with just UID if needed,
-                    # or Session stores necessary credentials (less secure).
-                    # Let's assume execute_kw needs uid and password. How to get password from session?
-                    # Option A: Session stores password (bad)
-                    # Option B: Handler uses a global password associated with the UID (requires lookup)
-                    # Option C: Authenticator provides a way to get password for UID (complex)
-                    # Option D: Pass password along with session_id (bad)
-                    # Let's stick to passing explicit uid/password for now if session_id isn't used,
-                    # and assume session implies using global credentials for that user if needed by handler.
-                    # This part needs refinement based on chosen auth flow.
-                    # For now, if session_id is valid, we'll try using global creds implicitly in execute_kw.
-                    logger.info(f"Using session {session_id} for user {auth_uid}")
-                    # We still need the password for the execute_kw call in the handler currently
-                    # Let's try fetching global password if session is used (simplification for now)
-                    auth_pwd = self.config.get('api_key') # Fallback to global API key if using session
-                    if not auth_pwd: logger.warning("Using session auth but no global API key found for handler call.")
-
+                    logger.info(f"Using session {validated_params.session_id} for user {auth_uid}")
+                    # WARNING: Current handler logic (especially XMLRPC) requires uid AND password for execute_kw.
+                    # When using session_id, we are falling back to the global api_key/password from config.
+                    # This might not be the desired behavior if the session implies a specific user's password/key.
+                    # TODO: Refine session handling to securely associate/retrieve the correct password/key for the session's uid,
+                    # or modify handlers if they can operate with uid only in a session context.
+                    auth_pwd = self.config.get('api_key') or self.config.get('password') # Try both common names
+                    if not auth_pwd:
+                        logger.error("CRITICAL: Using session auth but NO global api_key/password found in config for handler's execute_kw call. This will likely fail.")
+                        # Optionally, raise an error here if this fallback is unacceptable
+                        # raise ConfigurationError("Global api_key/password required in config when using session_id with current handlers.")
+                    else:
+                        logger.warning("Using session ID for UID, but falling back to global api_key/password from config for handler's execute_kw call.")
                 else:
-                    # Allow explicit uid/password override if needed, otherwise handler uses global
-                    auth_uid = params.get("uid")
-                    auth_pwd = params.get("password") # Or api_key? Standardize param name
-                    if auth_uid and not auth_pwd: raise ProtocolError("Parameter 'password' required if 'uid' is provided.")
-                    if auth_pwd and not auth_uid: raise ProtocolError("Parameter 'uid' required if 'password' is provided.")
+                    # Use explicitly provided uid/password from validated params
+                    auth_uid = validated_params.uid
+                    auth_pwd = validated_params.password # Already validated that if one exists, the other does too
 
                 # Get a connection and execute
-                # The handler instance is created by the pool
                 async with self.pool.get_connection() as wrapper:
                     handler_instance = wrapper.connection
-                    # Pass explicit creds if provided, otherwise handler uses its internal logic (global creds)
                     result = handler_instance.execute_kw(
-                        model, odoo_method, odoo_args, odoo_kwargs,
-                        uid=auth_uid, password=auth_pwd
+                        validated_params.model,
+                        validated_params.method,
+                        validated_params.args,
+                        validated_params.kwargs,
+                        uid=auth_uid,
+                        password=auth_pwd
                     )
                     response["result"] = result
-            else:
-                raise ProtocolError(f"Method not found: {method}", code=-32601)
+            # No 'else' needed here because validate_request_params already raised KeyError if method wasn't in map
 
         except (ProtocolError, AuthError, NetworkError, ConfigurationError, OdooMCPError) as e:
             logger.warning(f"Error handling request: {e}", exc_info=True if isinstance(e, (NetworkError, OdooMCPError)) else False)
@@ -263,9 +275,23 @@ class MCPServer:
                  await asyncio.sleep(1) # Prevent fast error loops
 
     async def _sse_handler(self, request: web.Request) -> web.StreamResponse:
-        """Handles incoming SSE connections."""
+        """
+        Handle an incoming Server-Sent Events (SSE) connection request.
+
+        Establishes an SSE connection using `aiohttp_sse.sse_response`, adds the
+        client response object to a list of active clients, and continuously sends
+        responses from the `_sse_response_queue` to this client until disconnection.
+
+        Args:
+            request: The incoming aiohttp.web.Request object.
+
+        Returns:
+            An aiohttp.web.StreamResponse object representing the SSE connection.
+        """
         logger.info(f"SSE client connected: {request.remote}")
+        resp: Optional[web.StreamResponse] = None # Initialize resp
         try:
+            # Prepare SSE response with basic CORS headers
             resp = await sse_response(request, headers={
                 'Access-Control-Allow-Origin': self.config.get('allowed_origins', ['*'])[0] # Basic CORS
             })
@@ -286,18 +312,36 @@ class MCPServer:
                       break
                  except Exception as e:
                       logger.exception(f"Error sending SSE event: {e}")
-                      # Continue loop even if one send fails?
+                      # TODO: Consider error handling strategy here. If one client fails,
+                      # should we remove it and continue, or stop processing the queue item?
+                      # Currently, logs error and continues.
 
         except Exception as e:
-            logger.exception(f"Error in SSE handler setup or main loop: {e}")
+            # Catch errors during SSE connection setup or the send loop
+            logger.exception(f"Error in SSE handler setup or main loop for {request.remote}: {e}")
         finally:
+            # Ensure client is removed from the list upon disconnection or error
             logger.info(f"SSE client disconnected: {request.remote}")
-            if resp in self._sse_clients:
+            if resp and resp in self._sse_clients:
                 self._sse_clients.remove(resp)
-        return resp
+        # resp might be None if sse_response failed early
+        return resp if resp else web.Response(status=500, text="Failed to establish SSE connection")
+
 
     async def _post_handler(self, request: web.Request) -> web.Response:
-        """Handles incoming POST requests to trigger operations."""
+        """
+        Handle incoming POST requests in SSE mode.
+
+        Receives a JSON-RPC request via POST, processes it using `handle_request`,
+        puts the resulting JSON-RPC response onto the `_sse_response_queue` for
+        broadcasting via the `/events` endpoint, and returns a `202 Accepted` response.
+
+        Args:
+            request: The incoming aiohttp.web.Request object.
+
+        Returns:
+            An aiohttp.web.Response object (typically 202 Accepted or an error).
+        """
         try:
             request_data = await request.json()
             masked_request_str = mask_sensitive_data(json.dumps(request_data), self.config)
@@ -382,7 +426,16 @@ class MCPServer:
             await self.shutdown() # Ensure cleanup happens even if loop exits unexpectedly
 
     def request_shutdown(self, sig: Optional[signal.Signals] = None):
-        """Signal handler to initiate graceful shutdown."""
+        """
+        Signal handler to initiate graceful shutdown.
+
+        Sets the global `shutdown_requested` flag upon receiving SIGINT or SIGTERM.
+        This flag is checked by the main server loops (`_run_stdio_server`, `_run_sse_server`)
+        to allow them to exit cleanly.
+
+        Args:
+            sig: The signal received (e.g., signal.SIGINT, signal.SIGTERM). Optional.
+        """
         global shutdown_requested
         if not shutdown_requested:
              signame = sig.name if sig else "signal"
@@ -432,6 +485,15 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
 
     # Setup logging based on the loaded configuration
     setup_logging(config)
+
+    # Configure cache manager if cachetools is available
+    if cache_manager and CACHE_TYPE == 'cachetools':
+        try:
+            cache_manager.configure(config)
+        except Exception as e:
+            logger.error(f"Failed to configure CacheManager: {e}", exc_info=True)
+            # Decide if this is critical - maybe proceed without cache?
+            # For now, log error and continue.
 
     try:
         server = MCPServer(config)

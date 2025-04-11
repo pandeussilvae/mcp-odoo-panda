@@ -158,11 +158,22 @@ class XMLRPCHandler:
               logger.debug(f"XML-RPC call successful for {model}.{method}")
               return result
          except Fault as e:
-              logger.warning(f"XML-RPC Fault during {model}.{method}: {e.faultString}")
-              if "AccessDenied" in e.faultString or "AccessError" in e.faultString or "authenticate" in e.faultString:
-                   raise AuthError(f"Odoo Access Denied/Error: {e.faultString}", original_exception=e)
+              fault_string = e.faultString
+              logger.warning(f"XML-RPC Fault during {model}.{method}: {fault_string}")
+
+              # Map specific Odoo errors based on faultString content
+              if "AccessDenied" in fault_string or "AccessError" in fault_string or "authenticate" in fault_string:
+                   raise AuthError(f"Odoo Access Denied/Error: {fault_string}", original_exception=e)
+              elif "UserError" in fault_string or "ValidationError" in fault_string:
+                   # Extract cleaner message if possible (Odoo often includes traceback)
+                   clean_message = fault_string.split('\n')[0] # Basic cleaning
+                   raise OdooValidationError(f"Odoo Validation Error: {clean_message}", original_exception=e)
+              elif "Record does not exist" in fault_string or "Missing record" in fault_string:
+                   raise OdooRecordNotFoundError(f"Odoo Record Not Found: {fault_string}", original_exception=e)
+              # Add more specific mappings here if needed
               else:
-                   raise ProtocolError(f"Odoo XML-RPC Execution Fault: {e.faultString}", original_exception=e)
+                   # Fallback for other Odoo/XML-RPC errors
+                   raise ProtocolError(f"Odoo XML-RPC Execution Fault: {fault_string}", original_exception=e)
          except (XmlRpcProtocolError, socket.gaierror, ConnectionRefusedError, OSError) as e:
               logger.error(f"Network/Protocol error during {model}.{method}: {e}")
               raise NetworkError(f"Network or protocol error during XML-RPC call: {e}", original_exception=e)

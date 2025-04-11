@@ -29,14 +29,17 @@ class RateLimiter:
 
     Allows limiting the rate of operations (e.g., requests per minute).
     Refills tokens continuously based on the specified rate.
+    Includes an optional maximum wait time to acquire a token.
     """
-    def __init__(self, requests_per_minute: int):
+    def __init__(self, requests_per_minute: int, max_wait_seconds: Optional[float] = None):
         """
         Initialize the RateLimiter.
 
         Args:
             requests_per_minute: The maximum number of requests allowed per minute.
                                  If <= 0, rate limiting is disabled.
+            max_wait_seconds: Optional maximum time in seconds to wait for a token.
+                              If None or <= 0, waits indefinitely (or until cancelled).
         """
         if requests_per_minute <= 0:
             # Rate limiting disabled or invalid config
@@ -55,28 +58,39 @@ class RateLimiter:
             self.last_update = time.monotonic()
             self.enabled = True
             self._lock = asyncio.Lock()
-            logger.info(f"Rate limiter enabled: {requests_per_minute} requests/minute ({self.rate:.2f} tokens/sec)")
+            self.max_wait_seconds = max_wait_seconds if max_wait_seconds and max_wait_seconds > 0 else None
+            wait_info = f"Max Wait: {self.max_wait_seconds}s" if self.max_wait_seconds else "Max Wait: Indefinite"
+            logger.info(f"Rate limiter enabled: {requests_per_minute} requests/minute ({self.rate:.2f} tokens/sec). {wait_info}")
 
     async def acquire(self) -> bool:
         """
-        Acquire a token from the bucket.
+        Acquire a token from the bucket, waiting up to `max_wait_seconds` if necessary.
 
         If no token is available, this method waits asynchronously until one
         can be acquired.
 
         Returns:
-            True if a token was acquired (or if rate limiting is disabled).
-            False if acquiring failed after waiting (should be rare).
+            True if a token was acquired.
+            False if rate limiting is disabled or if the wait timed out.
 
         Raises:
-            asyncio.TimeoutError: If waiting for a token exceeds a predefined
-                                  maximum wait time (TODO: implement max wait).
+            asyncio.CancelledError: If the task is cancelled while waiting.
+            # Consider raising a specific RateLimitTimeoutError instead of returning False on timeout?
+            # For now, returning False on timeout is simpler for the caller.
         """
         if not self.enabled:
-            return False # Indicate disabled
+            return True # Treat disabled as always successful acquisition
 
-        # Loop until a token can be acquired
+        start_time = time.monotonic()
+        # Loop until a token can be acquired or timeout occurs
         while True:
+            # Check for timeout before acquiring lock
+            if self.max_wait_seconds is not None:
+                elapsed_wait = time.monotonic() - start_time
+                if elapsed_wait > self.max_wait_seconds:
+                    logger.warning(f"Rate limiter acquire timed out after {elapsed_wait:.2f}s (max wait: {self.max_wait_seconds}s).")
+                    return False # Indicate timeout
+
             # --- Start Critical Section ---
             async with self._lock:
                 # Calculate time elapsed since last update
@@ -115,8 +129,26 @@ class RateLimiter:
 
             # Wait outside the lock
             try:
-                # TODO: Add a maximum wait timeout using asyncio.wait_for?
-                await asyncio.sleep(wait_time)
+                # Calculate remaining wait time allowed by timeout
+                remaining_timeout = None
+                if self.max_wait_seconds is not None:
+                    elapsed_wait = time.monotonic() - start_time
+                    remaining_timeout = max(0, self.max_wait_seconds - elapsed_wait)
+                    # If the calculated wait_time is already longer than the remaining timeout, timeout immediately
+                    if wait_time > remaining_timeout:
+                         logger.warning(f"Rate limiter required wait ({wait_time:.4f}s) exceeds remaining timeout ({remaining_timeout:.4f}s). Timing out.")
+                         return False
+
+                # Wait for the calculated time, respecting the overall timeout
+                if remaining_timeout is not None:
+                    await asyncio.wait_for(asyncio.sleep(wait_time), timeout=remaining_timeout)
+                else:
+                    await asyncio.sleep(wait_time) # Wait indefinitely if no max_wait
+
+            except asyncio.TimeoutError:
+                 # This catches the timeout from asyncio.wait_for
+                 logger.warning(f"Rate limiter acquire timed out while sleeping (max wait: {self.max_wait_seconds}s).")
+                 return False # Indicate timeout
             except asyncio.CancelledError:
                 logger.info("Rate limiter acquire wait cancelled.")
                 raise # Propagate cancellation

@@ -57,6 +57,16 @@ class SessionError(OdooMCPError):
     """Raised for errors related to user session management."""
     pass
 
+class OdooValidationError(ProtocolError): # Inherit from ProtocolError as it's an execution error
+    """Raised specifically for Odoo model validation failures (e.g., UserError)."""
+    default_code = -32010 # Example custom code for Odoo validation
+    default_message = "Odoo validation error"
+
+class OdooRecordNotFoundError(ProtocolError): # Inherit from ProtocolError
+    """Raised when an operation targets a record that does not exist."""
+    default_code = -32011 # Example custom code for Odoo record not found
+    default_message = "Odoo record not found"
+
 # Example of how to use them:
 #
 # try:

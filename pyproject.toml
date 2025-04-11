@@ -57,8 +57,8 @@ Issues = "https://github.com/example/odoo-mcp-server/issues" # Placeholder URL
 
 # Entry point to run the server (optional)
 # This allows running 'odoo-mcp-server' from command line after installation
-# [project.scripts]
-# odoo-mcp-server = "odoo_mcp.core.mcp_server:main_cli" # Assumes a main_cli function exists
+[project.scripts]
+odoo-mcp-server = "odoo_mcp.core.mcp_server:main_cli" # Assumes a main_cli function exists
 
 [tool.setuptools.packages.find]
 where = ["."] # Look for packages in the current directory

@@ -3,9 +3,13 @@ import json
 import logging
 import asyncio
 import ssl # Import ssl for context creation
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, Tuple, List # Added Union, Tuple, List
 
-from odoo_mcp.error_handling.exceptions import NetworkError, ProtocolError, OdooMCPError, AuthError, ConfigurationError
+# Import specific exceptions for mapping
+from odoo_mcp.error_handling.exceptions import (
+    NetworkError, ProtocolError, OdooMCPError, AuthError, ConfigurationError,
+    OdooValidationError, OdooRecordNotFoundError
+)
 from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE
 
 logger = logging.getLogger(__name__)
@@ -186,8 +190,7 @@ class JSONRPCHandler:
              "method": method,
              # Assuming Odoo JSON-RPC expects db as first arg in the list
              "args": [self.database, *args]
-             # TODO: Integrate session ID from SessionManager if needed
-             # "context": {"session_id": session_id} # Example
+             # Context should be passed within kwargs in standard Odoo calls
          }
          payload = self._prepare_payload("call", payload_params)
          headers = {'Content-Type': 'application/json'}
@@ -206,10 +209,18 @@ class JSONRPCHandler:
                  full_error = f"Code {error_code}: {error_message} - {error_debug_info}".strip(" -")
 
                  # Map Odoo JSON-RPC error codes/messages to custom exceptions
-                 # These codes might need adjustment based on Odoo version/specific errors
-                 if error_code == 100 or "AccessDenied" in str(error_data) or "AccessError" in str(error_data):
-                      raise AuthError(f"JSON-RPC Access Denied/Error: {full_error}", original_exception=Exception(str(error_data)))
+                 # These codes/strings might need adjustment based on Odoo version/specific errors
+                 if error_code == 100 or "AccessDenied" in error_message or "AccessError" in error_message or "session expired" in error_message.lower() or "Session expired" in error_message:
+                      raise AuthError(f"JSON-RPC Access/Auth Error: {full_error}", original_exception=Exception(str(error_data)))
+                 elif "UserError" in error_message or "ValidationError" in error_message or (error_data.get('data') and 'UserError' in error_data['data'].get('name', '')):
+                      # Try to get a cleaner message from data if available
+                      clean_message = error_data.get('data', {}).get('message', error_message.split('\n')[0])
+                      raise OdooValidationError(f"JSON-RPC Validation Error: {clean_message}", original_exception=Exception(str(error_data)))
+                 elif "Record does not exist" in error_message or "Missing record" in error_message or (error_data.get('data') and 'Record does not exist' in error_data['data'].get('message', '')):
+                      raise OdooRecordNotFoundError(f"JSON-RPC Record Not Found: {full_error}", original_exception=Exception(str(error_data)))
+                 # Add more specific mappings here if needed
                  else:
+                      # Fallback for other Odoo/JSON-RPC errors
                       raise ProtocolError(f"JSON-RPC Error Response: {full_error}", original_exception=Exception(str(error_data)))
 
              return result.get("result")
@@ -237,6 +248,65 @@ class JSONRPCHandler:
         logger.debug(f"Executing CACHED JSON-RPC call wrapper for {service}.{method}")
         # Pass args as a list as expected by _call_direct
         return await self._call_direct(service, method, list(args))
+
+
+    async def execute_kw(self, model: str, method: str, args: list, kwargs: dict, uid: Optional[int] = None, password: Optional[str] = None, session_id: Optional[str] = None) -> Any:
+        """
+        Execute a method on an Odoo model using JSON-RPC 'object.execute_kw'.
+
+        This method mirrors the XML-RPC execute_kw interface.
+
+        Args:
+            model: The Odoo model name.
+            method: The method to call on the model.
+            args: Positional arguments for the Odoo method.
+            kwargs: Keyword arguments for the Odoo method. Should include 'context'.
+            uid: User ID for authentication (required if password/session_id not used).
+            password: Password or API key for authentication.
+            session_id: Session ID to potentially include in the context.
+
+        Returns:
+            The result from the Odoo method.
+
+        Raises:
+            AuthError, NetworkError, ProtocolError, OdooMCPError, TypeError.
+        """
+        # Determine authentication details (JSON-RPC often uses uid/password)
+        call_uid = uid if uid is not None else self.config.get('uid')
+        call_password = password if password is not None else self.config.get('api_key')
+
+        if call_uid is None or call_password is None:
+            # JSON-RPC execute_kw requires authentication credentials
+            # Unlike XML-RPC's common.authenticate, JSON-RPC usually needs them per call.
+            # If session_id is provided, the expectation is that the caller handles auth,
+            # but Odoo's standard 'execute_kw' still needs uid/pwd.
+            # This highlights a potential mismatch if trying to use session_id directly
+            # with standard execute_kw without a custom Odoo endpoint.
+            # For now, raise AuthError if explicit uid/pwd are missing.
+            # TODO: Revisit this if a session-based JSON-RPC flow is implemented on the Odoo side.
+             raise AuthError("JSON-RPC execute_kw requires explicit uid and password/api_key parameters.")
+
+
+        # Prepare context, merging session_id if provided
+        context = kwargs.pop('context', {}) # Get context from kwargs or default to empty dict
+        if session_id:
+            context['session_id'] = session_id
+            logger.debug(f"Added session_id to context for JSON-RPC call {model}.{method}")
+
+        # Arguments for Odoo's object.execute_kw: db, uid, password, model, method, args[, kwargs]
+        # Note: kwargs (including context) is often the last element.
+        odoo_args = [self.database, call_uid, call_password, model, method, args]
+        if kwargs or context: # Only add kwargs dict if it's not empty
+             final_kwargs = kwargs.copy()
+             if context:
+                  final_kwargs['context'] = context
+             odoo_args.append(final_kwargs)
+
+
+        # Use the 'call' method to execute 'object.execute_kw'
+        # Caching will be handled by 'call' if applicable (though execute_kw is less likely cacheable)
+        return await self.call(service='object', method='execute_kw', args=odoo_args)
+
 
     # Helper to make nested structures hashable (can be shared or moved to utils)
     def _make_hashable(self, item: Any) -> Any:
