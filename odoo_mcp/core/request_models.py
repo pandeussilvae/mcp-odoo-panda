@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ValidationError, validator
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Type
 
 # Modelli Base per JSON-RPC
 class BaseJsonRpcRequest(BaseModel):

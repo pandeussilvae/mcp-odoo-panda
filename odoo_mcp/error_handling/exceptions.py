@@ -1,6 +1,7 @@
 """
 Custom exceptions for the Odoo MCP Server application.
 """
+from typing import Dict, Any
 
 class OdooMCPError(Exception):
     """Base exception for all custom errors raised by the Odoo MCP Server application."""
@@ -62,10 +63,26 @@ class OdooValidationError(ProtocolError): # Inherit from ProtocolError as it's a
     default_code = -32010 # Example custom code for Odoo validation
     default_message = "Odoo validation error"
 
+    def to_jsonrpc_error(self) -> Dict[str, Any]:
+        """Convert exception to JSON-RPC error object using specific code."""
+        return {
+            "code": self.default_code,
+            "message": self.message or self.default_message,
+            "data": str(self.original_exception) if self.original_exception else None
+        }
+
 class OdooRecordNotFoundError(ProtocolError): # Inherit from ProtocolError
     """Raised when an operation targets a record that does not exist."""
     default_code = -32011 # Example custom code for Odoo record not found
     default_message = "Odoo record not found"
+
+    def to_jsonrpc_error(self) -> Dict[str, Any]:
+        """Convert exception to JSON-RPC error object using specific code."""
+        return {
+            "code": self.default_code,
+            "message": self.message or self.default_message,
+            "data": str(self.original_exception) if self.original_exception else None
+        }
 
 # Example of how to use them:
 #

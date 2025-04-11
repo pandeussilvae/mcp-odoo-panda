@@ -8,7 +8,7 @@ api_key: "admin"                  # Replace with your Odoo user's API key or pas
 
 # Server Settings
 protocol: "xmlrpc"                # 'xmlrpc' or 'jsonrpc' - Protocol to use for Odoo communication
-connection_type: "stdio"          # 'stdio' or 'sse' - How the MCP server communicates with the client
+connection_type: "sse"            # 'stdio' or 'sse' - How the MCP server communicates with the client
 host: "127.0.0.1"                 # Host for SSE server (if connection_type is 'sse')
 port: 8080                        # Port for SSE server (if connection_type is 'sse')
 
@@ -26,10 +26,12 @@ session_cleanup_interval: 300     # How often to check for expired sessions (5 m
 
 # Security Settings
 requests_per_minute: 120          # Max requests allowed per minute (0 or less to disable)
+# rate_limit_max_wait_seconds: 5.0 # Optional: Max seconds to wait if rate limit hit
 tls_version: "TLSv1.3"            # Preferred TLS version (enforcement depends on libraries)
-# allowed_origins: ["*"]          # For SSE: List of allowed origins (CORS)
+allowed_origins: ["*"]            # For SSE: List of allowed origins (CORS). '*' allows all. Example: ["http://localhost:3000", "https://myfrontend.com"]
 
 # Performance Settings
+sse_queue_maxsize: 1000           # Max number of responses to queue for SSE clients
 cache_maxsize: 128                # Default max number of items in LRU/TTL caches
 cache_ttl: 300                    # Default time-to-live for cached items in seconds (5 minutes)
 # cache_type: "cachetools"        # Explicitly choose 'cachetools' or 'functools' (auto-detected in code)

@@ -83,7 +83,10 @@ class MCPServer:
 
         # SSE specific state
         self._sse_clients: List[web.StreamResponse] = []
-        self._sse_response_queue = asyncio.Queue() # Queue for responses to send via SSE
+        # Limit queue size to prevent excessive memory usage
+        sse_queue_maxsize = config.get('sse_queue_maxsize', 1000) # Configurable max size
+        self._sse_response_queue = asyncio.Queue(maxsize=sse_queue_maxsize)
+        self._allowed_origins = config.get('allowed_origins', ['*']) # Store allowed origins
 
         logger.info(f"Server Configuration: Protocol={self.protocol_type}, PoolSize={self.pool.pool_size}, Timeout={self.pool.timeout}s")
         logger.info(f"Security: RateLimit={self.rate_limiter.rate}/min, TLS={config.get('tls_version', 'Default')}")
@@ -288,15 +291,38 @@ class MCPServer:
         Returns:
             An aiohttp.web.StreamResponse object representing the SSE connection.
         """
-        logger.info(f"SSE client connected: {request.remote}")
+        logger.info(f"SSE client connection attempt from: {request.remote}")
         resp: Optional[web.StreamResponse] = None # Initialize resp
+        request_origin = request.headers.get('Origin')
+        allowed = False
+        cors_headers = {}
+
+        # Improved CORS check
+        if '*' in self._allowed_origins:
+            allowed = True
+            cors_headers['Access-Control-Allow-Origin'] = '*'
+        elif request_origin and request_origin in self._allowed_origins:
+            allowed = True
+            cors_headers['Access-Control-Allow-Origin'] = request_origin
+            # Allow credentials if specific origin is matched
+            cors_headers['Access-Control-Allow-Credentials'] = 'true'
+        else:
+            logger.warning(f"SSE connection denied for origin: {request_origin}. Allowed: {self._allowed_origins}")
+            # Return 403 Forbidden if origin not allowed
+            return web.Response(status=403, text="Origin not allowed")
+
+        # Add other common CORS headers if allowed
+        if allowed:
+             cors_headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+             cors_headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization' # Example headers
+
         try:
-            # Prepare SSE response with basic CORS headers
-            resp = await sse_response(request, headers={
-                'Access-Control-Allow-Origin': self.config.get('allowed_origins', ['*'])[0] # Basic CORS
-            })
+            # Prepare SSE response with dynamic CORS headers
+            logger.info(f"SSE client allowed from origin: {request_origin or '*'}. Preparing response.")
+            resp = await sse_response(request, headers=cors_headers)
             self._sse_clients.append(resp)
             await resp.prepare(request)
+            logger.info(f"SSE client connected successfully: {request.remote}")
 
             # Keep connection open, send responses from queue
             while not resp.task.done(): # Check if client disconnected
@@ -308,13 +334,12 @@ class MCPServer:
                       await resp.send(response_str)
                       self._sse_response_queue.task_done()
                  except asyncio.CancelledError:
-                      logger.info("SSE handler task cancelled.")
-                      break
+                      logger.info(f"SSE handler task cancelled for {request.remote}.")
+                      break # Exit loop on cancellation
                  except Exception as e:
-                      logger.exception(f"Error sending SSE event: {e}")
-                      # TODO: Consider error handling strategy here. If one client fails,
-                      # should we remove it and continue, or stop processing the queue item?
-                      # Currently, logs error and continues.
+                      logger.exception(f"Error sending SSE event to {request.remote}: {e}. Removing client.")
+                      # Assume persistent error, break loop to remove client in finally block
+                      break # Exit loop on send error
 
         except Exception as e:
             # Catch errors during SSE connection setup or the send loop
@@ -351,10 +376,18 @@ class MCPServer:
             response_data = await self.handle_request(request_data)
 
             # Put response onto the queue for SSE handler to send
-            await self._sse_response_queue.put(response_data)
-
-            # Return simple acknowledgement
-            return web.Response(status=202, text="Request accepted")
+            try:
+                # Use put_nowait to avoid blocking if queue is full
+                self._sse_response_queue.put_nowait(response_data)
+                # Return simple acknowledgement
+                return web.Response(status=202, text="Request accepted")
+            except asyncio.QueueFull:
+                logger.error(f"SSE response queue is full (maxsize={self._sse_response_queue.maxsize}). Discarding response for request ID {response_data.get('id')}.")
+                # Return 503 Service Unavailable if queue is full
+                return web.json_response(
+                    {"jsonrpc": "2.0", "id": request_data.get("id"), "error": {"code": -32001, "message": "Server busy, SSE queue full. Please try again later."}},
+                    status=503
+                )
 
         except json.JSONDecodeError:
             logger.warning("Failed to decode JSON POST request.")

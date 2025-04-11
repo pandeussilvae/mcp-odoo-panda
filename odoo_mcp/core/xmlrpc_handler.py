@@ -1,7 +1,7 @@
 from xmlrpc.client import ServerProxy, Fault, ProtocolError as XmlRpcProtocolError
 # Corrected imports - ensure all needed types from typing are imported
 from typing import Dict, Any, Optional, List, Tuple, Set, Union
-from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, ProtocolError, OdooMCPError, ConfigurationError
+from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, ProtocolError, OdooMCPError, ConfigurationError, OdooValidationError, OdooRecordNotFoundError
 from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE # Import cache manager
 import socket
 import logging
