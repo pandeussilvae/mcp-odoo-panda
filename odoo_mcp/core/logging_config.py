@@ -1,6 +1,7 @@
 import logging
 import sys
 from typing import Dict, Any
+import contextlib # Add contextlib import
 
 # Import the masking utility
 from odoo_mcp.security.utils import mask_sensitive_data
@@ -86,23 +87,27 @@ def setup_logging(config: Dict[str, Any]):
         root_logger.removeHandler(handler)
 
     # Create handler (console or file)
-    if log_file:
-        handler = logging.FileHandler(log_file, encoding='utf-8')
-        print(f"Logging configured to file: {log_file} at level {log_level_str}", file=sys.stderr) # Print config info to stderr
-    else:
-        # Ensure console logs go to stderr to avoid interfering with stdio JSON communication
-        handler = logging.StreamHandler(sys.stderr)
-        print(f"Logging configured to console (stderr) at level {log_level_str}", file=sys.stderr) # Print config info to stderr
+    # Redirect print statements within this block to stderr
+    with contextlib.redirect_stdout(sys.stderr):
+        if log_file:
+            handler = logging.FileHandler(log_file, encoding='utf-8')
+            print(f"Logging configured to file: {log_file} at level {log_level_str}") # Print config info
+        else:
+            # Ensure console logs go to stderr to avoid interfering with stdio JSON communication
+            handler = logging.StreamHandler(sys.stderr) # Handler itself goes to stderr
+            print(f"Logging configured to console (stderr) at level {log_level_str}") # Print config info
 
     handler.setFormatter(formatter)
 
     # Add the masking filter if enabled
-    if mask_sensitive:
-        print("Sensitive data masking is ENABLED for logging.", file=sys.stderr) # Print to stderr
-        sensitive_filter = SensitiveDataFilter()
-        handler.addFilter(sensitive_filter)
-    else:
-         print("Sensitive data masking is DISABLED for logging.", file=sys.stderr) # Print to stderr
+    # Redirect print statements within this block to stderr
+    with contextlib.redirect_stdout(sys.stderr):
+        if mask_sensitive:
+            print("Sensitive data masking is ENABLED for logging.") # Print to stderr via redirect
+            sensitive_filter = SensitiveDataFilter()
+            handler.addFilter(sensitive_filter)
+        else:
+            print("Sensitive data masking is DISABLED for logging.") # Print to stderr via redirect
 
 
     # Add handler to the root logger

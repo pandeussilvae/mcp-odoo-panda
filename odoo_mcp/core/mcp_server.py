@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, Type, Union, List
 import yaml
 from datetime import datetime
 import argparse # Import argparse here
+import contextlib # Add contextlib import
 
 # Import core components
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -832,6 +833,7 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
     except FileNotFoundError:
+         # Use basic console logging if config load fails
         # Use basic console logging if config load fails
         logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
         logger.critical(f"Configuration file not found: {config_path}")
@@ -842,7 +844,9 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
         return
 
     # Setup logging based on the loaded configuration
-    setup_logging(config)
+    # Redirect stdout to stderr during logging setup to avoid printing config messages to stdout
+    with contextlib.redirect_stdout(sys.stderr):
+        setup_logging(config)
 
     # Configure cache manager if cachetools is available
     if cache_manager and CACHE_TYPE == 'cachetools':
@@ -853,13 +857,14 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
             # Decide if this is critical - maybe proceed without cache?
             # For now, log error and continue.
 
+    # Run the server
     try:
         server = MCPServer(config)
         await server.run()
     except ConfigurationError as e:
-         logger.critical(f"Server configuration error: {e}", exc_info=True)
+        logger.critical(f"Server configuration error: {e}", exc_info=True)
     except Exception as e:
-         logger.critical(f"Failed to start or run server: {e}", exc_info=True)
+        logger.critical(f"Failed to start or run server: {e}", exc_info=True)
 
 def main_cli():
     """Command Line Interface entry point."""
