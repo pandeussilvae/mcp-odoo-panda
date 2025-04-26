@@ -53,11 +53,19 @@ git clone https://github.com/pandeussilvae/mcp-odoo-panda.git
 cd mcp-odoo-panda
 
 # Installa le dipendenze
-pip install -r requirements.txt
+pip install .
 
-# Configura il server
-cp config/config.example.yaml config/config.yaml
+# Per installare con supporto caching
+pip install .[caching]
+
+# Per installare con strumenti di sviluppo
+pip install .[dev]
+
+# Copia il file di configurazione di esempio
+cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+
 # Modifica config.yaml con le tue impostazioni
+# nano odoo_mcp/config/config.yaml
 ```
 
 ### Installazione con Docker
@@ -73,7 +81,23 @@ docker-compose up -d
 
 ## Configurazione
 
-Il server può essere configurato attraverso un file YAML:
+Il server può essere configurato attraverso un file YAML. Sono disponibili diversi template di configurazione:
+
+- `config.example.yaml`: Template principale da copiare e modificare
+- `config.dev.yaml`: Template per ambiente di sviluppo (opzionale)
+- `config.prod.yaml`: Template per ambiente di produzione (opzionale)
+
+Per iniziare:
+
+```bash
+# Copia il file di configurazione di esempio
+cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+
+# Modifica config.yaml con le tue impostazioni
+# nano odoo_mcp/config/config.yaml
+```
+
+Esempio di configurazione base:
 
 ```yaml
 # config.yaml
@@ -87,6 +111,8 @@ requests_per_minute: 120
 sse_queue_maxsize: 1000
 allowed_origins: ["*"]  # per connessioni SSE
 ```
+
+Per la configurazione avanzata, consulta i template `config.dev.yaml` e `config.prod.yaml` per esempi di configurazioni specifiche per ambiente.
 
 ## Utilizzo
 
@@ -195,11 +221,19 @@ git clone https://github.com/pandeussilvae/mcp-odoo-panda.git
 cd mcp-odoo-panda
 
 # Install dependencies
-pip install -r requirements.txt
+pip install .
 
-# Configure the server
-cp config/config.example.yaml config/config.yaml
+# To install with caching support
+pip install .[caching]
+
+# To install with development tools
+pip install .[dev]
+
+# Copy example configuration file
+cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+
 # Modify config.yaml with your settings
+# nano odoo_mcp/config/config.yaml
 ```
 
 ### Docker Installation
@@ -215,7 +249,23 @@ docker-compose up -d
 
 ## Configuration
 
-The server can be configured through a YAML file:
+The server can be configured through a YAML file. There are different configuration templates available:
+
+- `config.example.yaml`: Main template to copy and modify
+- `config.dev.yaml`: Template for development environment (optional)
+- `config.prod.yaml`: Template for production environment (optional)
+
+To start:
+
+```bash
+# Copy example configuration file
+cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+
+# Modify config.yaml with your settings
+# nano odoo_mcp/config/config.yaml
+```
+
+Example of basic configuration:
 
 ```yaml
 # config.yaml
@@ -229,6 +279,8 @@ requests_per_minute: 120
 sse_queue_maxsize: 1000
 allowed_origins: ["*"]  # for SSE connections
 ```
+
+For advanced configuration, refer to the `config.dev.yaml` and `config.prod.yaml` templates for example specific environment configurations.
 
 ## Usage
 
