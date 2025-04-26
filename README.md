@@ -12,25 +12,22 @@ TechLab è una società specializzata nello sviluppo di soluzioni software perso
 
 ## Panoramica
 
-Il Server Odoo MCP è un'interfaccia standardizzata per interagire con le istanze Odoo attraverso protocolli moderni. Fornisce supporto per XML-RPC e JSON-RPC, Server-Sent Events (SSE) e integrazione con il sistema bus di Odoo per aggiornamenti in tempo reale.
+Il Server Odoo MCP è un'interfaccia standardizzata per interagire con le istanze Odoo attraverso il protocollo MCP (Model Context Protocol). Fornisce supporto per:
 
-## Caratteristiche
-
-- **Protocolli**:
-  - XML-RPC e JSON-RPC per la comunicazione con Odoo
-  - stdio per comunicazione diretta
-  - SSE per aggiornamenti in tempo reale
+- **Protocolli di Comunicazione**:
+  - stdio: Comunicazione diretta via stdin/stdout
+  - SSE: Aggiornamenti in tempo reale via Server-Sent Events
 
 - **Gestione Risorse**:
-  - Accesso ai record Odoo
-  - Gestione dei campi binari
-  - Aggiornamenti in tempo reale attraverso il bus di Odoo
+  - Record Odoo (singoli e liste)
+  - Campi binari
+  - Aggiornamenti in tempo reale
 
 - **Strumenti**:
-  - Ricerca e lettura record (odoo_search_read, odoo_read)
-  - Creazione e aggiornamento record (odoo_create, odoo_write)
-  - Eliminazione record (odoo_unlink)
-  - Chiamata di metodi personalizzati (odoo_call_method)
+  - Ricerca e lettura record
+  - Creazione e aggiornamento record
+  - Eliminazione record
+  - Chiamata di metodi personalizzati
 
 - **Sicurezza**:
   - Autenticazione e gestione sessioni
@@ -41,6 +38,8 @@ Il Server Odoo MCP è un'interfaccia standardizzata per interagire con le istanz
 
 - Python 3.9+
 - Odoo 15.0+
+  - Moduli necessari: base, web, bus
+  - Configurazione del database con utente admin
 - Docker (opzionale)
 
 ## Installazione
@@ -97,7 +96,7 @@ cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
 # nano odoo_mcp/config/config.yaml
 ```
 
-Esempio di configurazione base:
+Esempio di configurazione completa:
 
 ```yaml
 # config.yaml
@@ -110,9 +109,43 @@ password: admin
 requests_per_minute: 120
 sse_queue_maxsize: 1000
 allowed_origins: ["*"]  # per connessioni SSE
+session_timeout: 3600
+max_sessions: 100
+notification_queue_size: 1000
+notification_timeout: 30
 ```
 
-Per la configurazione avanzata, consulta i template `config.dev.yaml` e `config.prod.yaml` per esempi di configurazioni specifiche per ambiente.
+## Avvio del Server
+
+### Modalità stdio
+
+```bash
+# Avvia il server in modalità stdio
+python -m odoo_mcp.server --config odoo_mcp/config/config.yaml
+```
+
+### Modalità SSE
+
+```bash
+# Avvia il server in modalità SSE
+python -m odoo_mcp.server --config odoo_mcp/config/config.yaml --mode sse
+```
+
+## Verifica del Server
+
+### Modalità stdio
+
+```bash
+# Test di una richiesta
+echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server --config odoo_mcp/config/config.yaml
+```
+
+### Modalità SSE
+
+```bash
+# Test della connessione SSE
+curl http://localhost:8080/events
+```
 
 ## Utilizzo
 
@@ -120,15 +153,15 @@ Per la configurazione avanzata, consulta i template `config.dev.yaml` e `config.
 
 ```python
 import asyncio
-from mcp.client import Client
+from mcp import Client
 
 async def main():
     client = Client(connection_type="stdio")
     await client.initialize()
     
     # Esempio: Leggi un record
-    response = await client.read_resource("odoo://res.partner/1")
-    print(response)
+    resource = await client.get_resource("odoo://res.partner/1")
+    print(resource.data)
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -150,6 +183,9 @@ eventSource.addEventListener('notifications/resources/updated', (event) => {
 ## Documentazione
 
 La documentazione completa è disponibile nella directory `docs/`:
+
+- `mcp_protocol.md`: Documentazione del protocollo MCP
+- `odoo_server.md`: Documentazione del server Odoo
 - `server_usage.md`: Guida all'utilizzo del server
 
 ## Contribuire
@@ -209,6 +245,8 @@ The Odoo MCP Server is a standardized interface for interacting with Odoo instan
 
 - Python 3.9+
 - Odoo 15.0+
+  - Required modules: base, web, bus
+  - Database configuration with admin user
 - Docker (optional)
 
 ## Installation
@@ -265,7 +303,7 @@ cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
 # nano odoo_mcp/config/config.yaml
 ```
 
-Example of basic configuration:
+Example of complete configuration:
 
 ```yaml
 # config.yaml
@@ -278,9 +316,43 @@ password: admin
 requests_per_minute: 120
 sse_queue_maxsize: 1000
 allowed_origins: ["*"]  # for SSE connections
+session_timeout: 3600
+max_sessions: 100
+notification_queue_size: 1000
+notification_timeout: 30
 ```
 
-For advanced configuration, refer to the `config.dev.yaml` and `config.prod.yaml` templates for example specific environment configurations.
+## Server Startup
+
+### stdio Mode
+
+```bash
+# Start server in stdio mode
+python -m odoo_mcp.server --config odoo_mcp/config/config.yaml
+```
+
+### SSE Mode
+
+```bash
+# Start server in SSE mode
+python -m odoo_mcp.server --config odoo_mcp/config/config.yaml --mode sse
+```
+
+## Server Verification
+
+### stdio Mode
+
+```bash
+# Test a request
+echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server --config odoo_mcp/config/config.yaml
+```
+
+### SSE Mode
+
+```bash
+# Test SSE connection
+curl http://localhost:8080/events
+```
 
 ## Usage
 
@@ -288,15 +360,15 @@ For advanced configuration, refer to the `config.dev.yaml` and `config.prod.yaml
 
 ```python
 import asyncio
-from mcp.client import Client
+from mcp import Client
 
 async def main():
     client = Client(connection_type="stdio")
     await client.initialize()
     
     # Example: Read a record
-    response = await client.read_resource("odoo://res.partner/1")
-    print(response)
+    resource = await client.get_resource("odoo://res.partner/1")
+    print(resource.data)
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -318,6 +390,8 @@ eventSource.addEventListener('notifications/resources/updated', (event) => {
 ## Documentation
 
 Complete documentation is available in the `docs/` directory:
+- `mcp_protocol.md`: MCP protocol documentation
+- `odoo_server.md`: Odoo server documentation
 - `server_usage.md`: Server usage guide
 
 ## Contributing

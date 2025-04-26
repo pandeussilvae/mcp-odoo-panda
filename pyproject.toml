@@ -34,7 +34,6 @@ dependencies = [
     "aiohttp>=3.8.0",
     "aiohttp-sse>=2.1.0",
     "websockets>=10.0",
-    "mcp-core>=0.1.0",
 ]
 
 # Optional dependencies allow installing cachetools explicitly
@@ -64,7 +63,7 @@ odoo-mcp-server = "odoo_mcp.core.mcp_server:main_cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["odoo_mcp*"]
+include = ["mcp*", "odoo_mcp*"]
 exclude = ["odoo_mcp.tests*", "odoo_mcp.examples*"]
 
 [tool.mypy]
