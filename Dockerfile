@@ -1,30 +1,44 @@
-# Usa un'immagine Python 3.12 ufficiale (basata su Debian Bookworm) come immagine base
-FROM python:3.12-slim-bookworm
+# Usa un'immagine Python 3.9 ufficiale (basata su Debian Bookworm) come immagine base
+FROM python:3.9-slim-bookworm
 
 # Imposta la directory di lavoro nel container
 WORKDIR /app
 
-# Copia il file delle dipendenze
-# Assumendo che pyproject.toml definisca le dipendenze e il pacchetto
-COPY pyproject.toml ./
+# Installa le dipendenze di sistema necessarie
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Installa le dipendenze di sistema necessarie (se ce ne sono)
-# Esempio: RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
+# Copia i file di configurazione
+COPY pyproject.toml ./
+COPY README.md ./
+COPY LICENSE ./
 
 # Installa le dipendenze Python
-# Aggiorna pip e installa le dipendenze dal pyproject.toml
-RUN pip install --upgrade pip
-RUN pip install .
+RUN pip install --upgrade pip && \
+    pip install .[caching] && \
+    pip install pytest pytest-asyncio flake8 mypy
 
-# Copia il codice sorgente dell'applicazione nella directory di lavoro
+# Copia il codice sorgente dell'applicazione
 COPY ./odoo_mcp ./odoo_mcp
 
-# Comando per eseguire l'applicazione quando il container si avvia
-# Assumendo che il server si avvii eseguendo il modulo mcp_server
-# Modifica questo comando se il punto di ingresso è diverso
+# Crea una directory per i log
+RUN mkdir -p /app/logs && \
+    chmod 777 /app/logs
+
+# Imposta le variabili d'ambiente predefinite
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PROTOCOL=xmlrpc \
+    CONNECTION_TYPE=stdio \
+    LOGGING_LEVEL=INFO
+
+# Comando per eseguire l'applicazione
 CMD ["python", "-m", "odoo_mcp.core.mcp_server"]
 
-# Nota: Le configurazioni (come URL Odoo, credenziali) dovrebbero essere
-# passate tramite variabili d'ambiente (es. -e ODOO_URL=...)
-# o montate come volumi al momento dell'esecuzione del container.
-# Il codice Python dovrà leggere queste variabili d'ambiente (es. os.environ.get('ODOO_URL')).
+# Nota: Le configurazioni Odoo (URL, credenziali) devono essere
+# passate tramite variabili d'ambiente al momento dell'esecuzione:
+# - ODOO_URL
+# - ODOO_DB
+# - ODOO_USER
+# - ODOO_PASSWORD

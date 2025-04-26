@@ -15,13 +15,15 @@ TEST_CONFIG = {
     "connection_type": "stdio",
     "odoo_url": "http://test.odoo.com",
     "database": "test_db",
-    "username": "test_user",
+    "uid": "test_user",
     "password": "test_pass",
     "requests_per_minute": 120,
     "rate_limit_max_wait_seconds": 5,
     "pool_size": 5,
     "timeout": 30,
     "session_timeout_minutes": 60,
+    "sse_queue_maxsize": 1000,
+    "allowed_origins": ["*"],
     "logging": {
         "level": "INFO",
         "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -57,6 +59,8 @@ async def test_server_initialization():
     assert server.connection_type == "stdio"
     assert server.rate_limiter.rate == 120
     assert server.rate_limiter.max_wait_seconds == 5
+    assert server._sse_queue_maxsize == 1000
+    assert server._allowed_origins == ["*"]
 
 @pytest.mark.asyncio
 async def test_list_tools(server):

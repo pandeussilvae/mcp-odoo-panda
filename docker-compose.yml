@@ -3,50 +3,53 @@ version: '3.8'
 services:
   odoo-mcp-server:
     build: 
-      context: . # Costruisce l'immagine dalla directory corrente
+      context: .
       dockerfile: Dockerfile
-    container_name: odoo_mcp_server_compose
+    container_name: odoo_mcp_server
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
     environment:
-      # --- Configurazione Odoo (passata al server MCP) ---
-      # !!! SOSTITUISCI CON I TUOI VALORI REALI !!!
-      - ODOO_URL=https://tuo.odoo.esterno.com 
-      - ODOO_DB=nome_tuo_db_esterno
-      - ODOO_USER=utente_odoo_per_mcp
-      - ODOO_PASSWORD=password_o_apikey_odoo_per_mcp
-      # --- Configurazione Server MCP (opzionale, sovrascrive default nel codice) ---
-      # Assicurati che il tuo mcp_server.py legga queste variabili d'ambiente
-      # o modifica il Dockerfile/codice per usare un file di config montato.
-      - PROTOCOL=xmlrpc # o jsonrpc
-      - CONNECTION_TYPE=stdio # NECESSARIO per comunicazione MCP tra container
-      - LOGGING_LEVEL=INFO 
-      # Aggiungi altre variabili d'ambiente se il tuo mcp_server.py le legge
-    # Non esporre porte se usa solo stdio per MCP
+      # Configurazione Odoo
+      - ODOO_URL=${ODOO_URL:-http://localhost:8069}
+      - ODOO_DB=${ODOO_DB:-odoo}
+      - ODOO_USER=${ODOO_USER:-admin}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+      # Configurazione Server MCP
+      - PROTOCOL=${PROTOCOL:-xmlrpc}
+      - CONNECTION_TYPE=${CONNECTION_TYPE:-stdio}
+      - LOGGING_LEVEL=${LOGGING_LEVEL:-INFO}
+      - REQUESTS_PER_MINUTE=${REQUESTS_PER_MINUTE:-120}
+      - SSE_QUEUE_MAXSIZE=${SSE_QUEUE_MAXSIZE:-1000}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-["*"]}
+    networks:
+      - mcp-network
 
   n8n:
-    image: n8nio/n8n:latest # Usa l'immagine ufficiale di n8n
+    image: n8nio/n8n:latest
     container_name: n8n_mcp_client
     restart: unless-stopped
     ports:
-      - "5678:5678" # Esponi la porta standard di n8n sull'host
+      - "5678:5678"
     environment:
-      # --- Configurazione n8n standard ---
-      - N8N_HOST=localhost # O il tuo dominio/IP se accessibile esternamente
+      # Configurazione n8n
+      - N8N_HOST=${N8N_HOST:-localhost}
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - NODE_ENV=production
-      - WEBHOOK_URL=http://localhost:5678/ # URL per i webhook (adatta se necessario)
-      # --- Configurazione Client MCP per n8n ---
-      # Definisce il server MCP Odoo per n8n. Il client (n8n) avvierà il comando
-      # specificato *all'interno del contesto del container odoo-mcp-server*.
-      # Docker Compose gestisce la rete tra i container.
-      # La sintassi JSON deve essere su una sola riga o correttamente escapata.
-      # Usiamo le variabili definite nel servizio 'odoo-mcp-server'.
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      # Configurazione Client MCP
       - MCP_SERVERS={"odoo-docker":{"command":"python","args":["-m","odoo_mcp.core.mcp_server"],"env":{"ODOO_URL":"${ODOO_URL}","ODOO_DB":"${ODOO_DB}","ODOO_USER":"${ODOO_USER}","ODOO_PASSWORD":"${ODOO_PASSWORD}","PROTOCOL":"${PROTOCOL:-xmlrpc}","CONNECTION_TYPE":"stdio","LOGGING_LEVEL":"${LOGGING_LEVEL:-INFO}"},"enable":true,"autoApprove":[]}}
     volumes:
-      - n8n_data:/home/node/.n8n # Volume per persistere i dati di n8n
+      - n8n_data:/home/node/.n8n
     depends_on:
-      - odoo-mcp-server # Assicura che il server MCP parta prima (o almeno insieme)
+      - odoo-mcp-server
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
 
 volumes:
-  n8n_data: # Definisce il volume per n8n
+  n8n_data:

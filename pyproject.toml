@@ -3,37 +3,38 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "odoo-mcp-server"
+name = "mcp-odoo-panda"
 version = "0.1.0"
-description = "A Message Control Program (MCP) server for Odoo ERP integration."
+description = "A Model Context Protocol (MCP) server for Odoo ERP integration."
 readme = "README.md"
-requires-python = ">=3.8"
-license = { file = "LICENSE" } # Assumes LICENSE file exists
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
 authors = [
-  { name = "Cline (AI)", email = "cline@example.com" }, # Placeholder author
+  { name = "Paolo Nugnes", email = "info@techlab.it" },
+  { name = "TechLab", email = "info@techlab.it" },
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "License :: OSI Approved :: MIT License", # Choose appropriate license
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Systems Administration",
 ]
-keywords = ["odoo", "mcp", "erp", "integration", "rpc"]
+keywords = ["odoo", "mcp", "erp", "integration", "rpc", "model-context-protocol"]
 
 dependencies = [
-    "requests>=2.20.0", # Keep for now, maybe remove later if JSONRPC fully switches
-    "httpx>=0.20.0",    # Add httpx for async requests
-    "PyYAML>=5.4",      # For loading configuration
-    "pydantic>=2.0",    # For input validation
-    "aiohttp>=3.8.0",   # For SSE server mode
-    "aiohttp-sse>=2.1.0", # SSE support for aiohttp
-    # cachetools is optional but recommended for TTL caching
+    "requests>=2.20.0",
+    "httpx>=0.20.0",
+    "PyYAML>=5.4",
+    "pydantic>=2.0",
+    "aiohttp>=3.8.0",
+    "aiohttp-sse>=2.1.0",
+    "websockets>=10.0",
+    "mcp-core>=0.1.0",
 ]
 
 # Optional dependencies allow installing cachetools explicitly
@@ -41,32 +42,41 @@ dependencies = [
 caching = ["cachetools>=4.2"]
 dev = [
     "pytest>=6.0",
-    "pytest-asyncio", # Ensure this is present for async tests
+    "pytest-asyncio",
     "flake8",
     "mypy",
     "types-PyYAML",
     "types-requests",
-    "types-cachetools", # Add if cachetools is used
-    "respx",            # For mocking httpx requests in tests
-    # "types-pydantic", # Removed as it might not exist or be needed for Pydantic v2+
+    "types-cachetools",
+    "respx",
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/odoo-mcp-server" # Placeholder URL
-Issues = "https://github.com/example/odoo-mcp-server/issues" # Placeholder URL
+Homepage = "https://github.com/pandeussilvae/mcp-odoo-panda"
+Documentation = "https://github.com/pandeussilvae/mcp-odoo-panda/tree/main/docs"
+Repository = "https://github.com/pandeussilvae/mcp-odoo-panda.git"
+Issues = "https://github.com/pandeussilvae/mcp-odoo-panda/issues"
 
 # Entry point to run the server (optional)
 # This allows running 'odoo-mcp-server' from command line after installation
 [project.scripts]
-odoo-mcp-server = "odoo_mcp.core.mcp_server:main_cli" # Assumes a main_cli function exists
+odoo-mcp-server = "odoo_mcp.core.mcp_server:main_cli"
 
 [tool.setuptools.packages.find]
-where = ["."] # Look for packages in the current directory
-include = ["odoo_mcp*"] # Include the main package and its subpackages
-exclude = ["odoo_mcp.tests*", "odoo_mcp.examples*"] # Exclude tests and examples from installed package
+where = ["."]
+include = ["odoo_mcp*"]
+exclude = ["odoo_mcp.tests*", "odoo_mcp.examples*"]
 
-# Configuration for tools like mypy, flake8 can also go here
-# [tool.mypy]
-# ...
-# [tool.flake8]
-# ...
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+
+[tool.flake8]
+max-line-length = 100
+exclude = [".git", "__pycache__", "build", "dist"]
+per-file-ignores = [
+    "__init__.py:F401",
+]
