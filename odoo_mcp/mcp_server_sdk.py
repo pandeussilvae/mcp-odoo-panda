@@ -126,22 +126,24 @@ def get_odoo_binary(model: str, field: str, id: int) -> types.Resource:
 @mcp.tool()
 def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None) -> list:
     handler = odoo
+    context = context or {}
     records = handler.execute_kw(
         model=model,
         method="search_read",
         args=[domain, fields],
-        kwargs={"limit": limit, "offset": offset, "context": context or {}},
+        kwargs={"limit": limit, "offset": offset, "context": context},
     )
     return records
 
 @mcp.tool()
 def odoo_read(model: str, ids: list, fields: list, *, context: dict = None) -> list:
     handler = odoo
+    context = context or {}
     records = handler.execute_kw(
         model=model,
         method="read",
         args=[ids, fields],
-        kwargs={"context": context or {}},
+        kwargs={"context": context},
     )
     return records
 
@@ -159,11 +161,12 @@ def odoo_create(model: str, values: dict, *, context: dict = None) -> dict:
 @mcp.tool()
 def odoo_write(model: str, ids: list, values: dict, *, context: dict = None) -> dict:
     handler = odoo
+    context = context or {}
     result = handler.execute_kw(
         model=model,
         method="write",
         args=[ids, values],
-        kwargs={"context": context or {}},
+        kwargs={"context": context},
     )
     return {"success": result}
 
@@ -181,11 +184,12 @@ def odoo_unlink(model: str, ids: list, *, context: dict = None) -> dict:
 @mcp.tool()
 def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = None) -> dict:
     handler = odoo
+    context = context or {}
     result = handler.execute_kw(
         model=model,
         method=method,
         args=args or [],
-        kwargs=kwargs or {},
+        kwargs={**(kwargs or {}), "context": context},
     )
     return {"result": result}
 
