@@ -395,10 +395,12 @@ class OdooMCPServer(Server):
     async def run(self):
         """Run the server."""
         if self.connection_type == 'stdio':
+            logger.info("[MCP] Server avviato in modalità STDIO (comunicazione tramite stdin/stdout)")
             await self.protocol.run()
         elif self.connection_type == 'sse':
             host = self.config.get('host', 'localhost')
             port = self.config.get('port', 8080)
+            logger.info(f"[MCP] Server avviato in modalità SSE su http://{host}:{port}")
             await self.protocol.run(host=host, port=port)
 
     async def stop(self):
