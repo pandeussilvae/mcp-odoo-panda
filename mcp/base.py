@@ -23,6 +23,19 @@ class Server(ABC):
     Provides the core functionality and interface for MCP protocol implementation.
     """
 
+    def __init__(self, name: str, version: str):
+        """
+        Initialize the MCP server.
+
+        Args:
+            name: The name of the server
+            version: The version of the server
+        """
+        self.name = name
+        self.version = version
+        self._running = False
+        self._shutdown_requested = False
+
     @property
     @abstractmethod
     def capabilities(self) -> Dict[str, Any]:
