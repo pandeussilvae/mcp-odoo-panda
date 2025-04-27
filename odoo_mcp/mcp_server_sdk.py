@@ -1,5 +1,6 @@
 import yaml
 import json
+import uuid
 from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -13,10 +14,54 @@ config = load_odoo_config()
 odoo = XMLRPCHandler(config)
 mcp = FastMCP("odoo-mcp-server")
 
+# --- SESSION MANAGER IN MEMORIA ---
+sessions = {}
+
+def create_session(username, password, database, odoo_url):
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = {
+        "username": username,
+        "password": password,
+        "database": database,
+        "odoo_url": odoo_url,
+    }
+    return session_id
+
+def get_session(session_id):
+    return sessions.get(session_id)
+
+# --- TOOL DI LOGIN ---
+@mcp.tool()
+def odoo_login(username: str, password: str, database: str, odoo_url: str = None) -> dict:
+    url = odoo_url or config["odoo_url"]
+    handler = XMLRPCHandler({
+        "odoo_url": url,
+        "database": database,
+        "username": username,
+        "api_key": password,
+    })
+    try:
+        uid = handler.common.authenticate(database, username, password, {})
+        if not uid:
+            return {"success": False, "error": "Invalid credentials"}
+        session_id = create_session(username, password, database, url)
+        return {"success": True, "session_id": session_id}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # --- RISORSE MCP ---
 @mcp.resource("odoo://{model}/{id}")
-def get_odoo_record(model: str, id: int) -> types.Resource:
-    record = odoo.execute_kw(
+def get_odoo_record(model: str, id: int, session_id: str = None) -> types.Resource:
+    creds = get_session(session_id) if session_id else None
+    handler = odoo
+    if creds:
+        handler = XMLRPCHandler({
+            "odoo_url": creds["odoo_url"],
+            "database": creds["database"],
+            "username": creds["username"],
+            "api_key": creds["password"],
+        })
+    record = handler.execute_kw(
         model=model,
         method="read",
         args=[[id]],
@@ -29,8 +74,17 @@ def get_odoo_record(model: str, id: int) -> types.Resource:
     )
 
 @mcp.resource("odoo://{model}/list")
-def list_odoo_records(model: str) -> types.Resource:
-    records = odoo.execute_kw(
+def list_odoo_records(model: str, session_id: str = None) -> types.Resource:
+    creds = get_session(session_id) if session_id else None
+    handler = odoo
+    if creds:
+        handler = XMLRPCHandler({
+            "odoo_url": creds["odoo_url"],
+            "database": creds["database"],
+            "username": creds["username"],
+            "api_key": creds["password"],
+        })
+    records = handler.execute_kw(
         model=model,
         method="search_read",
         args=[[], ["id", "name"]],
@@ -43,8 +97,17 @@ def list_odoo_records(model: str) -> types.Resource:
     )
 
 @mcp.resource("odoo://{model}/binary/{field}/{id}")
-def get_odoo_binary(model: str, field: str, id: int) -> types.Resource:
-    data = odoo.execute_kw(
+def get_odoo_binary(model: str, field: str, id: int, session_id: str = None) -> types.Resource:
+    creds = get_session(session_id) if session_id else None
+    handler = odoo
+    if creds:
+        handler = XMLRPCHandler({
+            "odoo_url": creds["odoo_url"],
+            "database": creds["database"],
+            "username": creds["username"],
+            "api_key": creds["password"],
+        })
+    data = handler.execute_kw(
         model=model,
         method="read",
         args=[[id], [field]],
@@ -59,8 +122,17 @@ def get_odoo_binary(model: str, field: str, id: int) -> types.Resource:
 
 # --- TOOLS MCP ---
 @mcp.tool()
-def odoo_search_read(model: str, domain: list, fields: list, limit: int = 80, offset: int = 0, context: dict = None) -> list:
-    records = odoo.execute_kw(
+def odoo_search_read(model: str, domain: list, fields: list, limit: int = 80, offset: int = 0, context: dict = None, session_id: str = None) -> list:
+    creds = get_session(session_id) if session_id else None
+    handler = odoo
+    if creds:
+        handler = XMLRPCHandler({
+            "odoo_url": creds["odoo_url"],
+            "database": creds["database"],
+            "username": creds["username"],
+            "api_key": creds["password"],
+        })
+    records = handler.execute_kw(
         model=model,
         method="search_read",
         args=[domain, fields],
@@ -69,8 +141,17 @@ def odoo_search_read(model: str, domain: list, fields: list, limit: int = 80, of
     return records
 
 @mcp.tool()
-def odoo_read(model: str, ids: list, fields: list, context: dict = None) -> list:
-    records = odoo.execute_kw(
+def odoo_read(model: str, ids: list, fields: list, context: dict = None, session_id: str = None) -> list:
+    creds = get_session(session_id) if session_id else None
+    handler = odoo
+    if creds:
+        handler = XMLRPCHandler({
+            "odoo_url": creds["odoo_url"],
+            "database": creds["database"],
+            "username": creds["username"],
+            "api_key": creds["password"],
+        })
+    records = handler.execute_kw(
         model=model,
         method="read",
         args=[ids, fields],
@@ -79,8 +160,17 @@ def odoo_read(model: str, ids: list, fields: list, context: dict = None) -> list
     return records
 
 @mcp.tool()
-def odoo_create(model: str, values: dict, context: dict = None) -> dict:
-    record_id = odoo.execute_kw(
+def odoo_create(model: str, values: dict, context: dict = None, session_id: str = None) -> dict:
+    creds = get_session(session_id) if session_id else None
+    handler = odoo
+    if creds:
+        handler = XMLRPCHandler({
+            "odoo_url": creds["odoo_url"],
+            "database": creds["database"],
+            "username": creds["username"],
+            "api_key": creds["password"],
+        })
+    record_id = handler.execute_kw(
         model=model,
         method="create",
         args=[values],
@@ -89,8 +179,17 @@ def odoo_create(model: str, values: dict, context: dict = None) -> dict:
     return {"id": record_id}
 
 @mcp.tool()
-def odoo_write(model: str, ids: list, values: dict, context: dict = None) -> dict:
-    result = odoo.execute_kw(
+def odoo_write(model: str, ids: list, values: dict, context: dict = None, session_id: str = None) -> dict:
+    creds = get_session(session_id) if session_id else None
+    handler = odoo
+    if creds:
+        handler = XMLRPCHandler({
+            "odoo_url": creds["odoo_url"],
+            "database": creds["database"],
+            "username": creds["username"],
+            "api_key": creds["password"],
+        })
+    result = handler.execute_kw(
         model=model,
         method="write",
         args=[ids, values],
@@ -99,8 +198,17 @@ def odoo_write(model: str, ids: list, values: dict, context: dict = None) -> dic
     return {"success": result}
 
 @mcp.tool()
-def odoo_unlink(model: str, ids: list, context: dict = None) -> dict:
-    result = odoo.execute_kw(
+def odoo_unlink(model: str, ids: list, context: dict = None, session_id: str = None) -> dict:
+    creds = get_session(session_id) if session_id else None
+    handler = odoo
+    if creds:
+        handler = XMLRPCHandler({
+            "odoo_url": creds["odoo_url"],
+            "database": creds["database"],
+            "username": creds["username"],
+            "api_key": creds["password"],
+        })
+    result = handler.execute_kw(
         model=model,
         method="unlink",
         args=[ids],
@@ -109,8 +217,17 @@ def odoo_unlink(model: str, ids: list, context: dict = None) -> dict:
     return {"success": result}
 
 @mcp.tool()
-def odoo_call_method(model: str, method: str, args: list = None, kwargs: dict = None, context: dict = None) -> dict:
-    result = odoo.execute_kw(
+def odoo_call_method(model: str, method: str, args: list = None, kwargs: dict = None, context: dict = None, session_id: str = None) -> dict:
+    creds = get_session(session_id) if session_id else None
+    handler = odoo
+    if creds:
+        handler = XMLRPCHandler({
+            "odoo_url": creds["odoo_url"],
+            "database": creds["database"],
+            "username": creds["username"],
+            "api_key": creds["password"],
+        })
+    result = handler.execute_kw(
         model=model,
         method=method,
         args=args or [],
