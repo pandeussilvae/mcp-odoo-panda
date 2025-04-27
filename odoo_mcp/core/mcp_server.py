@@ -26,7 +26,7 @@ from odoo_mcp.core.bus_handler import OdooBusHandler
 
 # Import MCP components
 from mcp import (
-    MCPServer, Resource, Tool, Prompt,
+    Server, Resource, Tool, Prompt,
     ServerInfo, ClientInfo, ResourceTemplate,
     GetPromptResult, PromptMessage, TextContent,
     ResourceType, StdioProtocol, SSEProtocol
@@ -34,7 +34,7 @@ from mcp import (
 
 logger = logging.getLogger(__name__)
 
-class OdooMCPServer(MCPServer):
+class OdooMCPServer(Server):
     """
     Odoo MCP Server implementation.
     """
