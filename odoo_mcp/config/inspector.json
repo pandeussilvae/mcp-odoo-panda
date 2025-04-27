@@ -4,7 +4,7 @@
             "command": "uv",
             "args": [
                 "run",
-                "/mnt/c/Users/Paolo/Documents/Paolo/mcp-odoo-panda/mcp/server.py",
+                "mcp/server.py",
                 "--config",
                 "odoo_mcp/config/config.json"
             ],
