@@ -25,7 +25,7 @@ from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE
 from odoo_mcp.core.bus_handler import OdooBusHandler
 
 # Import MCP components
-from mcp import (
+from mcp_local_backup import (
     Server, Resource, Tool, Prompt,
     ServerInfo, ClientInfo, ResourceTemplate,
     GetPromptResult, PromptMessage, TextContent,

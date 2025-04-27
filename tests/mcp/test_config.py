@@ -1,5 +1,5 @@
 import pytest
-from mcp.config import MCPConfig, load_config
+from mcp_local_backup.config import MCPConfig, load_config
 
 def test_mcp_config():
     config = MCPConfig(

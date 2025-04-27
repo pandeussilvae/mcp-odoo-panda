@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch
-from mcp.session import MCPSession, SessionError
+from mcp_local_backup.session import MCPSession, SessionError
 
 @pytest.fixture
 def mock_config():

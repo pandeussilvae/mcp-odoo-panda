@@ -7,8 +7,8 @@ import asyncio
 import logging
 from typing import Dict, Any
 
-from mcp.config import load_config
-from mcp.log_config import setup_logging
+from mcp_local_backup.config import load_config
+from mcp_local_backup.log_config import setup_logging
 from odoo_mcp.core.mcp_server import OdooMCPServer
 
 logger = logging.getLogger(__name__)

@@ -1,6 +1,6 @@
 import pytest
 import logging
-from mcp.logging import setup_logging, get_logger
+from mcp_local_backup.logging import setup_logging, get_logger
 
 def test_setup_logging():
     setup_logging()

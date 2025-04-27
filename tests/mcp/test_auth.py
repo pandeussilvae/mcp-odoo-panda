@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch
-from mcp.auth import MCPAuth, AuthError
+from mcp_local_backup.auth import MCPAuth, AuthError
 
 @pytest.fixture
 def mock_config():

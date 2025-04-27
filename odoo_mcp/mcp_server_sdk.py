@@ -1,7 +1,7 @@
 import yaml
 import json
-from mcp.server.fastmcp import FastMCP
-import mcp.types as types
+from mcp_local_backup.server.fastmcp import FastMCP
+import mcp_local_backup.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 
 # Carica la configurazione Odoo

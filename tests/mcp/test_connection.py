@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock, patch
-from mcp.connection import MCPConnection
-from mcp.config import MCPConfig
+from mcp_local_backup.connection import MCPConnection
+from mcp_local_backup.config import MCPConfig
 
 @pytest.fixture
 def mock_config():

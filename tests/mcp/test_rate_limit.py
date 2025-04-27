@@ -1,7 +1,7 @@
 import pytest
 import time
 from unittest.mock import Mock
-from mcp.rate_limit import RateLimiter, RateLimitError
+from mcp_local_backup.rate_limit import RateLimiter, RateLimitError
 
 @pytest.fixture
 def mock_config():

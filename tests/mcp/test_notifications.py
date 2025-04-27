@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch
-from mcp.notifications import MCPNotification, NotificationManager
+from mcp_local_backup.notifications import MCPNotification, NotificationManager
 
 @pytest.fixture
 def mock_config():

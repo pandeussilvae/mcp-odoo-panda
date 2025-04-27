@@ -1,5 +1,5 @@
 import pytest
-from mcp.errors import (
+from mcp_local_backup.errors import (
     MCPError,
     AuthError,
     RateLimitError,
