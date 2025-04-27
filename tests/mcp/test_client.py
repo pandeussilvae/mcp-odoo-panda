@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from mcp.client import MCPClient
 from mcp.config import MCPConfig
-from mcp.types import Resource, ResourceType
+from mcp.resource_types import Resource, ResourceType
 
 @pytest.fixture
 def mock_config():

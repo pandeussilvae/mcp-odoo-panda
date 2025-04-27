@@ -1,5 +1,5 @@
 import pytest
-from mcp.types import ResourceType, Resource, Tool, Prompt
+from mcp.resource_types import ResourceType, Resource, Tool, Prompt
 
 def test_resource_type():
     assert ResourceType.RECORD.value == "record"
