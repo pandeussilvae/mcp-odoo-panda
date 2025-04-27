@@ -14,17 +14,17 @@ from mcp.resource_types import (
     Resource,
     ResourceType,
     Tool,
-    Prompt
+    Prompt,
+    Server,
+    ServerInfo,
+    ClientInfo,
+    ResourceTemplate,
+    GetPromptResult,
+    PromptMessage
 )
 from mcp.config import load_config
 from mcp.client import MCPClient
 from mcp.logging import setup_logging
-
-from .types import (
-    Server, Resource, Tool, Prompt,
-    ServerInfo, ClientInfo, ResourceTemplate,
-    GetPromptResult, PromptMessage
-)
 
 logger = logging.getLogger(__name__)
 
