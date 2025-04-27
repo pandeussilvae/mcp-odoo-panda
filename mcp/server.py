@@ -28,7 +28,7 @@ from mcp.logging import setup_logging
 
 logger = logging.getLogger(__name__)
 
-class MCPServer(ABC):
+class MCPServer(Server):
     """
     Base class for MCP servers.
     Provides the core functionality and interface for MCP protocol implementation.
