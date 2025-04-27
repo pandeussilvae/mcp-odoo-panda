@@ -1,9 +1,10 @@
 {
     "mcpServers": {
         "odoo-mcp-server": {
-            "command": "python3",
+            "command": "python3.10",
             "args": [
-                "odoo_mcp/mcp_server_sdk.py"
+                "-m",
+                "odoo_mcp.mcp_server_sdk"
             ]
         }
     }
