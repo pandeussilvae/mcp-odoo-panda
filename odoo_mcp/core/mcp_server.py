@@ -420,7 +420,7 @@ class OdooMCPServer(Server):
 
             # Handle different methods
             if method == 'initialize':
-                client_info = ClientInfo(**params)
+                client_info = ClientInfo.from_dict(params)
                 server_info = asyncio.run(self.initialize(client_info))
                 return {
                     'jsonrpc': '2.0',
