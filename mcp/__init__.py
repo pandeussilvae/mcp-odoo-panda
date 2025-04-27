@@ -3,10 +3,11 @@ MCP (Model Context Protocol) core implementation.
 This package provides the core functionality for implementing MCP servers.
 """
 
-from .types import (
+from .resource_types import (
     Resource, ResourceTemplate, Tool, Prompt,
     ServerInfo, ClientInfo, GetPromptResult,
-    PromptMessage, TextContent, ResourceType
+    PromptMessage, TextContent, ResourceType,
+    Server
 )
 from .server import MCPServer
 from .protocol.stdio import StdioProtocol
@@ -23,6 +24,7 @@ __all__ = [
     'PromptMessage',
     'TextContent',
     'ResourceType',
+    'Server',
     'MCPServer',
     'StdioProtocol',
     'SSEProtocol'
