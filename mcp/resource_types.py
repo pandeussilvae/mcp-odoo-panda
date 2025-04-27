@@ -53,14 +53,19 @@ class ServerInfo:
 
 @dataclass
 class ClientInfo:
-    """Information about the MCP client."""
+    """
+    Information about the MCP client.
+    Use from_dict to safely construct from dicts with extra keys.
+    """
     name: str
     version: str
     capabilities: Dict[str, Any]
-    def __init__(self, name: str, version: str, capabilities: dict, **kwargs):
-        self.name = name
-        self.version = version
-        self.capabilities = capabilities
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        allowed = {"name", "version", "capabilities"}
+        filtered = {k: v for k, v in data.items() if k in allowed}
+        return cls(**filtered)
 
 @dataclass
 class GetPromptResult:
