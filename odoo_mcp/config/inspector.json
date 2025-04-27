@@ -1,14 +1,10 @@
 {
     "mcpServers": {
-        "mcp-odoo-panda": {
-            "command": "uv",
+        "odoo-mcp-server": {
+            "command": "python3",
             "args": [
-                "run",
-                "mcp/server.py",
-                "--config",
-                "odoo_mcp/config/config.yaml"
-            ],
-            "directory": "/mnt/c/Users/Paolo/Documents/Paolo/mcp-odoo-panda"
+                "odoo_mcp/mcp_server_sdk.py"
+            ]
         }
     }
 } 
