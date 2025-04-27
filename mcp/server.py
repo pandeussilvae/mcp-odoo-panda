@@ -24,7 +24,7 @@ from mcp.resource_types import (
 )
 from mcp.config import load_config
 from mcp.client import MCPClient
-from mcp.logging import setup_logging
+from mcp.log_config import setup_logging
 
 logger = logging.getLogger(__name__)
 

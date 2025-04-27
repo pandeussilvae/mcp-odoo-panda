@@ -1,10 +1,9 @@
 """
-MCP (Model Context Protocol) logging module.
+MCP (Model Context Protocol) logging configuration module.
 This module provides logging configuration for MCP servers.
 """
 
 import logging
-import logging.handlers
 from typing import Dict, Any, List, Optional
 
 def setup_logging(config: Optional[Dict[str, Any]] = None) -> None:
