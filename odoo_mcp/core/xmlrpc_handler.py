@@ -51,6 +51,7 @@ class XMLRPCHandler:
                 ssl_context = ssl.SSLContext(protocol_version)
                 ssl_context.check_hostname = True
                 ssl_context.verify_mode = ssl.CERT_REQUIRED
+                ssl_context.load_default_certs()  # Carica i certificati CA di sistema
 
                 min_version_set = False
                 if hasattr(ssl, 'TLSVersion') and hasattr(ssl_context, 'minimum_version'):
