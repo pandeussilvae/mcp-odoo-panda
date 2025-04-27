@@ -210,15 +210,9 @@ def advanced_search(model: str, domain: list) -> str:
 def call_method(model: str, method: str, *, args: list = None, kwargs: dict = None) -> str:
     return f"Chiamata metodo {method} su {model} con args={args} kwargs={kwargs}"
 
-@mcp.tool(
-    description="Elenca tutti i modelli Odoo disponibili",
-    annotations={
-        "title": "List Odoo Models",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
-)
+@mcp.tool()
 def odoo_list_models() -> list:
+    """Elenca tutti i modelli Odoo disponibili (model e name)."""
     handler = odoo
     models = handler.execute_kw(
         model="ir.model",
