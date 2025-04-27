@@ -51,7 +51,7 @@ def get_session(session_id):
 
 # --- TOOL DI LOGIN ---
 @mcp.tool()
-def odoo_login(username: str = None, password: str = None, database: str = None, odoo_url: str = None) -> dict:
+def odoo_login(*, username: str = None, password: str = None, database: str = None, odoo_url: str = None) -> dict:
     # Gerarchia: runtime > env > config > errore
     try:
         u = get_credential("username", username, config, "ODOO_USERNAME")
@@ -88,7 +88,7 @@ def get_handler_for_session(session_id: str = None):
     return odoo
 
 @mcp.resource("odoo://{model}/{id}")
-def get_odoo_record(model: str, id: int, session_id: str = None) -> types.Resource:
+def get_odoo_record(model: str, id: int, *, session_id: str = None) -> types.Resource:
     handler = get_handler_for_session(session_id)
     record = handler.execute_kw(
         model=model,
@@ -103,7 +103,7 @@ def get_odoo_record(model: str, id: int, session_id: str = None) -> types.Resour
     )
 
 @mcp.resource("odoo://{model}/list")
-def list_odoo_records(model: str, session_id: str = None) -> types.Resource:
+def list_odoo_records(model: str, *, session_id: str = None) -> types.Resource:
     handler = get_handler_for_session(session_id)
     records = handler.execute_kw(
         model=model,
@@ -118,7 +118,7 @@ def list_odoo_records(model: str, session_id: str = None) -> types.Resource:
     )
 
 @mcp.resource("odoo://{model}/binary/{field}/{id}")
-def get_odoo_binary(model: str, field: str, id: int, session_id: str = None) -> types.Resource:
+def get_odoo_binary(model: str, field: str, id: int, *, session_id: str = None) -> types.Resource:
     handler = get_handler_for_session(session_id)
     data = handler.execute_kw(
         model=model,
@@ -135,7 +135,7 @@ def get_odoo_binary(model: str, field: str, id: int, session_id: str = None) -> 
 
 # --- TOOLS MCP ---
 @mcp.tool()
-def odoo_search_read(model: str, domain: list, fields: list, limit: int = 80, offset: int = 0, context: dict = None, session_id: str = None) -> list:
+def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None, session_id: str = None) -> list:
     handler = get_handler_for_session(session_id)
     records = handler.execute_kw(
         model=model,
@@ -146,7 +146,7 @@ def odoo_search_read(model: str, domain: list, fields: list, limit: int = 80, of
     return records
 
 @mcp.tool()
-def odoo_read(model: str, ids: list, fields: list, context: dict = None, session_id: str = None) -> list:
+def odoo_read(model: str, ids: list, fields: list, *, context: dict = None, session_id: str = None) -> list:
     handler = get_handler_for_session(session_id)
     records = handler.execute_kw(
         model=model,
@@ -157,7 +157,7 @@ def odoo_read(model: str, ids: list, fields: list, context: dict = None, session
     return records
 
 @mcp.tool()
-def odoo_create(model: str, values: dict, context: dict = None, session_id: str = None) -> dict:
+def odoo_create(model: str, values: dict, *, context: dict = None, session_id: str = None) -> dict:
     handler = get_handler_for_session(session_id)
     record_id = handler.execute_kw(
         model=model,
@@ -168,7 +168,7 @@ def odoo_create(model: str, values: dict, context: dict = None, session_id: str 
     return {"id": record_id}
 
 @mcp.tool()
-def odoo_write(model: str, ids: list, values: dict, context: dict = None, session_id: str = None) -> dict:
+def odoo_write(model: str, ids: list, values: dict, *, context: dict = None, session_id: str = None) -> dict:
     handler = get_handler_for_session(session_id)
     result = handler.execute_kw(
         model=model,
@@ -179,7 +179,7 @@ def odoo_write(model: str, ids: list, values: dict, context: dict = None, sessio
     return {"success": result}
 
 @mcp.tool()
-def odoo_unlink(model: str, ids: list, context: dict = None, session_id: str = None) -> dict:
+def odoo_unlink(model: str, ids: list, *, context: dict = None, session_id: str = None) -> dict:
     handler = get_handler_for_session(session_id)
     result = handler.execute_kw(
         model=model,
@@ -190,7 +190,7 @@ def odoo_unlink(model: str, ids: list, context: dict = None, session_id: str = N
     return {"success": result}
 
 @mcp.tool()
-def odoo_call_method(model: str, method: str, args: list = None, kwargs: dict = None, context: dict = None, session_id: str = None) -> dict:
+def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = None, session_id: str = None) -> dict:
     handler = get_handler_for_session(session_id)
     result = handler.execute_kw(
         model=model,
@@ -218,7 +218,7 @@ def advanced_search(model: str, domain: list) -> str:
     return f"Ricerca avanzata su {model} con dominio {domain}"
 
 @mcp.prompt()
-def call_method(model: str, method: str, args: list = None, kwargs: dict = None) -> str:
+def call_method(model: str, method: str, *, args: list = None, kwargs: dict = None) -> str:
     return f"Chiamata metodo {method} su {model} con args={args} kwargs={kwargs}"
 
 if __name__ == "__main__":
