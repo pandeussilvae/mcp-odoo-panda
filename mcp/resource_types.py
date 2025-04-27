@@ -57,6 +57,10 @@ class ClientInfo:
     name: str
     version: str
     capabilities: Dict[str, Any]
+    def __init__(self, name: str, version: str, capabilities: dict, **kwargs):
+        self.name = name
+        self.version = version
+        self.capabilities = capabilities
 
 @dataclass
 class GetPromptResult:
