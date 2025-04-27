@@ -6,10 +6,9 @@ This package provides the core functionality for implementing MCP servers.
 from .resource_types import (
     Resource, ResourceTemplate, Tool, Prompt,
     ServerInfo, ClientInfo, GetPromptResult,
-    PromptMessage, TextContent, ResourceType,
-    Server
+    PromptMessage, TextContent, ResourceType
 )
-from .server import MCPServer
+from .base import Server
 from .protocol.stdio import StdioProtocol
 from .protocol.sse import SSEProtocol
 
@@ -25,7 +24,6 @@ __all__ = [
     'TextContent',
     'ResourceType',
     'Server',
-    'MCPServer',
     'StdioProtocol',
     'SSEProtocol'
 ] 

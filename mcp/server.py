@@ -1,29 +1,13 @@
 """
-MCP (Model Context Protocol) server base class.
-This module provides the base implementation for MCP servers.
+MCP (Model Context Protocol) server entry point.
+This module provides the main entry point for running MCP servers.
 """
 
 import asyncio
-import json
 import logging
-import sys
-from typing import Dict, Any, List, Optional, Union, Callable
-from abc import ABC, abstractmethod
+from typing import Dict, Any
 
-from mcp.resource_types import (
-    Resource,
-    ResourceType,
-    Tool,
-    Prompt,
-    Server,
-    ServerInfo,
-    ClientInfo,
-    ResourceTemplate,
-    GetPromptResult,
-    PromptMessage
-)
 from mcp.config import load_config
-from mcp.client import MCPClient
 from mcp.log_config import setup_logging
 from odoo_mcp.core.mcp_server import OdooMCPServer
 
