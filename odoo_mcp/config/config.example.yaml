@@ -3,8 +3,8 @@
 # Configurazione Odoo
 odoo_url: http://localhost:8069
 database: odoo
-uid: admin
-password: admin
+username: admin
+api_key: admin
 
 # Configurazione Server
 protocol: xmlrpc  # o jsonrpc
