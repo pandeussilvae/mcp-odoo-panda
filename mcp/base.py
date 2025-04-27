@@ -23,16 +23,18 @@ class Server(ABC):
     Provides the core functionality and interface for MCP protocol implementation.
     """
 
-    def __init__(self, name: str, version: str):
+    def __init__(self, name: str, version: str, protocolVersion: str = "1.0"):
         """
         Initialize the MCP server.
 
         Args:
             name: The name of the server
             version: The version of the server
+            protocolVersion: The version of the MCP protocol to use
         """
         self.name = name
         self.version = version
+        self.protocolVersion = protocolVersion
         self._running = False
         self._shutdown_requested = False
 
