@@ -95,6 +95,19 @@ class XMLRPCHandler:
             self.common = ServerProxy(common_url, context=ssl_context)
             self.models = ServerProxy(models_url, context=ssl_context)
             logger.info("XMLRPCHandler initialized proxies for common and object endpoints.")
+            # Autenticazione globale per log di connessione riuscita
+            try:
+                auth_user = self.username
+                auth_pass = self.password
+                if not auth_user or not auth_pass:
+                    raise AuthError("Missing global username/api_key in config for initial handler authentication.")
+                self.global_uid = self.common.authenticate(self.database, auth_user, auth_pass, {})
+                self.global_password = auth_pass
+                if not self.global_uid:
+                    raise AuthError("Failed to authenticate with global credentials.")
+                logger.info(f"Successfully connected to Odoo at {self.odoo_url} (db: {self.database}, user: {self.username})")
+            except Exception as auth_e:
+                logger.error(f"Failed to authenticate with Odoo during handler init: {auth_e}")
         # Corrected order: Catch specific network/protocol errors first
         except (XmlRpcProtocolError, socket.gaierror, ConnectionRefusedError, OSError) as e:
              raise NetworkError(f"Failed to connect or authenticate via XML-RPC at {common_url}: {e}", original_exception=e)
