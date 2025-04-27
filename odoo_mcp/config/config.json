@@ -1,0 +1,28 @@
+{
+    "odoo_url": "http://localhost:8069",
+    "database": "odoo",
+    "uid": "admin",
+    "password": "admin",
+    "protocol": "xmlrpc",
+    "connection_type": "stdio",
+    "requests_per_minute": 120,
+    "rate_limit_max_wait_seconds": 5,
+    "pool_size": 5,
+    "timeout": 30,
+    "session_timeout_minutes": 60,
+    "logging": {
+        "level": "INFO",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "handlers": [
+            {
+                "type": "StreamHandler",
+                "level": "INFO"
+            },
+            {
+                "type": "FileHandler",
+                "filename": "server.log",
+                "level": "DEBUG"
+            }
+        ]
+    }
+} 

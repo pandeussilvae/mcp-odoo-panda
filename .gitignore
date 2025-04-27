@@ -21,6 +21,7 @@ wheels/
 *.egg
 
 # Configuration files
+odoo_mcp/config/config2.json
 odoo_mcp/config/config.yaml
 odoo_mcp/config/config.dev.yaml
 odoo_mcp/config/config.prod.yaml
