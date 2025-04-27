@@ -227,7 +227,6 @@ def odoo_list_models() -> list:
     return models
 
 if __name__ == "__main__":
-    # Determina la modalità dal config caricato (se disponibile)
     import yaml
     config_path = "odoo_mcp/config/config.yaml"
     try:
@@ -238,8 +237,10 @@ if __name__ == "__main__":
             host = config.get("host", "localhost")
             port = config.get("port", 8080)
             print(f"[MCP] Server avviato in modalità SSE su http://{host}:{port}")
+            mcp.run_sse(host=host, port=port)
         else:
             print("[MCP] Server avviato in modalità STDIO (comunicazione tramite stdin/stdout)")
+            mcp.run_stdio()
     except Exception as e:
         print(f"[MCP] Impossibile determinare la modalità di avvio dal config: {e}")
-    mcp.run() 
+        mcp.run_stdio() 
