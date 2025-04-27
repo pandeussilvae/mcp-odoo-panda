@@ -154,4 +154,38 @@ class MCPServer(Server):
         """
         self._shutdown_requested = True
         while self._running:
-            await asyncio.sleep(0.1) 
+            await asyncio.sleep(0.1)
+
+async def main():
+    """
+    Main entry point for the MCP server.
+    """
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='MCP Server')
+    parser.add_argument('--config', required=True, help='Path to configuration file')
+    args = parser.parse_args()
+    
+    # Load configuration
+    config = load_config(args.config)
+    
+    # Set up logging
+    setup_logging(config.logging)
+    
+    # Create server instance
+    server = MCPServer(name="MCP Server", version="1.0.0")
+    
+    try:
+        # Run the server
+        await server.run()
+    except KeyboardInterrupt:
+        logger.info("Shutting down server...")
+        await server.stop()
+    except Exception as e:
+        logger.error(f"Server error: {e}")
+        await server.stop()
+        raise
+
+if __name__ == '__main__':
+    asyncio.run(main()) 
