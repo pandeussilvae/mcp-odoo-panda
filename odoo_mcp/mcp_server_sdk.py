@@ -210,5 +210,23 @@ def advanced_search(model: str, domain: list) -> str:
 def call_method(model: str, method: str, *, args: list = None, kwargs: dict = None) -> str:
     return f"Chiamata metodo {method} su {model} con args={args} kwargs={kwargs}"
 
+@mcp.tool(
+    description="Elenca tutti i modelli Odoo disponibili",
+    annotations={
+        "title": "List Odoo Models",
+        "readOnlyHint": True,
+        "openWorldHint": False
+    }
+)
+def odoo_list_models() -> list:
+    handler = odoo
+    models = handler.execute_kw(
+        model="ir.model",
+        method="search_read",
+        args=[[], ["model", "name"]],
+        kwargs={},
+    )
+    return models
+
 if __name__ == "__main__":
     mcp.run() 
