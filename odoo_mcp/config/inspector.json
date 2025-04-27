@@ -6,7 +6,7 @@
                 "run",
                 "mcp/server.py",
                 "--config",
-                "odoo_mcp/config/config.json"
+                "odoo_mcp/config/config2.json"
             ],
             "directory": "/mnt/c/Users/Paolo/Documents/Paolo/mcp-odoo-panda"
         }
