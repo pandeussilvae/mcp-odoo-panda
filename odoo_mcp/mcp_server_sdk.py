@@ -228,19 +228,15 @@ def odoo_list_models() -> list:
 
 if __name__ == "__main__":
     import yaml
+    import asyncio
+    from odoo_mcp.core.mcp_server import OdooMCPServer
+
     config_path = "odoo_mcp/config/config.yaml"
     try:
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
-        mode = config.get("connection_type", "stdio").lower()
-        if mode == "sse":
-            host = config.get("host", "localhost")
-            port = config.get("port", 8080)
-            print(f"[MCP] Server avviato in modalità SSE su http://{host}:{port}")
-            mcp.run_sse(host=host, port=port)
-        else:
-            print("[MCP] Server avviato in modalità STDIO (comunicazione tramite stdin/stdout)")
-            mcp.run_stdio()
+        server = OdooMCPServer(config)
+        print(f"[MCP] Modalità richiesta: {config.get('connection_type', 'stdio')}")
+        asyncio.run(server.run())
     except Exception as e:
-        print(f"[MCP] Impossibile determinare la modalità di avvio dal config: {e}")
-        mcp.run_stdio() 
+        print(f"[MCP] Errore durante l'avvio del server: {e}") 
