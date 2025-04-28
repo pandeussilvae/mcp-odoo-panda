@@ -12,6 +12,7 @@ from datetime import datetime
 import argparse
 import contextlib
 import sys
+import json
 
 # Import core components
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -141,17 +142,17 @@ class OdooMCPServer(Server):
             capabilities=self.capabilities
         )
 
-    async def get_resource(self, uri: str) -> Resource:
+    async def get_resource(self, uri: str) -> dict:
         """Get a resource by URI."""
         # Se l'URI contiene placeholder, restituisci un template vuoto
         if "{model}" in uri or "{id}" in uri or "{field}" in uri:
-            return Resource(
-                uri=uri,
-                type=ResourceType.RECORD,  # o il tipo appropriato basato sull'URI
-                name="Template Resource",
-                data=None,
-                mime_type="application/json"
-            )
+            return {
+                "uri": uri,
+                "type": "record",  # o il tipo appropriato basato sull'URI
+                "name": "Template Resource",
+                "data": None,
+                "mime_type": "application/json"
+            }
 
         # Parse URI
         if not uri.startswith("odoo://"):
@@ -169,39 +170,39 @@ class OdooMCPServer(Server):
             # List of records
             model_name = parts[0]
             data = await self._handle_list_resource(model_name, auth_details)
-            return Resource(
-                uri=uri,
-                type=ResourceType.LIST,
-                name=f"{model_name} List",
-                data=data,
-                mime_type="application/json"
-            )
+            return {
+                "uri": uri,
+                "type": "list",
+                "name": f"{model_name} List",
+                "data": data,
+                "mime_type": "application/json"
+            }
         elif parts[1] == "binary":
             # Binary field
             if len(parts) != 4:
                 raise ProtocolError(f"Invalid binary field URI format: {uri}")
             model_name, _, field_name, id_str = parts
             data = await self._handle_binary_resource(model_name, field_name, id_str, auth_details)
-            return Resource(
-                uri=uri,
-                type=ResourceType.BINARY,
-                name=f"{model_name} {field_name}",
-                data=data,
-                mime_type="application/octet-stream"
-            )
+            return {
+                "uri": uri,
+                "type": "binary",
+                "name": f"{model_name} {field_name}",
+                "data": data,
+                "mime_type": "application/octet-stream"
+            }
         else:
             # Single record
             if len(parts) != 2:
                 raise ProtocolError(f"Invalid record URI format: {uri}")
             model_name, id_str = parts
             data = await self._handle_record_resource(model_name, id_str, auth_details)
-            return Resource(
-                uri=uri,
-                type=ResourceType.RECORD,
-                name=f"{model_name} {id_str}",
-                data=data,
-                mime_type="application/json"
-            )
+            return {
+                "uri": uri,
+                "type": "record",
+                "name": f"{model_name} {id_str}",
+                "data": data,
+                "mime_type": "application/json"
+            }
 
     async def list_resources(self, template: Optional[ResourceTemplate] = None) -> List[dict]:
         """List available resources."""
@@ -445,30 +446,15 @@ class OdooMCPServer(Server):
             request_id = request.get('id')
             client_id = request.get('client_id')
 
-            # Handler simulato per long_task con notifiche di progresso
-            if method == 'long_task':
-                # Recupera la reference al protocollo SSE se attivo
-                if hasattr(self, 'protocol') and hasattr(self.protocol, 'notify_client'):
-                    async def do_long_task():
-                        for progress in range(0, 101, 20):
-                            await asyncio.sleep(0.5)  # Simula lavoro
-                            await self.protocol.notify_client(client_id, {
-                                "jsonrpc": "2.0",
-                                "method": "notifications/progress",
-                                "params": {"id": request_id, "progress": progress}
-                            })
-                        # Risposta finale
-                        return {
-                            'jsonrpc': '2.0',
-                            'id': request_id,
-                            'result': {"done": True, "message": "Long task completed!"}
-                        }
-                    # Esegui la long task in modo sincrono per compatibilità con il resto del dispatcher
-                    return asyncio.get_event_loop().run_until_complete(do_long_task())
-                else:
-                    raise ProtocolError("SSEProtocol non disponibile per notifiche di progresso")
+            # Handle ping immediately
+            if method == 'ping':
+                return {
+                    'jsonrpc': '2.0',
+                    'result': 'pong',
+                    'id': request_id
+                }
 
-            # Handle different methods
+            # Handle other methods
             if method == 'initialize':
                 client_info = ClientInfo.from_dict(params)
                 server_info = run_async(self.initialize(client_info))
@@ -490,13 +476,7 @@ class OdooMCPServer(Server):
                 resource = run_async(self.get_resource(params['uri']))
                 response = {
                     'jsonrpc': '2.0',
-                    'result': {
-                        'uri': resource.uri,
-                        'name': resource.uri.split('/')[-1],  # Nome basato sull'ultima parte dell'URI
-                        'type': str(resource.type).lower(),
-                        'data': resource.data,
-                        'mime_type': resource.mime_type
-                    },
+                    'result': resource,  # resource è già un dict
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
@@ -587,9 +567,12 @@ class OdooMCPServer(Server):
 
                 # Esegui lo strumento appropriato
                 try:
-                    if tool_name == 'odoo_search_read':
-                        with self.pool.get_connection() as wrapper:
-                            handler = wrapper.connection
+                    # Ottieni una connessione dal pool
+                    wrapper = run_async(self.pool.get_connection())
+                    handler = wrapper.connection
+
+                    try:
+                        if tool_name == 'odoo_search_read':
                             result = handler.execute_kw(
                                 arguments['model'],
                                 'search_read',
@@ -600,61 +583,55 @@ class OdooMCPServer(Server):
                                     'context': arguments.get('context', {})
                                 }
                             )
-                    elif tool_name == 'odoo_read':
-                        with self.pool.get_connection() as wrapper:
-                            handler = wrapper.connection
+                        elif tool_name == 'odoo_read':
                             result = handler.execute_kw(
                                 arguments['model'],
                                 'read',
                                 [arguments['ids'], arguments.get('fields', [])],
                                 {'context': arguments.get('context', {})}
                             )
-                    elif tool_name == 'odoo_create':
-                        with self.pool.get_connection() as wrapper:
-                            handler = wrapper.connection
+                        elif tool_name == 'odoo_create':
                             result = handler.execute_kw(
                                 arguments['model'],
                                 'create',
                                 [arguments['values']],
                                 {'context': arguments.get('context', {})}
                             )
-                    elif tool_name == 'odoo_write':
-                        with self.pool.get_connection() as wrapper:
-                            handler = wrapper.connection
+                        elif tool_name == 'odoo_write':
                             result = handler.execute_kw(
                                 arguments['model'],
                                 'write',
                                 [arguments['ids'], arguments['values']],
                                 {'context': arguments.get('context', {})}
                             )
-                    elif tool_name == 'odoo_unlink':
-                        with self.pool.get_connection() as wrapper:
-                            handler = wrapper.connection
+                        elif tool_name == 'odoo_unlink':
                             result = handler.execute_kw(
                                 arguments['model'],
                                 'unlink',
                                 [arguments['ids']],
                                 {'context': arguments.get('context', {})}
                             )
-                    elif tool_name == 'odoo_call_method':
-                        with self.pool.get_connection() as wrapper:
-                            handler = wrapper.connection
+                        elif tool_name == 'odoo_call_method':
                             result = handler.execute_kw(
                                 arguments['model'],
                                 arguments['method'],
                                 [arguments['ids']] + arguments.get('args', []),
                                 arguments.get('kwargs', {})
                             )
-                    else:
-                        raise ProtocolError(f"Tool {tool_name} not implemented")
+                        else:
+                            raise ProtocolError(f"Tool {tool_name} not implemented")
 
-                    response = {
-                        'jsonrpc': '2.0',
-                        'result': result,
-                        'id': request_id
-                    }
-                    print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
-                    return response
+                        response = {
+                            'jsonrpc': '2.0',
+                            'result': result,
+                            'id': request_id
+                        }
+                        print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                        return response
+
+                    finally:
+                        # Rilascia la connessione
+                        run_async(wrapper.release())
 
                 except Exception as e:
                     logger.error(f"Error executing tool {tool_name}: {e}")
@@ -668,14 +645,6 @@ class OdooMCPServer(Server):
                     }
                     print(f"[DEBUG] MCP error response: {error_response}", file=sys.stderr)
                     return error_response
-            elif method == 'ping':
-                response = {
-                    'jsonrpc': '2.0',
-                    'result': 'pong',
-                    'id': request_id
-                }
-                print(f"[DEBUG] MCP ping response: {response}", file=sys.stderr)
-                return response
             else:
                 raise ProtocolError(f"Unknown method: {method}")
 
@@ -848,6 +817,235 @@ class OdooMCPServer(Server):
             logger.debug(f"Queued notification for {uri}")
         except asyncio.QueueFull:
             logger.warning(f"SSE queue full, dropping resource update notification for {uri}")
+
+    async def _handle_analyze_record_prompt(self, prompt: dict, args: Dict[str, Any]) -> GetPromptResult:
+        """Handle analyze-record prompt."""
+        uri = args.get('uri')
+        if not uri:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text="Please provide a valid URI for the record to analyze (e.g., odoo://res.partner/1)"
+                    )
+                )
+            )
+        
+        try:
+            resource = await self.get_resource(uri)
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=f"Analyzing record from {uri}:\n\n{json.dumps(resource['data'], indent=2)}"
+                    )
+                )
+            )
+        except Exception as e:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=f"Error analyzing record: {str(e)}"
+                    )
+                )
+            )
+
+    async def _handle_create_record_prompt(self, prompt: dict, args: Dict[str, Any]) -> GetPromptResult:
+        """Handle create-record prompt."""
+        model = args.get('model')
+        if not model:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text="Please provide a model name (e.g., res.partner)"
+                    )
+                )
+            )
+
+        try:
+            # Get model fields info
+            async with self.pool.get_connection() as wrapper:
+                handler = wrapper.connection
+                fields_info = handler.execute_kw(model, 'fields_get', [], {'attributes': ['string', 'type', 'required']})
+            
+            # Format fields info
+            fields_text = "Available fields:\n\n"
+            for field, info in fields_info.items():
+                required = "Required" if info.get('required') else "Optional"
+                fields_text += f"- {field} ({info.get('type')}): {info.get('string')} [{required}]\n"
+
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=f"Creating new {model} record.\n\n{fields_text}\n\nUse odoo_create tool with appropriate values to create the record."
+                    )
+                )
+            )
+        except Exception as e:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=f"Error getting model information: {str(e)}"
+                    )
+                )
+            )
+
+    async def _handle_update_record_prompt(self, prompt: dict, args: Dict[str, Any]) -> GetPromptResult:
+        """Handle update-record prompt."""
+        uri = args.get('uri')
+        if not uri:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text="Please provide a valid URI for the record to update (e.g., odoo://res.partner/1)"
+                    )
+                )
+            )
+
+        try:
+            # Get current record data
+            resource = await self.get_resource(uri)
+            current_data = resource['data']
+            
+            # Get model and ID from URI
+            parts = uri[len("odoo://"):].split('/')
+            model, id_str = parts[0], parts[1]
+            
+            # Get fields info
+            async with self.pool.get_connection() as wrapper:
+                handler = wrapper.connection
+                fields_info = handler.execute_kw(model, 'fields_get', [], {'attributes': ['string', 'type']})
+            
+            response = f"Updating {model} record {id_str}.\n\nCurrent values:\n"
+            response += json.dumps(current_data, indent=2)
+            response += "\n\nAvailable fields:\n"
+            for field, info in fields_info.items():
+                response += f"- {field} ({info.get('type')}): {info.get('string')}\n"
+            
+            response += "\nUse odoo_write tool with appropriate values to update the record."
+
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=response
+                    )
+                )
+            )
+        except Exception as e:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=f"Error getting record information: {str(e)}"
+                    )
+                )
+            )
+
+    async def _handle_advanced_search_prompt(self, prompt: dict, args: Dict[str, Any]) -> GetPromptResult:
+        """Handle advanced-search prompt."""
+        model = args.get('model')
+        if not model:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text="Please provide a model name (e.g., res.partner)"
+                    )
+                )
+            )
+
+        try:
+            # Get model fields info
+            async with self.pool.get_connection() as wrapper:
+                handler = wrapper.connection
+                fields_info = handler.execute_kw(model, 'fields_get', [], {'attributes': ['string', 'type', 'selection']})
+            
+            # Format domain builder help
+            response = f"Building search domain for {model}.\n\nAvailable fields:\n"
+            for field, info in fields_info.items():
+                field_type = info.get('type')
+                if field_type == 'selection':
+                    options = [f"'{opt[0]}': {opt[1]}" for opt in info.get('selection', [])]
+                    response += f"- {field} ({field_type}): {info.get('string')}\n  Options: {', '.join(options)}\n"
+                else:
+                    response += f"- {field} ({field_type}): {info.get('string')}\n"
+            
+            response += "\nDomain format examples:\n"
+            response += "- ['name', 'ilike', 'John']  # Name contains 'John'\n"
+            response += "- ['create_date', '>', '2023-01-01']  # Created after date\n"
+            response += "- ['state', 'in', ['draft', 'done']]  # State is one of values\n"
+            response += "- ['|', ('field1', '=', 'x'), ('field2', '=', 'y')]  # OR condition\n"
+            response += "\nUse odoo_search_read tool with your domain to search records."
+
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=response
+                    )
+                )
+            )
+        except Exception as e:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=f"Error getting model information: {str(e)}"
+                    )
+                )
+            )
+
+    async def _handle_call_method_prompt(self, prompt: dict, args: Dict[str, Any]) -> GetPromptResult:
+        """Handle call-method prompt."""
+        uri = args.get('uri')
+        method = args.get('method')
+        
+        if not uri:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text="Please provide a valid URI (e.g., odoo://res.partner/1)"
+                    )
+                )
+            )
+        
+        if not method:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text="Please provide the method name to call"
+                    )
+                )
+            )
+
+        try:
+            # Get model and optional ID from URI
+            parts = uri[len("odoo://"):].split('/')
+            model = parts[0]
+            record_id = int(parts[1]) if len(parts) > 1 else None
+            
+            response = f"Calling method '{method}' on {model}"
+            if record_id:
+                response += f" record {record_id}"
+            response += ".\n\n"
+            
+            response += "Use odoo_call_method tool with:\n"
+            response += f"- model: '{model}'\n"
+            if record_id:
+                response += f"- ids: [{record_id}]\n"
+            response += f"- method: '{method}'\n"
+            response += "- args: []  # Optional positional arguments\n"
+            response += "- kwargs: {}  # Optional keyword arguments"
+
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=response
+                    )
+                )
+            )
+        except Exception as e:
+            return GetPromptResult(
+                message=PromptMessage(
+                    content=TextContent(
+                        text=f"Error preparing method call: {str(e)}"
+                    )
+                )
+            )
 
 def run_async(coro):
     try:
