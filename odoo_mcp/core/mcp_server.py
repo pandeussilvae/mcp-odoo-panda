@@ -74,6 +74,13 @@ class OdooMCPServer(Server):
         # Initialize bus handler
         self.bus_handler = OdooBusHandler(config, self._notify_resource_update)
 
+        # Test Odoo connection on startup
+        try:
+            version = self.pool.handler_class(config).common.version()
+            print(f"[MCP] Connessione a Odoo OK. Versione: {version}", file=sys.stderr)
+        except Exception as e:
+            print(f"[MCP] Connessione a Odoo FALLITA: {e}", file=sys.stderr)
+
     def _get_handler_class(self) -> Union[Type[XMLRPCHandler], Type[JSONRPCHandler]]:
         """Get the appropriate handler class based on protocol type."""
         if self.protocol_type == 'xmlrpc':
