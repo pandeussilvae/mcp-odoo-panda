@@ -143,6 +143,16 @@ class OdooMCPServer(Server):
 
     async def get_resource(self, uri: str) -> Resource:
         """Get a resource by URI."""
+        # Se l'URI contiene placeholder, restituisci un template vuoto
+        if "{model}" in uri or "{id}" in uri or "{field}" in uri:
+            return Resource(
+                uri=uri,
+                type=ResourceType.RECORD,  # o il tipo appropriato basato sull'URI
+                name="Template Resource",
+                data=None,
+                mime_type="application/json"
+            )
+
         # Parse URI
         if not uri.startswith("odoo://"):
             raise ProtocolError(f"Invalid URI scheme: {uri}")
@@ -162,6 +172,7 @@ class OdooMCPServer(Server):
             return Resource(
                 uri=uri,
                 type=ResourceType.LIST,
+                name=f"{model_name} List",
                 data=data,
                 mime_type="application/json"
             )
@@ -174,6 +185,7 @@ class OdooMCPServer(Server):
             return Resource(
                 uri=uri,
                 type=ResourceType.BINARY,
+                name=f"{model_name} {field_name}",
                 data=data,
                 mime_type="application/octet-stream"
             )
@@ -186,6 +198,7 @@ class OdooMCPServer(Server):
             return Resource(
                 uri=uri,
                 type=ResourceType.RECORD,
+                name=f"{model_name} {id_str}",
                 data=data,
                 mime_type="application/json"
             )
@@ -515,11 +528,26 @@ class OdooMCPServer(Server):
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
-            elif method == 'get_prompt':
-                result = run_async(self.get_prompt(params['name'], params.get('args', {})))
+            elif method == 'get_prompt' or method == 'prompts/get':
+                name = params.get('name')
+                args = params.get('arguments', {})
+                result = run_async(self.get_prompt(name, args))
+                
+                # Converti il risultato nel formato corretto per MCP
                 response = {
                     'jsonrpc': '2.0',
-                    'result': result.__dict__,
+                    'result': {
+                        'messages': [
+                            {
+                                'role': 'assistant',
+                                'content': {
+                                    'type': 'text',
+                                    'text': result.message.content.text if result.message and result.message.content else ''
+                                }
+                            }
+                        ],
+                        'done': True
+                    },
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
@@ -545,6 +573,109 @@ class OdooMCPServer(Server):
             elif method in ('notifications/initialized', 'notifications/cancelled'):
                 print(f"[DEBUG] Ignored notification: {method}", file=sys.stderr)
                 return None
+            elif method == 'tools/call':
+                tool_name = params.get('name')
+                arguments = params.get('arguments', {})
+                meta = params.get('_meta', {})
+                client_id = request.get('client_id')
+                
+                # Verifica che lo strumento esista
+                tools = run_async(self.list_tools())
+                tool = next((t for t in tools if t['name'] == tool_name), None)
+                if not tool:
+                    raise ProtocolError(f"Tool not found: {tool_name}")
+
+                # Esegui lo strumento appropriato
+                try:
+                    if tool_name == 'odoo_search_read':
+                        with self.pool.get_connection() as wrapper:
+                            handler = wrapper.connection
+                            result = handler.execute_kw(
+                                arguments['model'],
+                                'search_read',
+                                [arguments.get('domain', []), arguments.get('fields', [])],
+                                {
+                                    'limit': arguments.get('limit', 80),
+                                    'offset': arguments.get('offset', 0),
+                                    'context': arguments.get('context', {})
+                                }
+                            )
+                    elif tool_name == 'odoo_read':
+                        with self.pool.get_connection() as wrapper:
+                            handler = wrapper.connection
+                            result = handler.execute_kw(
+                                arguments['model'],
+                                'read',
+                                [arguments['ids'], arguments.get('fields', [])],
+                                {'context': arguments.get('context', {})}
+                            )
+                    elif tool_name == 'odoo_create':
+                        with self.pool.get_connection() as wrapper:
+                            handler = wrapper.connection
+                            result = handler.execute_kw(
+                                arguments['model'],
+                                'create',
+                                [arguments['values']],
+                                {'context': arguments.get('context', {})}
+                            )
+                    elif tool_name == 'odoo_write':
+                        with self.pool.get_connection() as wrapper:
+                            handler = wrapper.connection
+                            result = handler.execute_kw(
+                                arguments['model'],
+                                'write',
+                                [arguments['ids'], arguments['values']],
+                                {'context': arguments.get('context', {})}
+                            )
+                    elif tool_name == 'odoo_unlink':
+                        with self.pool.get_connection() as wrapper:
+                            handler = wrapper.connection
+                            result = handler.execute_kw(
+                                arguments['model'],
+                                'unlink',
+                                [arguments['ids']],
+                                {'context': arguments.get('context', {})}
+                            )
+                    elif tool_name == 'odoo_call_method':
+                        with self.pool.get_connection() as wrapper:
+                            handler = wrapper.connection
+                            result = handler.execute_kw(
+                                arguments['model'],
+                                arguments['method'],
+                                [arguments['ids']] + arguments.get('args', []),
+                                arguments.get('kwargs', {})
+                            )
+                    else:
+                        raise ProtocolError(f"Tool {tool_name} not implemented")
+
+                    response = {
+                        'jsonrpc': '2.0',
+                        'result': result,
+                        'id': request_id
+                    }
+                    print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                    return response
+
+                except Exception as e:
+                    logger.error(f"Error executing tool {tool_name}: {e}")
+                    error_response = {
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32603,
+                            'message': str(e)
+                        },
+                        'id': request_id
+                    }
+                    print(f"[DEBUG] MCP error response: {error_response}", file=sys.stderr)
+                    return error_response
+            elif method == 'ping':
+                response = {
+                    'jsonrpc': '2.0',
+                    'result': 'pong',
+                    'id': request_id
+                }
+                print(f"[DEBUG] MCP ping response: {response}", file=sys.stderr)
+                return response
             else:
                 raise ProtocolError(f"Unknown method: {method}")
 
@@ -687,7 +818,12 @@ class OdooMCPServer(Server):
         elif uid is not None and password is not None:
             return {"uid": uid, "password": password}
         else:
-            raise AuthError("Authentication required")
+            # Use default credentials from config
+            default_uid = config.get('uid') or 1  # Default to admin user
+            default_password = config.get('api_key') or config.get('password')
+            if not default_password:
+                raise AuthError("No default credentials configured")
+            return {"uid": default_uid, "password": default_password}
 
     async def _notify_resource_update(self, uri: str, data: Dict[str, Any]):
         """
