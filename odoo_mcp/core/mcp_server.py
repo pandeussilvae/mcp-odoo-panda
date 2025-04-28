@@ -535,7 +535,22 @@ class OdooMCPServer(Server):
                 return response
             elif method == 'notifications/initialized':
                 print(f"[DEBUG] Ignored notification: {method}", file=sys.stderr)
-                return {}
+                response = {
+                    'jsonrpc': '2.0',
+                    'id': request_id,
+                    'result': True
+                }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
+            elif method == 'notifications/cancelled':
+                print(f"[DEBUG] Ignored notification: {method}", file=sys.stderr)
+                response = {
+                    'jsonrpc': '2.0',
+                    'id': request_id,
+                    'result': True
+                }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
             else:
                 raise ProtocolError(f"Unknown method: {method}")
 
