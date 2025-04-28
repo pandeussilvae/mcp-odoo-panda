@@ -4,7 +4,7 @@ These types define the core data structures used in the MCP protocol.
 """
 
 from typing import Dict, Any, List, Optional, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from abc import ABC, abstractmethod
 
@@ -66,9 +66,9 @@ class ClientInfo:
     Information about the MCP client.
     Use from_dict to safely construct from dicts with extra keys.
     """
-    name: str
-    version: str
-    capabilities: Dict[str, Any]
+    name: Optional[str] = None
+    version: Optional[str] = None
+    capabilities: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict):
