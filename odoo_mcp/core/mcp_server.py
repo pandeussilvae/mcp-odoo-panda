@@ -557,10 +557,32 @@ class OdooMCPServer(Server):
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
             elif method == 'resources/templates/list':
-                templates = self.capabilities['resources']['templates']
+                templates = [
+                    {
+                        "uriTemplate": "odoo://{model}/{id}",
+                        "name": "Odoo Record",
+                        "description": "Represents a single record in an Odoo model",
+                        "type": "record",
+                        "mimeType": "application/json"
+                    },
+                    {
+                        "uriTemplate": "odoo://{model}/list",
+                        "name": "Odoo Record List",
+                        "description": "Represents a list of records in an Odoo model",
+                        "type": "list",
+                        "mimeType": "application/json"
+                    },
+                    {
+                        "uriTemplate": "odoo://{model}/binary/{field}/{id}",
+                        "name": "Odoo Binary Field",
+                        "description": "Represents a binary field value from an Odoo record",
+                        "type": "binary",
+                        "mimeType": "application/octet-stream"
+                    }
+                ]
                 response = {
                     'jsonrpc': '2.0',
-                    'result': templates,
+                    'result': {'templates': templates},
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
