@@ -447,42 +447,42 @@ class OdooMCPServer(Server):
             # Handle different methods
             if method == 'initialize':
                 client_info = ClientInfo.from_dict(params)
-                server_info = asyncio.run(self.initialize(client_info))
+                server_info = run_async(self.initialize(client_info))
                 return {
                     'jsonrpc': '2.0',
                     'result': server_info.__dict__,
                     'id': request_id
                 }
             elif method == 'get_resource':
-                resource = asyncio.run(self.get_resource(params['uri']))
+                resource = run_async(self.get_resource(params['uri']))
                 return {
                     'jsonrpc': '2.0',
                     'result': resource.__dict__,
                     'id': request_id
                 }
             elif method == 'list_resources':
-                resources = asyncio.run(self.list_resources())
+                resources = run_async(self.list_resources())
                 return {
                     'jsonrpc': '2.0',
                     'result': [r.__dict__ for r in resources],
                     'id': request_id
                 }
             elif method == 'list_tools':
-                tools = asyncio.run(self.list_tools())
+                tools = run_async(self.list_tools())
                 return {
                     'jsonrpc': '2.0',
                     'result': [t.__dict__ for t in tools],
                     'id': request_id
                 }
             elif method == 'list_prompts':
-                prompts = asyncio.run(self.list_prompts())
+                prompts = run_async(self.list_prompts())
                 return {
                     'jsonrpc': '2.0',
                     'result': [p.__dict__ for p in prompts],
                     'id': request_id
                 }
             elif method == 'get_prompt':
-                result = asyncio.run(self.get_prompt(params['name'], params.get('args', {})))
+                result = run_async(self.get_prompt(params['name'], params.get('args', {})))
                 return {
                     'jsonrpc': '2.0',
                     'result': result.__dict__,
@@ -653,6 +653,16 @@ class OdooMCPServer(Server):
             logger.debug(f"Queued notification for {uri}")
         except asyncio.QueueFull:
             logger.warning(f"SSE queue full, dropping resource update notification for {uri}")
+
+def run_async(coro):
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            return loop.run_until_complete(coro)
+        else:
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
 
 async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
     """Main entry point."""
