@@ -57,7 +57,8 @@ class StdioProtocol:
                     response = self.request_handler(request)
 
                     # Write the response to stdout
-                    print(json.dumps(response, cls=EnumEncoder), flush=True)
+                    if response is not None:
+                        print(json.dumps(response, cls=EnumEncoder), flush=True)
 
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON in request: {e}")
