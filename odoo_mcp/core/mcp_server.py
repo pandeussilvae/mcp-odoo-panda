@@ -415,10 +415,34 @@ class OdooMCPServer(Server):
             if not isinstance(request, dict):
                 raise ValueError("Request must be a JSON object")
 
-            # Extract method and parameters
             method = request.get('method')
             params = request.get('params', {})
             request_id = request.get('id')
+            client_id = request.get('client_id')
+
+            # Handler simulato per long_task con notifiche di progresso
+            if method == 'long_task':
+                # Recupera la reference al protocollo SSE se attivo
+                if hasattr(self, 'protocol') and hasattr(self.protocol, 'notify_client'):
+                    import asyncio
+                    async def do_long_task():
+                        for progress in range(0, 101, 20):
+                            await asyncio.sleep(0.5)  # Simula lavoro
+                            await self.protocol.notify_client(client_id, {
+                                "jsonrpc": "2.0",
+                                "method": "notifications/progress",
+                                "params": {"id": request_id, "progress": progress}
+                            })
+                        # Risposta finale
+                        return {
+                            'jsonrpc': '2.0',
+                            'id': request_id,
+                            'result': {"done": True, "message": "Long task completed!"}
+                        }
+                    # Esegui la long task in modo sincrono per compatibilità con il resto del dispatcher
+                    return asyncio.get_event_loop().run_until_complete(do_long_task())
+                else:
+                    raise ProtocolError("SSEProtocol non disponibile per notifiche di progresso")
 
             # Handle different methods
             if method == 'initialize':
