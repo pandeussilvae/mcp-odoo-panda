@@ -11,6 +11,7 @@ import yaml
 from datetime import datetime
 import argparse
 import contextlib
+import sys
 
 # Import core components
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -395,12 +396,12 @@ class OdooMCPServer(Server):
     async def run(self):
         """Run the server."""
         if self.connection_type == 'stdio':
-            print("[MCP] Server avviato in modalità STDIO (comunicazione tramite stdin/stdout)")
+            print("[MCP] Server avviato in modalità STDIO (comunicazione tramite stdin/stdout)", file=sys.stderr)
             await self.protocol.run()
         elif self.connection_type == 'sse':
             host = self.config.get('host', 'localhost')
             port = self.config.get('port', 8080)
-            print(f"[MCP] Server avviato in modalità SSE su http://{host}:{port}")
+            print(f"[MCP] Server avviato in modalità SSE su http://{host}:{port}", file=sys.stderr)
             await self.protocol.run(host=host, port=port)
 
     async def stop(self):

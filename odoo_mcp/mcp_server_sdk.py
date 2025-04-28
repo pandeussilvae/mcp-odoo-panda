@@ -5,6 +5,7 @@ import os
 from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
+import sys
 
 # Gerarchia di lettura credenziali
 # 1. Parametri runtime > 2. Variabili ambiente > 3. File config > 4. Errore
@@ -236,7 +237,7 @@ if __name__ == "__main__":
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
         server = OdooMCPServer(config)
-        print(f"[MCP] Modalità richiesta: {config.get('connection_type', 'stdio')}")
+        print(f"[MCP] Modalità richiesta: {config.get('connection_type', 'stdio')}", file=sys.stderr)
         asyncio.run(server.run())
     except Exception as e:
-        print(f"[MCP] Errore durante l'avvio del server: {e}") 
+        print(f"[MCP] Errore durante l'avvio del server: {e}", file=sys.stderr) 
