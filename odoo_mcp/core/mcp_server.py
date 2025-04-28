@@ -190,30 +190,30 @@ class OdooMCPServer(Server):
                 mime_type="application/json"
             )
 
-    async def list_resources(self, template: Optional[ResourceTemplate] = None) -> List[Resource]:
+    async def list_resources(self, template: Optional[ResourceTemplate] = None) -> List[dict]:
         """List available resources."""
         return [
-            Resource(
-                uri="odoo://{model}/{id}",
-                type=ResourceType.RECORD,
-                name="Odoo Record",
-                data=None,
-                mime_type="application/json"
-            ),
-            Resource(
-                uri="odoo://{model}/list",
-                type=ResourceType.LIST,
-                name="Odoo Record List",
-                data=None,
-                mime_type="application/json"
-            ),
-            Resource(
-                uri="odoo://{model}/binary/{field}/{id}",
-                type=ResourceType.BINARY,
-                name="Odoo Binary Field",
-                data=None,
-                mime_type="application/octet-stream"
-            )
+            {
+                "uri": "odoo://{model}/{id}",
+                "name": "Odoo Record",
+                "type": "record",
+                "data": None,
+                "mime_type": "application/json",
+            },
+            {
+                "uri": "odoo://{model}/list",
+                "name": "Odoo Record List",
+                "type": "list",
+                "data": None,
+                "mime_type": "application/json",
+            },
+            {
+                "uri": "odoo://{model}/binary/{field}/{id}",
+                "name": "Odoo Binary Field",
+                "type": "binary",
+                "data": None,
+                "mime_type": "application/octet-stream",
+            }
         ]
 
     async def list_tools(self) -> List[Tool]:
@@ -486,7 +486,7 @@ class OdooMCPServer(Server):
                 resources = run_async(self.list_resources())
                 response = {
                     'jsonrpc': '2.0',
-                    'result': {'resources': [r.__dict__ for r in resources]},
+                    'result': {'resources': resources},
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
