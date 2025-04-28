@@ -412,6 +412,7 @@ class OdooMCPServer(Server):
     def _handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle incoming requests."""
         try:
+            print(f"[DEBUG] MCP request: {request}", file=sys.stderr)
             # Validate request format
             if not isinstance(request, dict):
                 raise ValueError("Request must be a JSON object")
@@ -448,52 +449,64 @@ class OdooMCPServer(Server):
             if method == 'initialize':
                 client_info = ClientInfo.from_dict(params)
                 server_info = run_async(self.initialize(client_info))
-                return {
+                response = {
                     'jsonrpc': '2.0',
                     'result': server_info.__dict__,
                     'id': request_id
                 }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
             elif method == 'get_resource':
                 resource = run_async(self.get_resource(params['uri']))
-                return {
+                response = {
                     'jsonrpc': '2.0',
                     'result': resource.__dict__,
                     'id': request_id
                 }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
             elif method == 'list_resources':
                 resources = run_async(self.list_resources())
-                return {
+                response = {
                     'jsonrpc': '2.0',
                     'result': [r.__dict__ for r in resources],
                     'id': request_id
                 }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
             elif method == 'list_tools':
                 tools = run_async(self.list_tools())
-                return {
+                response = {
                     'jsonrpc': '2.0',
                     'result': [t.__dict__ for t in tools],
                     'id': request_id
                 }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
             elif method == 'list_prompts':
                 prompts = run_async(self.list_prompts())
-                return {
+                response = {
                     'jsonrpc': '2.0',
                     'result': [p.__dict__ for p in prompts],
                     'id': request_id
                 }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
             elif method == 'get_prompt':
                 result = run_async(self.get_prompt(params['name'], params.get('args', {})))
-                return {
+                response = {
                     'jsonrpc': '2.0',
                     'result': result.__dict__,
                     'id': request_id
                 }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
             else:
                 raise ProtocolError(f"Unknown method: {method}")
 
         except Exception as e:
             logger.error(f"Error handling request: {e}")
-            return {
+            error_response = {
                 'jsonrpc': '2.0',
                 'error': {
                     'code': -32603,
@@ -501,6 +514,8 @@ class OdooMCPServer(Server):
                 },
                 'id': request_id
             }
+            print(f"[DEBUG] MCP error response: {error_response}", file=sys.stderr)
+            return error_response
 
     async def _handle_list_resource(self, model_name: str, auth_details: Dict[str, Any]) -> Dict[str, Any]:
         """Handle list resource type."""
