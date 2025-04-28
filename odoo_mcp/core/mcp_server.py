@@ -222,7 +222,7 @@ class OdooMCPServer(Server):
             {
                 "name": "odoo_search_read",
                 "description": "Search and read Odoo records",
-                "input_schema": {
+                "inputSchema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -238,7 +238,7 @@ class OdooMCPServer(Server):
             {
                 "name": "odoo_read",
                 "description": "Read specific fields for given Odoo record IDs",
-                "input_schema": {
+                "inputSchema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -252,7 +252,7 @@ class OdooMCPServer(Server):
             {
                 "name": "odoo_create",
                 "description": "Create a new record in an Odoo model",
-                "input_schema": {
+                "inputSchema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -265,7 +265,7 @@ class OdooMCPServer(Server):
             {
                 "name": "odoo_write",
                 "description": "Update existing Odoo records",
-                "input_schema": {
+                "inputSchema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -279,7 +279,7 @@ class OdooMCPServer(Server):
             {
                 "name": "odoo_unlink",
                 "description": "Delete Odoo records",
-                "input_schema": {
+                "inputSchema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -292,7 +292,7 @@ class OdooMCPServer(Server):
             {
                 "name": "odoo_call_method",
                 "description": "Call a specific method on Odoo records",
-                "input_schema": {
+                "inputSchema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
