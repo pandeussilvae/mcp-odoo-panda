@@ -608,71 +608,66 @@ class OdooMCPServer(Server):
 
                 # Esegui lo strumento appropriato
                 try:
-                    # Ottieni una connessione dal pool
-                    connection = run_async(self.pool.get_connection())
-                    handler = connection.connection
+                    async def execute_tool():
+                        async with self.pool.get_connection() as connection:
+                            handler = connection.connection
+                            if tool_name == 'odoo_search_read':
+                                return handler.execute_kw(
+                                    arguments['model'],
+                                    'search_read',
+                                    [arguments.get('domain', []), arguments.get('fields', [])],
+                                    {
+                                        'limit': arguments.get('limit', 80),
+                                        'offset': arguments.get('offset', 0),
+                                        'context': arguments.get('context', {})
+                                    }
+                                )
+                            elif tool_name == 'odoo_read':
+                                return handler.execute_kw(
+                                    arguments['model'],
+                                    'read',
+                                    [arguments['ids'], arguments.get('fields', [])],
+                                    {'context': arguments.get('context', {})}
+                                )
+                            elif tool_name == 'odoo_create':
+                                return handler.execute_kw(
+                                    arguments['model'],
+                                    'create',
+                                    [arguments['values']],
+                                    {'context': arguments.get('context', {})}
+                                )
+                            elif tool_name == 'odoo_write':
+                                return handler.execute_kw(
+                                    arguments['model'],
+                                    'write',
+                                    [arguments['ids'], arguments['values']],
+                                    {'context': arguments.get('context', {})}
+                                )
+                            elif tool_name == 'odoo_unlink':
+                                return handler.execute_kw(
+                                    arguments['model'],
+                                    'unlink',
+                                    [arguments['ids']],
+                                    {'context': arguments.get('context', {})}
+                                )
+                            elif tool_name == 'odoo_call_method':
+                                return handler.execute_kw(
+                                    arguments['model'],
+                                    arguments['method'],
+                                    [arguments['ids']] + arguments.get('args', []),
+                                    arguments.get('kwargs', {})
+                                )
+                            else:
+                                raise ProtocolError(f"Tool {tool_name} not implemented")
 
-                    try:
-                        if tool_name == 'odoo_search_read':
-                            result = handler.execute_kw(
-                                arguments['model'],
-                                'search_read',
-                                [arguments.get('domain', []), arguments.get('fields', [])],
-                                {
-                                    'limit': arguments.get('limit', 80),
-                                    'offset': arguments.get('offset', 0),
-                                    'context': arguments.get('context', {})
-                                }
-                            )
-                        elif tool_name == 'odoo_read':
-                            result = handler.execute_kw(
-                                arguments['model'],
-                                'read',
-                                [arguments['ids'], arguments.get('fields', [])],
-                                {'context': arguments.get('context', {})}
-                            )
-                        elif tool_name == 'odoo_create':
-                            result = handler.execute_kw(
-                                arguments['model'],
-                                'create',
-                                [arguments['values']],
-                                {'context': arguments.get('context', {})}
-                            )
-                        elif tool_name == 'odoo_write':
-                            result = handler.execute_kw(
-                                arguments['model'],
-                                'write',
-                                [arguments['ids'], arguments['values']],
-                                {'context': arguments.get('context', {})}
-                            )
-                        elif tool_name == 'odoo_unlink':
-                            result = handler.execute_kw(
-                                arguments['model'],
-                                'unlink',
-                                [arguments['ids']],
-                                {'context': arguments.get('context', {})}
-                            )
-                        elif tool_name == 'odoo_call_method':
-                            result = handler.execute_kw(
-                                arguments['model'],
-                                arguments['method'],
-                                [arguments['ids']] + arguments.get('args', []),
-                                arguments.get('kwargs', {})
-                            )
-                        else:
-                            raise ProtocolError(f"Tool {tool_name} not implemented")
-
-                        response = {
-                            'jsonrpc': '2.0',
-                            'result': result,
-                            'id': request_id
-                        }
-                        print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
-                        return response
-
-                    finally:
-                        # Rilascia la connessione
-                        run_async(connection.release())
+                    result = run_async(execute_tool())
+                    response = {
+                        'jsonrpc': '2.0',
+                        'result': result,
+                        'id': request_id
+                    }
+                    print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                    return response
 
                 except Exception as e:
                     logger.error(f"Error executing tool {tool_name}: {e}")
