@@ -483,7 +483,7 @@ class OdooMCPServer(Server):
                 resources = run_async(self.list_resources())
                 response = {
                     'jsonrpc': '2.0',
-                    'result': [r.__dict__ for r in resources],
+                    'result': {'items': [r.__dict__ for r in resources]},
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
@@ -492,7 +492,7 @@ class OdooMCPServer(Server):
                 tools = run_async(self.list_tools())
                 response = {
                     'jsonrpc': '2.0',
-                    'result': [t.__dict__ for t in tools],
+                    'result': {'items': [t.__dict__ for t in tools]},
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
@@ -501,7 +501,7 @@ class OdooMCPServer(Server):
                 prompts = run_async(self.list_prompts())
                 response = {
                     'jsonrpc': '2.0',
-                    'result': [p.__dict__ for p in prompts],
+                    'result': {'items': [p.__dict__ for p in prompts]},
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
