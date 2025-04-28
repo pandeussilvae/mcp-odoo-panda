@@ -472,7 +472,7 @@ class OdooMCPServer(Server):
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
-            elif method == 'list_resources':
+            elif method in ('list_resources', 'resources/list'):
                 resources = run_async(self.list_resources())
                 response = {
                     'jsonrpc': '2.0',
@@ -481,7 +481,7 @@ class OdooMCPServer(Server):
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
-            elif method == 'list_tools':
+            elif method in ('list_tools', 'tools/list'):
                 tools = run_async(self.list_tools())
                 response = {
                     'jsonrpc': '2.0',
@@ -490,7 +490,7 @@ class OdooMCPServer(Server):
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
-            elif method == 'list_prompts':
+            elif method in ('list_prompts', 'prompts/list'):
                 prompts = run_async(self.list_prompts())
                 response = {
                     'jsonrpc': '2.0',
@@ -517,6 +517,18 @@ class OdooMCPServer(Server):
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
+            elif method == 'resources/templates/list':
+                templates = self.capabilities['resources']['templates']
+                response = {
+                    'jsonrpc': '2.0',
+                    'result': templates,
+                    'id': request_id
+                }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
+            elif method == 'notifications/initialized':
+                print(f"[DEBUG] Ignored notification: {method}", file=sys.stderr)
+                return {}
             else:
                 raise ProtocolError(f"Unknown method: {method}")
 
