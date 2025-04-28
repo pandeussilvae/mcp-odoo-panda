@@ -8,8 +8,15 @@ import json
 import logging
 import sys
 from typing import Dict, Any, Optional, Callable
+from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+class EnumEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Enum):
+            return obj.value
+        return super().default(obj)
 
 class StdioProtocol:
     """
@@ -50,7 +57,7 @@ class StdioProtocol:
                     response = self.request_handler(request)
 
                     # Write the response to stdout
-                    print(json.dumps(response), flush=True)
+                    print(json.dumps(response, cls=EnumEncoder), flush=True)
 
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON in request: {e}")
@@ -62,7 +69,7 @@ class StdioProtocol:
                         },
                         "id": None
                     }
-                    print(json.dumps(error_response), flush=True)
+                    print(json.dumps(error_response, cls=EnumEncoder), flush=True)
 
                 except Exception as e:
                     logger.error(f"Error handling request: {e}")
@@ -74,7 +81,7 @@ class StdioProtocol:
                         },
                         "id": None
                     }
-                    print(json.dumps(error_response), flush=True)
+                    print(json.dumps(error_response, cls=EnumEncoder), flush=True)
 
         finally:
             self._running = False
