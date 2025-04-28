@@ -150,7 +150,7 @@ class OdooMCPServer(Server):
                 "uri": uri,
                 "type": "record",  # o il tipo appropriato basato sull'URI
                 "name": "Template Resource",
-                "data": None,
+                "contents": [],  # Array vuoto per template
                 "mime_type": "application/json"
             }
 
@@ -174,7 +174,12 @@ class OdooMCPServer(Server):
                 "uri": uri,
                 "type": "list",
                 "name": f"{model_name} List",
-                "data": data,
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(data, indent=2)
+                    }
+                ],
                 "mime_type": "application/json"
             }
         elif parts[1] == "binary":
@@ -187,7 +192,12 @@ class OdooMCPServer(Server):
                 "uri": uri,
                 "type": "binary",
                 "name": f"{model_name} {field_name}",
-                "data": data,
+                "contents": [
+                    {
+                        "type": "binary",
+                        "data": data
+                    }
+                ],
                 "mime_type": "application/octet-stream"
             }
         else:
@@ -200,7 +210,12 @@ class OdooMCPServer(Server):
                 "uri": uri,
                 "type": "record",
                 "name": f"{model_name} {id_str}",
-                "data": data,
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(data, indent=2)
+                    }
+                ],
                 "mime_type": "application/json"
             }
 
@@ -567,8 +582,9 @@ class OdooMCPServer(Server):
 
                 # Esegui lo strumento appropriato
                 try:
-                    # Ottieni una connessione dal pool
-                    wrapper = run_async(self.pool.get_connection())
+                    # Usa il context manager del pool
+                    pool_context = self.pool.get_connection()
+                    wrapper = run_async(pool_context.__aenter__())
                     handler = wrapper.connection
 
                     try:
@@ -630,8 +646,8 @@ class OdooMCPServer(Server):
                         return response
 
                     finally:
-                        # Rilascia la connessione
-                        run_async(wrapper.release())
+                        # Chiudi la connessione usando il context manager
+                        run_async(pool_context.__aexit__(None, None, None))
 
                 except Exception as e:
                     logger.error(f"Error executing tool {tool_name}: {e}")
