@@ -532,6 +532,10 @@ class OdooMCPServer(Server):
                 response = {
                     'jsonrpc': '2.0',
                     'result': {
+                        'prompt': {
+                            'name': name,
+                            'arguments': args
+                        },
                         'messages': [
                             {
                                 'role': 'assistant',
@@ -582,7 +586,7 @@ class OdooMCPServer(Server):
                 ]
                 response = {
                     'jsonrpc': '2.0',
-                    'result': {'templates': templates},
+                    'result': {'resourceTemplates': templates},
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
@@ -604,10 +608,9 @@ class OdooMCPServer(Server):
 
                 # Esegui lo strumento appropriato
                 try:
-                    # Usa il context manager del pool
-                    pool_context = self.pool.get_connection()
-                    wrapper = run_async(pool_context.__aenter__())
-                    handler = wrapper.connection
+                    # Ottieni una connessione dal pool
+                    connection = run_async(self.pool.get_connection())
+                    handler = connection.connection
 
                     try:
                         if tool_name == 'odoo_search_read':
@@ -668,8 +671,8 @@ class OdooMCPServer(Server):
                         return response
 
                     finally:
-                        # Chiudi la connessione usando il context manager
-                        run_async(pool_context.__aexit__(None, None, None))
+                        # Rilascia la connessione
+                        run_async(connection.release())
 
                 except Exception as e:
                     logger.error(f"Error executing tool {tool_name}: {e}")
@@ -861,6 +864,7 @@ class OdooMCPServer(Server):
         uri = args.get('uri')
         if not uri:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text="Please provide a valid URI for the record to analyze (e.g., odoo://res.partner/1)"
@@ -871,6 +875,7 @@ class OdooMCPServer(Server):
         try:
             resource = await self.get_resource(uri)
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=f"Analyzing record from {uri}:\n\n{json.dumps(resource['data'], indent=2)}"
@@ -879,6 +884,7 @@ class OdooMCPServer(Server):
             )
         except Exception as e:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=f"Error analyzing record: {str(e)}"
@@ -891,6 +897,7 @@ class OdooMCPServer(Server):
         model = args.get('model')
         if not model:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text="Please provide a model name (e.g., res.partner)"
@@ -911,6 +918,7 @@ class OdooMCPServer(Server):
                 fields_text += f"- {field} ({info.get('type')}): {info.get('string')} [{required}]\n"
 
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=f"Creating new {model} record.\n\n{fields_text}\n\nUse odoo_create tool with appropriate values to create the record."
@@ -919,6 +927,7 @@ class OdooMCPServer(Server):
             )
         except Exception as e:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=f"Error getting model information: {str(e)}"
@@ -931,6 +940,7 @@ class OdooMCPServer(Server):
         uri = args.get('uri')
         if not uri:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text="Please provide a valid URI for the record to update (e.g., odoo://res.partner/1)"
@@ -961,6 +971,7 @@ class OdooMCPServer(Server):
             response += "\nUse odoo_write tool with appropriate values to update the record."
 
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=response
@@ -969,6 +980,7 @@ class OdooMCPServer(Server):
             )
         except Exception as e:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=f"Error getting record information: {str(e)}"
@@ -981,6 +993,7 @@ class OdooMCPServer(Server):
         model = args.get('model')
         if not model:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text="Please provide a model name (e.g., res.partner)"
@@ -1012,6 +1025,7 @@ class OdooMCPServer(Server):
             response += "\nUse odoo_search_read tool with your domain to search records."
 
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=response
@@ -1020,6 +1034,7 @@ class OdooMCPServer(Server):
             )
         except Exception as e:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=f"Error getting model information: {str(e)}"
@@ -1034,6 +1049,7 @@ class OdooMCPServer(Server):
         
         if not uri:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text="Please provide a valid URI (e.g., odoo://res.partner/1)"
@@ -1043,6 +1059,7 @@ class OdooMCPServer(Server):
         
         if not method:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text="Please provide the method name to call"
@@ -1070,6 +1087,7 @@ class OdooMCPServer(Server):
             response += "- kwargs: {}  # Optional keyword arguments"
 
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=response
@@ -1078,6 +1096,7 @@ class OdooMCPServer(Server):
             )
         except Exception as e:
             return GetPromptResult(
+                prompt=prompt,
                 message=PromptMessage(
                     content=TextContent(
                         text=f"Error preparing method call: {str(e)}"
