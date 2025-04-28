@@ -425,7 +425,6 @@ class OdooMCPServer(Server):
             if method == 'long_task':
                 # Recupera la reference al protocollo SSE se attivo
                 if hasattr(self, 'protocol') and hasattr(self.protocol, 'notify_client'):
-                    import asyncio
                     async def do_long_task():
                         for progress in range(0, 101, 20):
                             await asyncio.sleep(0.5)  # Simula lavoro
