@@ -453,7 +453,11 @@ class OdooMCPServer(Server):
                     'jsonrpc': '2.0',
                     'result': {
                         'protocolVersion': '2024-11-05',
-                        'serverInfo': server_info.__dict__
+                        'serverInfo': {
+                            'name': server_info.name,
+                            'version': server_info.version
+                        },
+                        'capabilities': server_info.capabilities
                     },
                     'id': request_id
                 }
