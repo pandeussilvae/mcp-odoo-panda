@@ -504,6 +504,15 @@ class OdooMCPServer(Server):
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
+            elif method == 'get_server_info':
+                server_info = run_async(self.initialize(ClientInfo()))
+                response = {
+                    'jsonrpc': '2.0',
+                    'result': server_info.__dict__,
+                    'id': request_id
+                }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
             else:
                 raise ProtocolError(f"Unknown method: {method}")
 
