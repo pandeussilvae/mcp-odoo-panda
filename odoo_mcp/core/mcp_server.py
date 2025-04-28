@@ -196,18 +196,21 @@ class OdooMCPServer(Server):
             Resource(
                 uri="odoo://{model}/{id}",
                 type=ResourceType.RECORD,
+                name="Odoo Record",
                 data=None,
                 mime_type="application/json"
             ),
             Resource(
                 uri="odoo://{model}/list",
                 type=ResourceType.LIST,
+                name="Odoo Record List",
                 data=None,
                 mime_type="application/json"
             ),
             Resource(
                 uri="odoo://{model}/binary/{field}/{id}",
                 type=ResourceType.BINARY,
+                name="Odoo Binary Field",
                 data=None,
                 mime_type="application/octet-stream"
             )
