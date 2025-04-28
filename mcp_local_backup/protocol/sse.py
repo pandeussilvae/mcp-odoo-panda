@@ -94,9 +94,11 @@ class SSEProtocol:
                         continue
                     if message is None:
                         # Heartbeat: invia commento SSE
+                        logger.debug(f"[SSE] Heartbeat inviato a client_id={client_id}")
                         await response.write(b': ping\n\n')
                         await response.drain()
                         continue
+                    logger.info(f"[SSE] Invio messaggio a client_id={client_id}: {message}")
                     await response.send(json.dumps(message))
                     self._client_last_active[client_id] = time.time()
                 except Exception as e:
@@ -196,7 +198,8 @@ class SSEProtocol:
         """
         Invia un messaggio a tutti i client connessi (es. notifiche broadcast).
         """
-        for queue in self._client_queues.values():
+        for client_id, queue in self._client_queues.items():
+            logger.info(f"[SSE] Broadcast a client_id={client_id}: {message}")
             await queue.put(message)
 
     def stop(self):
