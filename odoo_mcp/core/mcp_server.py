@@ -216,13 +216,13 @@ class OdooMCPServer(Server):
             }
         ]
 
-    async def list_tools(self) -> List[Tool]:
+    async def list_tools(self) -> List[dict]:
         """List available tools."""
         return [
-            Tool(
-                name="odoo_search_read",
-                description="Search and read Odoo records",
-                input_schema={
+            {
+                "name": "odoo_search_read",
+                "description": "Search and read Odoo records",
+                "input_schema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -234,11 +234,11 @@ class OdooMCPServer(Server):
                     },
                     "required": ["model"]
                 }
-            ),
-            Tool(
-                name="odoo_read",
-                description="Read specific fields for given Odoo record IDs",
-                input_schema={
+            },
+            {
+                "name": "odoo_read",
+                "description": "Read specific fields for given Odoo record IDs",
+                "input_schema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -248,11 +248,11 @@ class OdooMCPServer(Server):
                     },
                     "required": ["model", "ids"]
                 }
-            ),
-            Tool(
-                name="odoo_create",
-                description="Create a new record in an Odoo model",
-                input_schema={
+            },
+            {
+                "name": "odoo_create",
+                "description": "Create a new record in an Odoo model",
+                "input_schema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -261,11 +261,11 @@ class OdooMCPServer(Server):
                     },
                     "required": ["model", "values"]
                 }
-            ),
-            Tool(
-                name="odoo_write",
-                description="Update existing Odoo records",
-                input_schema={
+            },
+            {
+                "name": "odoo_write",
+                "description": "Update existing Odoo records",
+                "input_schema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -275,11 +275,11 @@ class OdooMCPServer(Server):
                     },
                     "required": ["model", "ids", "values"]
                 }
-            ),
-            Tool(
-                name="odoo_unlink",
-                description="Delete Odoo records",
-                input_schema={
+            },
+            {
+                "name": "odoo_unlink",
+                "description": "Delete Odoo records",
+                "input_schema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -288,11 +288,11 @@ class OdooMCPServer(Server):
                     },
                     "required": ["model", "ids"]
                 }
-            ),
-            Tool(
-                name="odoo_call_method",
-                description="Call a specific method on Odoo records",
-                input_schema={
+            },
+            {
+                "name": "odoo_call_method",
+                "description": "Call a specific method on Odoo records",
+                "input_schema": {
                     "type": "object",
                     "properties": {
                         "model": {"type": "string"},
@@ -304,27 +304,27 @@ class OdooMCPServer(Server):
                     },
                     "required": ["model", "method", "ids"]
                 }
-            )
+            }
         ]
 
-    async def list_prompts(self) -> List[Prompt]:
+    async def list_prompts(self) -> List[dict]:
         """List available prompts."""
         return [
-            Prompt(
-                name="analyze-record",
-                description="Analyze an Odoo record and provide insights",
-                arguments=[
+            {
+                "name": "analyze-record",
+                "description": "Analyze an Odoo record and provide insights",
+                "arguments": [
                     {
                         "name": "uri",
                         "description": "URI of the record to analyze (e.g., odoo://res.partner/123)",
                         "required": True
                     }
                 ]
-            ),
-            Prompt(
-                name="create-record",
-                description="Create a new record with guided field selection",
-                arguments=[
+            },
+            {
+                "name": "create-record",
+                "description": "Create a new record with guided field selection",
+                "arguments": [
                     {
                         "name": "model",
                         "description": "Odoo model name (e.g., res.partner)",
@@ -336,22 +336,22 @@ class OdooMCPServer(Server):
                         "required": False
                     }
                 ]
-            ),
-            Prompt(
-                name="update-record",
-                description="Update an existing record with guided field selection",
-                arguments=[
+            },
+            {
+                "name": "update-record",
+                "description": "Update an existing record with guided field selection",
+                "arguments": [
                     {
                         "name": "uri",
                         "description": "URI of the record to update (e.g., odoo://res.partner/123)",
                         "required": True
                     }
                 ]
-            ),
-            Prompt(
-                name="advanced-search",
-                description="Perform an advanced search with domain builder",
-                arguments=[
+            },
+            {
+                "name": "advanced-search",
+                "description": "Perform an advanced search with domain builder",
+                "arguments": [
                     {
                         "name": "model",
                         "description": "Odoo model name (e.g., res.partner)",
@@ -363,11 +363,11 @@ class OdooMCPServer(Server):
                         "required": False
                     }
                 ]
-            ),
-            Prompt(
-                name="call-method",
-                description="Call a method on records with guided parameter selection",
-                arguments=[
+            },
+            {
+                "name": "call-method",
+                "description": "Call a method on records with guided parameter selection",
+                "arguments": [
                     {
                         "name": "uri",
                         "description": "URI of the record (e.g., odoo://res.partner/123) or model name for model methods",
@@ -379,13 +379,13 @@ class OdooMCPServer(Server):
                         "required": True
                     }
                 ]
-            )
+            }
         ]
 
     async def get_prompt(self, name: str, args: Dict[str, Any]) -> GetPromptResult:
         """Get a prompt by name."""
         # Find the prompt
-        prompt = next((p for p in await self.list_prompts() if p.name == name), None)
+        prompt = next((p for p in await self.list_prompts() if p['name'] == name), None)
         if not prompt:
             raise ProtocolError(f"Prompt not found: {name}")
 
@@ -473,11 +473,17 @@ class OdooMCPServer(Server):
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
-            elif method == 'get_resource':
+            elif method == 'get_resource' or method == 'resources/read':
                 resource = run_async(self.get_resource(params['uri']))
                 response = {
                     'jsonrpc': '2.0',
-                    'result': resource.__dict__,
+                    'result': {
+                        'uri': resource.uri,
+                        'name': resource.uri.split('/')[-1],  # Nome basato sull'ultima parte dell'URI
+                        'type': str(resource.type).lower(),
+                        'data': resource.data,
+                        'mime_type': resource.mime_type
+                    },
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
@@ -495,7 +501,7 @@ class OdooMCPServer(Server):
                 tools = run_async(self.list_tools())
                 response = {
                     'jsonrpc': '2.0',
-                    'result': {'tools': [t.__dict__ for t in tools]},
+                    'result': {'tools': tools},
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
@@ -504,7 +510,7 @@ class OdooMCPServer(Server):
                 prompts = run_async(self.list_prompts())
                 response = {
                     'jsonrpc': '2.0',
-                    'result': {'prompts': [p.__dict__ for p in prompts]},
+                    'result': {'prompts': prompts},
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
