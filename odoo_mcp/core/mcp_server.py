@@ -451,7 +451,10 @@ class OdooMCPServer(Server):
                 server_info = run_async(self.initialize(client_info))
                 response = {
                     'jsonrpc': '2.0',
-                    'result': server_info.__dict__,
+                    'result': {
+                        'protocolVersion': '2024-11-05',
+                        'serverInfo': server_info.__dict__
+                    },
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
