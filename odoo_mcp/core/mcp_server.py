@@ -524,6 +524,14 @@ class OdooMCPServer(Server):
                         uid=uid,
                         password=password
                     )
+                    mcp_result = {
+                        'contents': [
+                            {
+                                'type': 'text',
+                                'text': json.dumps(result, indent=2)
+                            }
+                        ]
+                    }
 
                 elif name == 'odoo_read':
                     model = arguments.get('model')
@@ -542,6 +550,14 @@ class OdooMCPServer(Server):
                         uid=uid,
                         password=password
                     )
+                    mcp_result = {
+                        'contents': [
+                            {
+                                'type': 'text',
+                                'text': json.dumps(result, indent=2)
+                            }
+                        ]
+                    }
 
                 elif name == 'odoo_create':
                     model = arguments.get('model')
@@ -558,7 +574,14 @@ class OdooMCPServer(Server):
                         uid=uid,
                         password=password
                     )
-                    result = {'id': record_id}
+                    mcp_result = {
+                        'contents': [
+                            {
+                                'type': 'text',
+                                'text': json.dumps({'id': record_id})
+                            }
+                        ]
+                    }
 
                 elif name == 'odoo_write':
                     model = arguments.get('model')
@@ -576,7 +599,14 @@ class OdooMCPServer(Server):
                         uid=uid,
                         password=password
                     )
-                    result = {'success': success}
+                    mcp_result = {
+                        'contents': [
+                            {
+                                'type': 'text',
+                                'text': json.dumps({'success': success})
+                            }
+                        ]
+                    }
 
                 elif name == 'odoo_unlink':
                     model = arguments.get('model')
@@ -593,7 +623,14 @@ class OdooMCPServer(Server):
                         uid=uid,
                         password=password
                     )
-                    result = {'success': success}
+                    mcp_result = {
+                        'contents': [
+                            {
+                                'type': 'text',
+                                'text': json.dumps({'success': success})
+                            }
+                        ]
+                    }
 
                 elif name == 'odoo_call_method':
                     model = arguments.get('model')
@@ -614,6 +651,15 @@ class OdooMCPServer(Server):
                         uid=uid,
                         password=password
                     )
+                    # Wrappa il risultato in contents
+                    mcp_result = {
+                        'contents': [
+                            {
+                                'type': 'text',
+                                'text': json.dumps(result, indent=2)
+                            }
+                        ]
+                    }
 
                 else:
                     return {
@@ -627,7 +673,7 @@ class OdooMCPServer(Server):
 
                 response = {
                     'jsonrpc': '2.0',
-                    'result': result,
+                    'result': mcp_result,
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
