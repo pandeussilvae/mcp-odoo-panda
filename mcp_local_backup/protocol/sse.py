@@ -82,10 +82,33 @@ class SSEProtocol:
         self._client_last_active[client_id] = time.time()
         print(f"[SSE] Nuovo client connesso: client_id={client_id}, totale clients: {len(self._clients)}", file=sys.stderr)
         try:
-            # Invia evento di benvenuto con client_id
-            welcome_msg = {"type": "connected", "data": {"message": "Connected to MCP server", "client_id": client_id}}
+            # Invia evento di benvenuto con client_id e capabilities
+            welcome_msg = {
+                "jsonrpc": "2.0",
+                "id": 0,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {}
+                    },
+                    "serverInfo": {
+                        "name": "MCP Odoo Server",
+                        "version": "1.0.0"
+                    }
+                }
+            }
             print(f"[SSE] Invio messaggio di benvenuto a {client_id}: {welcome_msg}", file=sys.stderr)
             await response.send(json.dumps(welcome_msg))
+            
+            # Invia anche il client_id come messaggio separato
+            client_info = {
+                "type": "connected",
+                "data": {
+                    "message": "Connected to MCP server",
+                    "client_id": client_id
+                }
+            }
+            await response.send(json.dumps(client_info))
             
             while not response.task.done():
                 try:
