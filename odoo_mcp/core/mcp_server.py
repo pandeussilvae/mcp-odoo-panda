@@ -82,6 +82,10 @@ class OdooMCPServer(Server):
             print(f"[MCP] Connessione a Odoo OK. Versione: {version}", file=sys.stderr)
             # Autenticazione per ottenere l'uid reale
             db = config.get('db')
+            if not db:
+                print("[MCP] ERRORE: parametro 'db' mancante nella configurazione!", file=sys.stderr)
+                raise ConfigurationError("Parametro 'db' mancante nella configurazione.")
+            print(f"[MCP] Database usato per autenticazione: {db}", file=sys.stderr)
             username = config.get('username')
             password = config.get('api_key') or config.get('password')
             uid = handler.common.authenticate(db, username, password, {})
