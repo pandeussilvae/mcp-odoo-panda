@@ -448,6 +448,183 @@ class OdooMCPServer(Server):
         self.protocol.stop()
         await super().stop()
 
+    async def handle_tools_call(self, request_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle tools/call method."""
+        name = params.get('name')
+        arguments = params.get('arguments', {})
+        
+        if not name:
+            return {
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32602,
+                    'message': "Missing 'name' in params"
+                },
+                'id': request_id
+            }
+
+        # Verifica che lo strumento esista
+        tools = await self.list_tools()
+        tool = next((t for t in tools if t['name'] == name), None)
+        if not tool:
+            return {
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32601,
+                    'message': f"Unknown tool: {name}"
+                },
+                'id': request_id
+            }
+
+        try:
+            # Ottieni le credenziali dal config
+            auth_details = await self._get_odoo_auth(self.session_manager, self.config, params)
+
+            async with self.pool.get_connection() as connection:
+                handler = connection.connection
+                
+                # Mapping degli strumenti MCP su chiamate Odoo
+                if name == 'odoo_search_read':
+                    model = arguments.get('model')
+                    domain = arguments.get('domain', [])
+                    fields = arguments.get('fields', [])
+                    limit = arguments.get('limit', 80)
+                    offset = arguments.get('offset', 0)
+                    context = arguments.get('context', {})
+
+                    result = handler.execute_kw(
+                        model,
+                        'search_read',
+                        [domain],
+                        {
+                            'fields': fields,
+                            'limit': limit,
+                            'offset': offset,
+                            'context': context
+                        },
+                        uid=auth_details['uid'],
+                        password=auth_details['password']
+                    )
+
+                elif name == 'odoo_read':
+                    model = arguments.get('model')
+                    ids = arguments.get('ids', [])
+                    fields = arguments.get('fields', [])
+                    context = arguments.get('context', {})
+
+                    result = handler.execute_kw(
+                        model,
+                        'read',
+                        [ids],
+                        {
+                            'fields': fields,
+                            'context': context
+                        },
+                        uid=auth_details['uid'],
+                        password=auth_details['password']
+                    )
+
+                elif name == 'odoo_create':
+                    model = arguments.get('model')
+                    values = arguments.get('values', {})
+                    context = arguments.get('context', {})
+
+                    record_id = handler.execute_kw(
+                        model,
+                        'create',
+                        [values],
+                        {
+                            'context': context
+                        },
+                        uid=auth_details['uid'],
+                        password=auth_details['password']
+                    )
+                    result = {'id': record_id}
+
+                elif name == 'odoo_write':
+                    model = arguments.get('model')
+                    ids = arguments.get('ids', [])
+                    values = arguments.get('values', {})
+                    context = arguments.get('context', {})
+
+                    success = handler.execute_kw(
+                        model,
+                        'write',
+                        [ids, values],
+                        {
+                            'context': context
+                        },
+                        uid=auth_details['uid'],
+                        password=auth_details['password']
+                    )
+                    result = {'success': success}
+
+                elif name == 'odoo_unlink':
+                    model = arguments.get('model')
+                    ids = arguments.get('ids', [])
+                    context = arguments.get('context', {})
+
+                    success = handler.execute_kw(
+                        model,
+                        'unlink',
+                        [ids],
+                        {
+                            'context': context
+                        },
+                        uid=auth_details['uid'],
+                        password=auth_details['password']
+                    )
+                    result = {'success': success}
+
+                elif name == 'odoo_call_method':
+                    model = arguments.get('model')
+                    method = arguments.get('method')
+                    ids = arguments.get('ids', [])
+                    args = arguments.get('args', [])
+                    kwargs = arguments.get('kwargs', {})
+                    context = arguments.get('context', {})
+
+                    result = handler.execute_kw(
+                        model,
+                        method,
+                        [ids] + args,
+                        {
+                            'context': context,
+                            **kwargs
+                        },
+                        uid=auth_details['uid'],
+                        password=auth_details['password']
+                    )
+
+                else:
+                    return {
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32601,
+                            'message': f"Tool {name} not implemented"
+                        },
+                        'id': request_id
+                    }
+
+                response = {
+                    'jsonrpc': '2.0',
+                    'result': result,
+                    'id': request_id
+                }
+                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                return response
+
+        except Exception as e:
+            logger.error(f"Error executing tool {name}: {e}")
+            return {
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                },
+                'id': request_id
+            }
+
     def _handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle incoming requests."""
         try:
@@ -491,7 +668,7 @@ class OdooMCPServer(Server):
                 resource = run_async(self.get_resource(params['uri']))
                 response = {
                     'jsonrpc': '2.0',
-                    'result': resource,  # resource è già un dict
+                    'result': resource,
                     'id': request_id
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
@@ -595,92 +772,7 @@ class OdooMCPServer(Server):
                 print(f"[DEBUG] Ignored notification: {method}", file=sys.stderr)
                 return None
             elif method == 'tools/call':
-                tool_name = params.get('name')
-                arguments = params.get('arguments', {})
-                meta = params.get('_meta', {})
-                client_id = request.get('client_id')
-                
-                # Verifica che lo strumento esista
-                tools = run_async(self.list_tools())
-                tool = next((t for t in tools if t['name'] == tool_name), None)
-                if not tool:
-                    raise ProtocolError(f"Tool not found: {tool_name}")
-
-                # Esegui lo strumento appropriato
-                try:
-                    async def execute_tool():
-                        async with self.pool.get_connection() as connection:
-                            handler = connection.connection
-                            if tool_name == 'odoo_search_read':
-                                return handler.execute_kw(
-                                    arguments['model'],
-                                    'search_read',
-                                    [arguments.get('domain', []), arguments.get('fields', [])],
-                                    {
-                                        'limit': arguments.get('limit', 80),
-                                        'offset': arguments.get('offset', 0),
-                                        'context': arguments.get('context', {})
-                                    }
-                                )
-                            elif tool_name == 'odoo_read':
-                                return handler.execute_kw(
-                                    arguments['model'],
-                                    'read',
-                                    [arguments['ids'], arguments.get('fields', [])],
-                                    {'context': arguments.get('context', {})}
-                                )
-                            elif tool_name == 'odoo_create':
-                                return handler.execute_kw(
-                                    arguments['model'],
-                                    'create',
-                                    [arguments['values']],
-                                    {'context': arguments.get('context', {})}
-                                )
-                            elif tool_name == 'odoo_write':
-                                return handler.execute_kw(
-                                    arguments['model'],
-                                    'write',
-                                    [arguments['ids'], arguments['values']],
-                                    {'context': arguments.get('context', {})}
-                                )
-                            elif tool_name == 'odoo_unlink':
-                                return handler.execute_kw(
-                                    arguments['model'],
-                                    'unlink',
-                                    [arguments['ids']],
-                                    {'context': arguments.get('context', {})}
-                                )
-                            elif tool_name == 'odoo_call_method':
-                                return handler.execute_kw(
-                                    arguments['model'],
-                                    arguments['method'],
-                                    [arguments['ids']] + arguments.get('args', []),
-                                    arguments.get('kwargs', {})
-                                )
-                            else:
-                                raise ProtocolError(f"Tool {tool_name} not implemented")
-
-                    result = run_async(execute_tool())
-                    response = {
-                        'jsonrpc': '2.0',
-                        'result': result,
-                        'id': request_id
-                    }
-                    print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
-                    return response
-
-                except Exception as e:
-                    logger.error(f"Error executing tool {tool_name}: {e}")
-                    error_response = {
-                        'jsonrpc': '2.0',
-                        'error': {
-                            'code': -32603,
-                            'message': str(e)
-                        },
-                        'id': request_id
-                    }
-                    print(f"[DEBUG] MCP error response: {error_response}", file=sys.stderr)
-                    return error_response
+                return run_async(self.handle_tools_call(request_id, params))
             else:
                 raise ProtocolError(f"Unknown method: {method}")
 
