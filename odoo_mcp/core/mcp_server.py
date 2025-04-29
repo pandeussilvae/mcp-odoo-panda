@@ -480,7 +480,8 @@ class OdooMCPServer(Server):
             # Ottieni le credenziali dal config
             auth_details = await self._get_odoo_auth(self.session_manager, self.config, params)
 
-            async with await self.pool.get_connection() as connection:
+            connection = await self.pool.get_connection()
+            try:
                 handler = connection.connection
                 
                 # Mapping degli strumenti MCP su chiamate Odoo
@@ -613,6 +614,8 @@ class OdooMCPServer(Server):
                 }
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
+            finally:
+                await connection.release()
 
         except Exception as e:
             logger.error(f"Error executing tool {name}: {e}")
