@@ -615,7 +615,7 @@ class OdooMCPServer(Server):
                 print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
                 return response
             finally:
-                await connection.release()
+                pass
 
         except Exception as e:
             logger.error(f"Error executing tool {name}: {e}")
