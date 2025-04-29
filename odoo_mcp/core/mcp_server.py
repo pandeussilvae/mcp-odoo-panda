@@ -497,9 +497,6 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     result = handler.execute_kw(
-                        db,
-                        uid,
-                        password,
                         model,
                         'search_read',
                         [domain],
@@ -508,7 +505,9 @@ class OdooMCPServer(Server):
                             'limit': limit,
                             'offset': offset,
                             'context': context
-                        }
+                        },
+                        uid=uid,
+                        password=password
                     )
 
                 elif name == 'odoo_read':
@@ -518,16 +517,15 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     result = handler.execute_kw(
-                        db,
-                        uid,
-                        password,
                         model,
                         'read',
                         [ids],
                         {
                             'fields': fields,
                             'context': context
-                        }
+                        },
+                        uid=uid,
+                        password=password
                     )
 
                 elif name == 'odoo_create':
@@ -536,15 +534,14 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     record_id = handler.execute_kw(
-                        db,
-                        uid,
-                        password,
                         model,
                         'create',
                         [values],
                         {
                             'context': context
-                        }
+                        },
+                        uid=uid,
+                        password=password
                     )
                     result = {'id': record_id}
 
@@ -555,15 +552,14 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     success = handler.execute_kw(
-                        db,
-                        uid,
-                        password,
                         model,
                         'write',
                         [ids, values],
                         {
                             'context': context
-                        }
+                        },
+                        uid=uid,
+                        password=password
                     )
                     result = {'success': success}
 
@@ -573,15 +569,14 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     success = handler.execute_kw(
-                        db,
-                        uid,
-                        password,
                         model,
                         'unlink',
                         [ids],
                         {
                             'context': context
-                        }
+                        },
+                        uid=uid,
+                        password=password
                     )
                     result = {'success': success}
 
@@ -594,16 +589,15 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     result = handler.execute_kw(
-                        db,
-                        uid,
-                        password,
                         model,
                         method,
                         [ids] + args,
                         {
                             'context': context,
                             **kwargs
-                        }
+                        },
+                        uid=uid,
+                        password=password
                     )
 
                 else:
