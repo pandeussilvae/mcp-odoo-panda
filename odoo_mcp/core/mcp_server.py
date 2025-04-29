@@ -75,10 +75,21 @@ class OdooMCPServer(Server):
         # Initialize bus handler
         self.bus_handler = OdooBusHandler(config, self._notify_resource_update)
 
-        # Test Odoo connection on startup
+        # Test Odoo connection on startup e acquisizione UID reale
         try:
-            version = self.pool.handler_class(config).common.version()
+            handler = self.pool.handler_class(config)
+            version = handler.common.version()
             print(f"[MCP] Connessione a Odoo OK. Versione: {version}", file=sys.stderr)
+            # Autenticazione per ottenere l'uid reale
+            db = config.get('db')
+            username = config.get('username')
+            password = config.get('api_key') or config.get('password')
+            uid = handler.common.authenticate(db, username, password, {})
+            if not uid:
+                print(f"[MCP] Autenticazione Odoo FALLITA per {username} su {db}", file=sys.stderr)
+            else:
+                print(f"[MCP] Autenticazione Odoo OK: username={username}, uid={uid}", file=sys.stderr)
+                config['uid'] = uid  # Salva l'uid reale nel config
         except Exception as e:
             print(f"[MCP] Connessione a Odoo FALLITA: {e}", file=sys.stderr)
 
