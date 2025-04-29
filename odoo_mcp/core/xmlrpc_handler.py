@@ -170,8 +170,15 @@ class XMLRPCHandler:
     def _execute_kw_direct(self, model: str, method: str, args: list, kwargs: dict, uid: int, password: str) -> Any:
          """Directly execute the XML-RPC call to Odoo without using any cache."""
          try:
-              logger.debug(f"Executing XML-RPC: model={model}, method={method}, uid={uid}")
+              print(f"[DEBUG] _execute_kw_direct: model={model}, method={method}, uid={uid}", file=sys.stderr)
+              print(f"[DEBUG] _execute_kw_direct: args={args}", file=sys.stderr)
+              print(f"[DEBUG] _execute_kw_direct: kwargs={kwargs}", file=sys.stderr)
               result = self.models.execute_kw(self.database, uid, password, model, method, args, kwargs)
+              # Stampo solo i primi 500 caratteri del risultato per evitare log troppo lunghi
+              result_str = str(result)
+              if len(result_str) > 500:
+                  result_str = result_str[:500] + '... [truncated]'
+              print(f"[DEBUG] _execute_kw_direct: result={result_str}", file=sys.stderr)
               logger.debug(f"XML-RPC call successful for {model}.{method}")
               return result
          except Fault as e:
