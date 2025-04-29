@@ -479,6 +479,9 @@ class OdooMCPServer(Server):
         try:
             # Ottieni le credenziali dal config
             auth_details = await self._get_odoo_auth(self.session_manager, self.config, params)
+            db = self.config.get('db')
+            uid = auth_details['uid']
+            password = auth_details['password']
 
             connection = await self.pool.get_connection()
             try:
@@ -494,6 +497,9 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     result = handler.execute_kw(
+                        db,
+                        uid,
+                        password,
                         model,
                         'search_read',
                         [domain],
@@ -502,9 +508,7 @@ class OdooMCPServer(Server):
                             'limit': limit,
                             'offset': offset,
                             'context': context
-                        },
-                        uid=auth_details['uid'],
-                        password=auth_details['password']
+                        }
                     )
 
                 elif name == 'odoo_read':
@@ -514,15 +518,16 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     result = handler.execute_kw(
+                        db,
+                        uid,
+                        password,
                         model,
                         'read',
                         [ids],
                         {
                             'fields': fields,
                             'context': context
-                        },
-                        uid=auth_details['uid'],
-                        password=auth_details['password']
+                        }
                     )
 
                 elif name == 'odoo_create':
@@ -531,14 +536,15 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     record_id = handler.execute_kw(
+                        db,
+                        uid,
+                        password,
                         model,
                         'create',
                         [values],
                         {
                             'context': context
-                        },
-                        uid=auth_details['uid'],
-                        password=auth_details['password']
+                        }
                     )
                     result = {'id': record_id}
 
@@ -549,14 +555,15 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     success = handler.execute_kw(
+                        db,
+                        uid,
+                        password,
                         model,
                         'write',
                         [ids, values],
                         {
                             'context': context
-                        },
-                        uid=auth_details['uid'],
-                        password=auth_details['password']
+                        }
                     )
                     result = {'success': success}
 
@@ -566,14 +573,15 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     success = handler.execute_kw(
+                        db,
+                        uid,
+                        password,
                         model,
                         'unlink',
                         [ids],
                         {
                             'context': context
-                        },
-                        uid=auth_details['uid'],
-                        password=auth_details['password']
+                        }
                     )
                     result = {'success': success}
 
@@ -586,15 +594,16 @@ class OdooMCPServer(Server):
                     context = arguments.get('context', {})
 
                     result = handler.execute_kw(
+                        db,
+                        uid,
+                        password,
                         model,
                         method,
                         [ids] + args,
                         {
                             'context': context,
                             **kwargs
-                        },
-                        uid=auth_details['uid'],
-                        password=auth_details['password']
+                        }
                     )
 
                 else:
