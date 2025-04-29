@@ -480,7 +480,7 @@ class OdooMCPServer(Server):
             # Ottieni le credenziali dal config
             auth_details = await self._get_odoo_auth(self.session_manager, self.config, params)
 
-            async with self.pool.get_connection() as connection:
+            async with await self.pool.get_connection() as connection:
                 handler = connection.connection
                 
                 # Mapping degli strumenti MCP su chiamate Odoo
@@ -791,7 +791,7 @@ class OdooMCPServer(Server):
 
     async def _handle_list_resource(self, model_name: str, auth_details: Dict[str, Any]) -> Dict[str, Any]:
         """Handle list resource type."""
-        async with self.pool.get_connection() as wrapper:
+        async with await self.pool.get_connection() as wrapper:
             handler_instance = wrapper.connection
             # Get all records with basic fields
             records = handler_instance.execute_kw(
@@ -817,7 +817,7 @@ class OdooMCPServer(Server):
         except ValueError:
             raise ProtocolError(f"Invalid record ID: {id_str}")
 
-        async with self.pool.get_connection() as wrapper:
+        async with await self.pool.get_connection() as wrapper:
             handler_instance = wrapper.connection
             # Read only the binary field
             record_data = handler_instance.execute_kw(
@@ -872,7 +872,7 @@ class OdooMCPServer(Server):
                     ]
                 }
 
-        async with self.pool.get_connection() as wrapper:
+        async with await self.pool.get_connection() as wrapper:
             handler_instance = wrapper.connection
             # Read all fields
             record_data = handler_instance.execute_kw(
@@ -994,7 +994,7 @@ class OdooMCPServer(Server):
 
         try:
             # Get model fields info
-            async with self.pool.get_connection() as wrapper:
+            async with await self.pool.get_connection() as wrapper:
                 handler = wrapper.connection
                 fields_info = handler.execute_kw(model, 'fields_get', [], {'attributes': ['string', 'type', 'required']})
             
@@ -1045,7 +1045,7 @@ class OdooMCPServer(Server):
             model, id_str = parts[0], parts[1]
             
             # Get fields info
-            async with self.pool.get_connection() as wrapper:
+            async with await self.pool.get_connection() as wrapper:
                 handler = wrapper.connection
                 fields_info = handler.execute_kw(model, 'fields_get', [], {'attributes': ['string', 'type']})
             
@@ -1090,7 +1090,7 @@ class OdooMCPServer(Server):
 
         try:
             # Get model fields info
-            async with self.pool.get_connection() as wrapper:
+            async with await self.pool.get_connection() as wrapper:
                 handler = wrapper.connection
                 fields_info = handler.execute_kw(model, 'fields_get', [], {'attributes': ['string', 'type', 'selection']})
             
