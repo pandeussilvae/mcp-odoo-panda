@@ -6,6 +6,7 @@ from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE # Import cach
 import socket
 import logging
 import ssl # Import ssl module
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,8 @@ class XMLRPCHandler:
          """
          call_uid = uid if uid is not None else self.config.get('uid')
          call_password = password if password is not None else self.config.get('api_key')
+         print(f"[DEBUG] call_uid: {call_uid}", file=sys.stderr)
+         print(f"[DEBUG] call_password: {call_password}", file=sys.stderr)
 
          if call_uid is None or call_password is None:
               if not hasattr(self, 'global_uid'):
