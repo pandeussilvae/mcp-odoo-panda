@@ -94,8 +94,8 @@ class XMLRPCHandler:
 
         # --- Create ServerProxy Instances ---
         try:
-            self.common = ServerProxy(common_url, context=ssl_context)
-            self.models = ServerProxy(models_url, context=ssl_context)
+            self.common = ServerProxy(common_url, context=ssl_context, allow_none=True)
+            self.models = ServerProxy(models_url, context=ssl_context, allow_none=True)
             logger.info("XMLRPCHandler initialized proxies for common and object endpoints.")
             # Autenticazione globale per log di connessione riuscita
             try:
