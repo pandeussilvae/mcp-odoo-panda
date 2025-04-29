@@ -81,10 +81,10 @@ class OdooMCPServer(Server):
             version = handler.common.version()
             print(f"[MCP] Connessione a Odoo OK. Versione: {version}", file=sys.stderr)
             # Autenticazione per ottenere l'uid reale
-            db = config.get('db')
+            db = config.get('db') or config.get('database')
             if not db:
-                print("[MCP] ERRORE: parametro 'db' mancante nella configurazione!", file=sys.stderr)
-                raise ConfigurationError("Parametro 'db' mancante nella configurazione.")
+                print("[MCP] ERRORE: parametro 'db' (o 'database') mancante nella configurazione!", file=sys.stderr)
+                raise ConfigurationError("Parametro 'db' (o 'database') mancante nella configurazione.")
             print(f"[MCP] Database usato per autenticazione: {db}", file=sys.stderr)
             username = config.get('username')
             password = config.get('api_key') or config.get('password')
@@ -933,7 +933,7 @@ class OdooMCPServer(Server):
         session_id = params.get("session_id")
         uid = params.get("uid")
         password = params.get("password")
-        db = config.get('db')
+        db = config.get('db') or config.get('database')
 
         if session_id:
             session = session_manager.get_session(session_id)
