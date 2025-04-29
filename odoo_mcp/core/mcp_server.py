@@ -918,25 +918,31 @@ class OdooMCPServer(Server):
         session_id = params.get("session_id")
         uid = params.get("uid")
         password = params.get("password")
+        db = config.get('db')
 
         if session_id:
             session = session_manager.get_session(session_id)
             if not session:
                 raise AuthError(f"Invalid session: {session_id}")
+            # Prova a recuperare la password dalla sessione, se disponibile
+            session_password = getattr(session, 'password', None) or config.get('api_key') or config.get('password')
+            print(f"[DEBUG] _get_odoo_auth: session_id={session_id} user_id={session.user_id} password={session_password} db={db}", file=sys.stderr)
             return {
                 "uid": session.user_id,
-                "password": config.get('api_key') or config.get('password'),
-                "db": config.get('db')
+                "password": session_password,
+                "db": db
             }
         elif uid is not None and password is not None:
-            return {"uid": uid, "password": password, "db": config.get('db')}
+            print(f"[DEBUG] _get_odoo_auth: explicit uid={uid} password={password} db={db}", file=sys.stderr)
+            return {"uid": uid, "password": password, "db": db}
         else:
             # Use default credentials from config
             default_uid = config.get('uid') or 1  # Default to admin user
             default_password = config.get('api_key') or config.get('password')
             if not default_password:
                 raise AuthError("No default credentials configured")
-            return {"uid": default_uid, "password": default_password, "db": config.get('db')}
+            print(f"[DEBUG] _get_odoo_auth: default uid={default_uid} password={default_password} db={db}", file=sys.stderr)
+            return {"uid": default_uid, "password": default_password, "db": db}
 
     async def _notify_resource_update(self, uri: str, data: Dict[str, Any]):
         """
