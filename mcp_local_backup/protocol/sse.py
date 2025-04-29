@@ -118,6 +118,7 @@ class SSEProtocol:
             del self._client_id_map[response]
             del self._client_last_active[client_id]
             print(f"[SSE] Client disconnesso: client_id={client_id}, rimasti {len(self._clients)} clients", file=sys.stderr)
+        return response
 
     async def _post_handler(self, request: web.Request) -> web.Response:
         try:
