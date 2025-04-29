@@ -479,7 +479,7 @@ class OdooMCPServer(Server):
         try:
             # Ottieni le credenziali dal config
             auth_details = await self._get_odoo_auth(self.session_manager, self.config, params)
-            db = self.config.get('db')
+            db = auth_details['db']
             uid = auth_details['uid']
             password = auth_details['password']
 
@@ -803,13 +803,16 @@ class OdooMCPServer(Server):
 
     async def _handle_list_resource(self, model_name: str, auth_details: Dict[str, Any]) -> Dict[str, Any]:
         """Handle list resource type."""
+        db = auth_details["db"]
+        uid = auth_details["uid"]
+        password = auth_details["password"]
         async with await self.pool.get_connection() as wrapper:
             handler_instance = wrapper.connection
             # Get all records with basic fields
             records = handler_instance.execute_kw(
+                db, uid, password,
                 model_name, "search_read", [[], ["id", "name"]],
-                {"limit": 100},  # Limit to prevent overwhelming
-                uid=auth_details["uid"], password=auth_details["password"]
+                {"limit": 100}
             )
 
         return {
@@ -829,13 +832,16 @@ class OdooMCPServer(Server):
         except ValueError:
             raise ProtocolError(f"Invalid record ID: {id_str}")
 
+        db = auth_details["db"]
+        uid = auth_details["uid"]
+        password = auth_details["password"]
         async with await self.pool.get_connection() as wrapper:
             handler_instance = wrapper.connection
             # Read only the binary field
             record_data = handler_instance.execute_kw(
+                db, uid, password,
                 model_name, "read", [[record_id], [field_name]],
-                {},
-                uid=auth_details["uid"], password=auth_details["password"]
+                {}
             )
 
         if not record_data:
@@ -884,13 +890,16 @@ class OdooMCPServer(Server):
                     ]
                 }
 
+        db = auth_details["db"]
+        uid = auth_details["uid"]
+        password = auth_details["password"]
         async with await self.pool.get_connection() as wrapper:
             handler_instance = wrapper.connection
             # Read all fields
             record_data = handler_instance.execute_kw(
+                db, uid, password,
                 model_name, "read", [[record_id]],
-                {},
-                uid=auth_details["uid"], password=auth_details["password"]
+                {}
             )
 
         if not record_data:
@@ -922,17 +931,18 @@ class OdooMCPServer(Server):
                 raise AuthError(f"Invalid session: {session_id}")
             return {
                 "uid": session.user_id,
-                "password": config.get('api_key') or config.get('password')
+                "password": config.get('api_key') or config.get('password'),
+                "db": config.get('db')
             }
         elif uid is not None and password is not None:
-            return {"uid": uid, "password": password}
+            return {"uid": uid, "password": password, "db": config.get('db')}
         else:
             # Use default credentials from config
             default_uid = config.get('uid') or 1  # Default to admin user
             default_password = config.get('api_key') or config.get('password')
             if not default_password:
                 raise AuthError("No default credentials configured")
-            return {"uid": default_uid, "password": default_password}
+            return {"uid": default_uid, "password": default_password, "db": config.get('db')}
 
     async def _notify_resource_update(self, uri: str, data: Dict[str, Any]):
         """
