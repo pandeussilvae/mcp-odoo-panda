@@ -107,33 +107,62 @@ tool_manager = OdooToolManager(odoo)
 # Crea l'istanza FastMCP
 mcp = FastMCP("odoo-mcp-server")
 
-# Registra i template delle risorse
-resource_templates = [
-    {
-        "uriTemplate": "odoo://{model}/{id}",
-        "name": "Odoo Record",
-        "description": "Represents a single record in an Odoo model",
-        "type": "record",
-        "mimeType": "application/json"
-    },
-    {
-        "uriTemplate": "odoo://{model}/list",
-        "name": "Odoo Record List",
-        "description": "Represents a list of records in an Odoo model",
-        "type": "list",
-        "mimeType": "application/json"
-    },
-    {
-        "uriTemplate": "odoo://{model}/binary/{field}/{id}",
-        "name": "Odoo Binary Field",
-        "description": "Represents a binary field value from an Odoo record",
-        "type": "binary",
-        "mimeType": "application/octet-stream"
+# Definisci i template delle risorse
+@mcp.resource("odoo://{model}/{id}")
+async def get_odoo_record(model: str, id: int):
+    """Ottiene un singolo record Odoo."""
+    auth_details = {
+        "uid": odoo.global_uid,
+        "password": odoo.global_password
     }
-]
+    return await resource_manager.get_resource(f"odoo://{model}/{id}", auth_details)
 
-for template in resource_templates:
-    mcp.register_resource_template(template)
+@mcp.resource("odoo://{model}/list")
+async def list_odoo_records(model: str):
+    """Ottiene una lista di record Odoo."""
+    auth_details = {
+        "uid": odoo.global_uid,
+        "password": odoo.global_password
+    }
+    return await resource_manager.get_resource(f"odoo://{model}/list", auth_details)
+
+@mcp.resource("odoo://{model}/binary/{field}/{id}")
+async def get_odoo_binary(model: str, field: str, id: int):
+    """Ottiene un campo binario da un record Odoo."""
+    auth_details = {
+        "uid": odoo.global_uid,
+        "password": odoo.global_password
+    }
+    return await resource_manager.get_resource(f"odoo://{model}/binary/{field}/{id}", auth_details)
+
+# Sovrascrivi il metodo list_resources di FastMCP
+async def list_resources():
+    """Lista le risorse disponibili."""
+    return [
+        {
+            "uriTemplate": "odoo://{model}/{id}",
+            "name": "Odoo Record",
+            "description": "Represents a single record in an Odoo model",
+            "type": "record",
+            "mimeType": "application/json"
+        },
+        {
+            "uriTemplate": "odoo://{model}/list",
+            "name": "Odoo Record List",
+            "description": "Represents a list of records in an Odoo model",
+            "type": "list",
+            "mimeType": "application/json"
+        },
+        {
+            "uriTemplate": "odoo://{model}/binary/{field}/{id}",
+            "name": "Odoo Binary Field",
+            "description": "Represents a binary field value from an Odoo record",
+            "type": "binary",
+            "mimeType": "application/octet-stream"
+        }
+    ]
+
+mcp.list_resources = list_resources
 
 # --- SESSION MANAGER IN MEMORIA (per estensioni future) ---
 sessions = {}
@@ -176,37 +205,6 @@ def odoo_login(*, username: str = None, password: str = None, database: str = No
         return {"success": True, "session_id": session_id}
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-# --- RISORSE MCP ---
-@mcp.resource("odoo://{model}/{id}")
-@sync_async
-async def get_odoo_record(model: str, id: int):
-    """Ottiene un singolo record Odoo."""
-    auth_details = {
-        "uid": odoo.global_uid,
-        "password": odoo.global_password
-    }
-    return await resource_manager.get_resource(f"odoo://{model}/{id}", auth_details)
-
-@mcp.resource("odoo://{model}/list")
-@sync_async
-async def list_odoo_records(model: str):
-    """Ottiene una lista di record Odoo."""
-    auth_details = {
-        "uid": odoo.global_uid,
-        "password": odoo.global_password
-    }
-    return await resource_manager.get_resource(f"odoo://{model}/list", auth_details)
-
-@mcp.resource("odoo://{model}/binary/{field}/{id}")
-@sync_async
-async def get_odoo_binary(model: str, field: str, id: int):
-    """Ottiene un campo binario da un record Odoo."""
-    auth_details = {
-        "uid": odoo.global_uid,
-        "password": odoo.global_password
-    }
-    return await resource_manager.get_resource(f"odoo://{model}/binary/{field}/{id}", auth_details)
 
 # --- TOOLS MCP ---
 class AsyncOdooTools:
