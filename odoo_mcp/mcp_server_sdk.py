@@ -245,7 +245,7 @@ routes = [
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
 ]
 
-app = Starlette(debug=True, routes=routes, redirect_slashes=False)
+app = Starlette(debug=True, routes=routes)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "sse":
