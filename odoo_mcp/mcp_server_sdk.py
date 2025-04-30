@@ -202,7 +202,6 @@ class AsyncOdooTools:
                         service="common",
                         method="authenticate",
                         args=[
-                            self.odoo.database,
                             self.odoo.config["username"],
                             self.odoo.config["api_key"],
                             {"interactive": False}  # Required environment dictionary
