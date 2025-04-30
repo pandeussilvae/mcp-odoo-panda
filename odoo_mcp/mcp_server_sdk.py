@@ -200,11 +200,11 @@ class AsyncOdooTools:
                     # Per JSONRPCHandler, dobbiamo autenticarci usando il metodo call
                     self.uid = await self.odoo.call(
                         service="common",
-                        method="authenticate",
+                        method="login",
                         args=[
+                            self.odoo.database,
                             self.odoo.config["username"],
-                            self.odoo.config["api_key"],
-                            {"interactive": False}  # Required environment dictionary
+                            self.odoo.config["api_key"]
                         ]
                     )
                     if not self.uid:
