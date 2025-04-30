@@ -7,7 +7,7 @@ from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 from starlette.applications import Starlette
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, EventSourceResponse
 from starlette.requests import Request
 from starlette.routing import Route
 
@@ -241,8 +241,14 @@ async def mcp_messages_endpoint(request: Request):
         response = {"error": "FastMCP non espone handle_jsonrpc. Adattare qui."}
     return JSONResponse(response)
 
+async def mcp_sse_endpoint(request):
+    async def event_generator():
+        yield {"data": "MCP SSE endpoint attivo"}
+    return EventSourceResponse(event_generator())
+
 routes = [
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
+    Route("/sse", mcp_sse_endpoint, methods=["GET"]),
 ]
 
 app = Starlette(debug=True, routes=routes)
