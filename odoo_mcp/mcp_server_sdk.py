@@ -570,12 +570,18 @@ async def mcp_messages_endpoint(request: Request):
                 
                 for model_info in models:
                     model_name = model_info["model"]
-                    # Add record template for this model
+                    
+                    # Add list resource for this model
                     resources.append({
                         "uri": f"odoo://{model_name}/list",
                         "name": f"{model_info['name']} List",
                         "type": "list",
-                        "mimeType": "application/json"
+                        "mimeType": "application/json",
+                        "description": f"List of {model_info['name']} records",
+                        "metadata": {
+                            "model": model_name,
+                            "model_name": model_info["name"]
+                        }
                     })
                     
                     # Get some records for this model
@@ -588,13 +594,53 @@ async def mcp_messages_endpoint(request: Request):
                             uid=odoo.global_uid,
                             password=odoo.global_password
                         )
+                        
                         for record in records:
+                            # Add record resource
                             resources.append({
                                 "uri": f"odoo://{model_name}/{record['id']}",
                                 "name": record.get("name", f"{model_info['name']} {record['id']}"),
                                 "type": "record",
-                                "mimeType": "application/json"
+                                "mimeType": "application/json",
+                                "description": f"Single {model_info['name']} record",
+                                "metadata": {
+                                    "model": model_name,
+                                    "model_name": model_info["name"],
+                                    "record_id": record["id"]
+                                }
                             })
+                            
+                            # Check for binary fields
+                            try:
+                                fields = await odoo.execute_kw(
+                                    model=model_name,
+                                    method="fields_get",
+                                    args=[],
+                                    kwargs={},
+                                    uid=odoo.global_uid,
+                                    password=odoo.global_password
+                                )
+                                
+                                for field_name, field_info in fields.items():
+                                    if field_info.get("type") == "binary":
+                                        resources.append({
+                                            "uri": f"odoo://{model_name}/binary/{field_name}/{record['id']}",
+                                            "name": f"{field_info.get('string', field_name)} of {record.get('name', f'Record {record['id']}')}",
+                                            "type": "binary",
+                                            "mimeType": "application/octet-stream",
+                                            "description": f"Binary field {field_info.get('string', field_name)} of {model_info['name']} record",
+                                            "metadata": {
+                                                "model": model_name,
+                                                "model_name": model_info["name"],
+                                                "record_id": record["id"],
+                                                "field": field_name,
+                                                "field_label": field_info.get("string", field_name)
+                                            }
+                                        })
+                            except Exception as e:
+                                logger.error(f"Error fetching fields for model {model_name}: {e}")
+                                continue
+                                
                     except Exception as e:
                         logger.error(f"Error fetching records for model {model_name}: {e}")
                         continue
