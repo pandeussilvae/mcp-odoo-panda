@@ -6,6 +6,7 @@ import sys
 import logging
 import asyncio
 import time
+from collections import defaultdict, deque
 from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -241,8 +242,26 @@ def odoo_list_models() -> list:
     logger.info(f"Trovati {len(models)} modelli")
     return models
 
+# --- Gestione code SSE per sessione ---
+sse_queues = defaultdict(deque)  # session_id -> queue di messaggi
+
+async def sse_endpoint(request: Request):
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        return JSONResponse({"error": "Missing session_id in query params"}, status_code=400)
+    queue = sse_queues[session_id]
+    async def event_generator():
+        while True:
+            if queue:
+                msg = queue.popleft()
+                yield {"data": msg + "\n"}
+            else:
+                await asyncio.sleep(10)
+                yield {"data": ": ping\n\n"}  # heartbeat SSE standard
+    return EventSourceResponse(event_generator())
+
+# --- Funzioni di formattazione strumenti/risorse ---
 def format_tool(tool):
-    """Formatta uno strumento nel formato atteso dal client MCP"""
     return {
         "name": tool.name if hasattr(tool, 'name') else str(tool),
         "description": tool.description if hasattr(tool, 'description') else "",
@@ -250,7 +269,6 @@ def format_tool(tool):
     }
 
 def format_resource(resource):
-    """Formatta una risorsa nel formato atteso dal client MCP"""
     if isinstance(resource, types.Resource):
         return {
             "uri": resource.uri,
@@ -263,162 +281,79 @@ def format_resource(resource):
         "description": resource.get("description", "")
     }
 
-async def sse_endpoint(request: Request):
-    """Endpoint SSE per la comunicazione in tempo reale"""
-    async def event_generator():
-        try:
-            # Invia il messaggio di inizializzazione
-            yield {
-                "event": "initialize",
-                "data": json.dumps({
-                    "jsonrpc": "2.0",
-                    "result": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {
-                            "tools": True,
-                            "resources": True
-                        }
-                    }
-                })
-            }
-
-            # Invia gli strumenti disponibili
-            tools = await mcp.list_tools()
-            logger.info(f"Tools ricevuti: {tools}")
-            formatted_tools = [format_tool(tool) for tool in tools]
-            logger.info(f"Tools formattati: {formatted_tools}")
-            yield {
-                "event": "tools",
-                "data": json.dumps({
-                    "jsonrpc": "2.0",
-                    "method": "tools/update",
-                    "params": formatted_tools
-                })
-            }
-
-            # Invia le risorse disponibili
-            resources = await mcp.list_resources()
-            logger.info(f"Resources ricevute: {resources}")
-            formatted_resources = [format_resource(resource) for resource in resources]
-            logger.info(f"Resources formattate: {formatted_resources}")
-            yield {
-                "event": "resources",
-                "data": json.dumps({
-                    "jsonrpc": "2.0",
-                    "method": "resources/update",
-                    "params": formatted_resources
-                })
-            }
-
-            # Mantieni la connessione aperta
-            while True:
-                await asyncio.sleep(1)
-                # Invia un heartbeat per mantenere la connessione
-                yield {
-                    "event": "heartbeat",
-                    "data": json.dumps({
-                        "jsonrpc": "2.0",
-                        "method": "heartbeat",
-                        "params": {"timestamp": int(time.time())}
-                    })
-                }
-
-        except Exception as e:
-            logger.error(f"Errore nella generazione degli eventi SSE: {e}")
-            logger.exception("Dettaglio errore:")
-            raise
-
-    return EventSourceResponse(event_generator())
-
-# Endpoint POST /messages
+# --- Endpoint POST /messages ---
 async def mcp_messages_endpoint(request: Request):
     data = await request.json()
-    logger.info(f"Ricevuta richiesta messages: {data}")
-    
-    if not isinstance(data, dict):
-        return JSONResponse({"jsonrpc": "2.0", "error": {"code": -32600, "message": "Invalid Request"}, "id": None})
-    
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        return JSONResponse({"error": "Missing session_id in query params"}, status_code=400)
+    logger.info(f"Ricevuta richiesta messages: {data} (session_id={session_id})")
     method = data.get("method")
-    params = data.get("params", {})
     req_id = data.get("id")
-    
     try:
         if method == "initialize":
             response = {
                 "jsonrpc": "2.0",
+                "id": req_id,
                 "result": {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": True,
-                        "resources": True
-                    }
-                },
-                "id": req_id
+                    "capabilities": {"tools": {}, "resources": {}},
+                    "serverInfo": {"name": "odoo-mcp-server", "version": "0.1.0"}
+                }
             }
-        elif method == "getTools":
+        elif method == "tools/list":
             tools = await mcp.list_tools()
             formatted_tools = [format_tool(tool) for tool in tools]
             response = {
                 "jsonrpc": "2.0",
-                "result": {
-                    "tools": formatted_tools
-                },
-                "id": req_id
+                "id": req_id,
+                "result": {"tools": formatted_tools}
             }
-        elif method == "getResources":
+        elif method == "resources/list":
             resources = await mcp.list_resources()
             formatted_resources = [format_resource(resource) for resource in resources]
             response = {
                 "jsonrpc": "2.0",
-                "result": {
-                    "resources": formatted_resources
-                },
-                "id": req_id
+                "id": req_id,
+                "result": {"resources": formatted_resources}
             }
         elif method == "invokeFunction":
-            function_name = params.get("name")
-            function_params = params.get("parameters", {})
+            function_name = data["params"].get("name")
+            function_params = data["params"].get("parameters", {})
             if hasattr(mcp, "invoke_function"):
                 result = await mcp.invoke_function(function_name, function_params)
                 response = {
                     "jsonrpc": "2.0",
-                    "result": result,
-                    "id": req_id
+                    "id": req_id,
+                    "result": result
                 }
             else:
                 response = {
                     "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32601,
-                        "message": "Method not available"
-                    },
-                    "id": req_id
+                    "id": req_id,
+                    "error": {"code": -32601, "message": "Method not available"}
                 }
         else:
+            # Prova a delegare la richiesta a FastMCP se possibile
             if hasattr(mcp, 'handle_jsonrpc'):
-                response = await mcp.handle_jsonrpc(data)
+                result = await mcp.handle_jsonrpc(data)
+                response = result if isinstance(result, dict) else {"jsonrpc": "2.0", "id": req_id, "result": result}
             else:
                 response = {
                     "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32601,
-                        "message": f"Method {method} not found"
-                    },
-                    "id": req_id
+                    "id": req_id,
+                    "error": {"code": -32601, "message": f"Method {method} not found"}
                 }
     except Exception as e:
         logger.error(f"Errore nella gestione della richiesta: {e}")
         response = {
             "jsonrpc": "2.0",
-            "error": {
-                "code": -32000,
-                "message": str(e)
-            },
-            "id": req_id
+            "id": req_id,
+            "error": {"code": -32000, "message": str(e)}
         }
-    
-    logger.info(f"Risposta: {response}")
-    return JSONResponse(response)
+    # Metti la risposta nella coda SSE della sessione
+    sse_queues[session_id].append(json.dumps(response))
+    return JSONResponse({"status": "ok"})
 
 routes = [
     Route("/sse", endpoint=sse_endpoint),
