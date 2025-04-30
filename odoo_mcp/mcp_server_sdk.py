@@ -241,7 +241,7 @@ async def mcp_messages_endpoint(request: Request):
     return JSONResponse(response)
 
 routes = [
-    Mount('/sse/', app=mcp.sse_app(), name='sse'),
+    Route("/sse", mcp.sse_app(), name='sse'),
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
 ]
 
