@@ -8,16 +8,35 @@ api_key: admin
 
 # Configurazione Server
 protocol: xmlrpc  # o jsonrpc
-connection_type: stdio  # o sse
+
+# Configurazione Connessione
+connection_type: stdio  # stdio, sse
+transport_type: stdio  # stdio, http, streamable_http, sse
+
+# Se si usa SSE, entrambi connection_type e transport_type devono essere 'sse'
+# Esempio configurazione SSE:
+# connection_type: sse
+# transport_type: sse
+
 requests_per_minute: 120
 rate_limit_max_wait_seconds: 5
 pool_size: 5
 timeout: 30
 session_timeout_minutes: 60
 
+# Configurazione HTTP (solo se transport_type: http o streamable_http)
+http:
+  host: 0.0.0.0
+  port: 8080
+  streamable: false  # true per streamable_http
+
 # Configurazione SSE (solo se connection_type: sse)
-sse_queue_maxsize: 1000
-allowed_origins: ["*"]
+sse:
+  host: 0.0.0.0
+  port: 8080
+  queue_maxsize: 1000
+  allowed_origins: ["*"]
+  ping_interval: 30  # secondi tra i ping SSE
 
 # Configurazione Logging
 logging:

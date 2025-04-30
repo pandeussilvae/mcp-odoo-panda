@@ -75,6 +75,8 @@ def load_odoo_config(path="odoo_mcp/config/config.yaml"):
     config["database"] = os.environ.get("ODOO_DATABASE", config.get("database"))
     config["username"] = os.environ.get("ODOO_USERNAME", config.get("username"))
     config["api_key"] = os.environ.get("ODOO_PASSWORD", config.get("api_key"))
+    config["connection_type"] = os.environ.get("MCP_CONNECTION_TYPE", config.get("connection_type", "stdio"))
+    config["transport_type"] = os.environ.get("MCP_TRANSPORT_TYPE", config.get("transport_type", "stdio"))
 
     # Configura il logging
     if "logging" in config:
@@ -130,7 +132,17 @@ RESOURCE_TEMPLATES = [
 ]
 
 # Crea l'istanza FastMCP
-mcp = FastMCP("odoo-mcp-server")
+connection_type = config.get("connection_type", "stdio")
+transport_type = config.get("transport_type", "stdio")
+transport_types = ["stdio"]  # stdio è sempre disponibile
+
+# Gestione SSE
+if connection_type == "sse" and transport_type == "sse":
+    transport_types.append("sse")
+elif transport_type in ["http", "streamable_http"]:
+    transport_types.extend(["http", "streamable_http"])
+
+mcp = FastMCP("odoo-mcp-server", transport_types=transport_types)
 
 # Definisci i gestori delle risorse
 @mcp.resource("odoo://{model}/{id}")
@@ -535,7 +547,8 @@ async def mcp_messages_endpoint(request: Request):
                     "protocolVersion": "2024-11-05",
                     "capabilities": {
                         "tools": await mcp.list_tools(),
-                        "resources": RESOURCE_TEMPLATES
+                        "resources": RESOURCE_TEMPLATES,
+                        "transportTypes": ["stdio", "http", "streamable_http"]
                     },
                     "serverInfo": {
                         "name": "odoo-mcp-server",
@@ -668,13 +681,28 @@ def register_tool(name: str, description: str, parameters: dict):
 
 if __name__ == "__main__":
     # Determina la modalità di esecuzione
-    is_sse = len(sys.argv) > 1 and sys.argv[1] == "sse"
+    is_sse = connection_type == "sse" and transport_type == "sse"
     
     if is_sse:
         # Modalità SSE
         import uvicorn
         logger.info("Avvio server MCP in modalità SSE...")
-        uvicorn.run(app, host="0.0.0.0", port=8080)
+        sse_config = config.get("sse", {})
+        uvicorn.run(
+            app, 
+            host=sse_config.get("host", "0.0.0.0"), 
+            port=sse_config.get("port", 8080)
+        )
+    elif transport_type in ["http", "streamable_http"]:
+        # Modalità HTTP
+        import uvicorn
+        logger.info(f"Avvio server MCP in modalità {transport_type}...")
+        http_config = config.get("http", {})
+        uvicorn.run(
+            app, 
+            host=http_config.get("host", "0.0.0.0"), 
+            port=http_config.get("port", 8080)
+        )
     else:
         # Modalità stdio (default)
         logger.info("Avvio server MCP in modalità stdio...")
