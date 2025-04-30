@@ -324,7 +324,7 @@ async def odoo_list_models():
     return await async_tools.list_models()
 
 @mcp.tool()
-async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None):
+async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = {}):
     """Cerca e legge record in un modello Odoo."""
     return await async_tools.search_read(model, domain, fields, limit, offset, context)
 
