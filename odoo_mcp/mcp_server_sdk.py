@@ -555,18 +555,50 @@ async def mcp_messages_endpoint(request: Request):
             }
             return JSONResponse(response)
         elif method == 'resources/list':
-            # Per resources/list, restituisci le istanze delle risorse
+            # For resources/list, return the actual resource instances
+            resources = []
+            for template in RESOURCE_TEMPLATES:
+                if template["type"] == "record":
+                    # For record type, we need to get actual records
+                    try:
+                        model = "res.partner"  # Example model, you might want to make this dynamic
+                        records = await odoo.execute_kw(
+                            model=model,
+                            method="search_read",
+                            args=[[], ["id", "name"]],
+                            kwargs={},
+                            uid=odoo.global_uid,
+                            password=odoo.global_password
+                        )
+                        for record in records:
+                            resources.append({
+                                "uri": f"odoo://{model}/{record['id']}",
+                                "name": record.get("name", f"Record {record['id']}"),
+                                "type": "record",
+                                "mimeType": "application/json"
+                            })
+                    except Exception as e:
+                        logger.error(f"Error fetching records: {e}")
+                elif template["type"] == "list":
+                    # For list type, add the model list resource
+                    resources.append({
+                        "uri": f"odoo://{template['uriTemplate'].split('/')[0].replace('{model}', 'res.partner')}/list",
+                        "name": "Partner List",
+                        "type": "list",
+                        "mimeType": "application/json"
+                    })
+            
             response = {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "resources": RESOURCE_TEMPLATES
+                    "resources": resources
                 }
             }
             logger.info(f"Sending resources/list response: {response}")
             return JSONResponse(response)
         elif method == 'resources/templates/list':
-            # Per resources/templates/list, restituisci i template
+            # For resources/templates/list, return our defined templates
             response = {
                 "jsonrpc": "2.0",
                 "id": req_id,
