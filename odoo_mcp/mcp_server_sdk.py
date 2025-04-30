@@ -5,6 +5,7 @@ import os
 import sys
 import logging
 import asyncio
+import time
 from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -266,38 +267,61 @@ async def sse_endpoint(request: Request):
     """Endpoint SSE per la comunicazione in tempo reale"""
     async def event_generator():
         try:
-            # Invia subito gli strumenti e le risorse disponibili
+            # Invia il messaggio di inizializzazione
+            yield {
+                "event": "initialize",
+                "data": json.dumps({
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {
+                            "tools": True,
+                            "resources": True
+                        }
+                    }
+                })
+            }
+
+            # Invia gli strumenti disponibili
             tools = await mcp.list_tools()
             logger.info(f"Tools ricevuti: {tools}")
             formatted_tools = [format_tool(tool) for tool in tools]
             logger.info(f"Tools formattati: {formatted_tools}")
             yield {
+                "event": "tools",
                 "data": json.dumps({
                     "jsonrpc": "2.0",
                     "method": "tools/update",
-                    "params": {
-                        "tools": formatted_tools
-                    }
+                    "params": formatted_tools
                 })
             }
 
+            # Invia le risorse disponibili
             resources = await mcp.list_resources()
             logger.info(f"Resources ricevute: {resources}")
             formatted_resources = [format_resource(resource) for resource in resources]
             logger.info(f"Resources formattate: {formatted_resources}")
             yield {
+                "event": "resources",
                 "data": json.dumps({
                     "jsonrpc": "2.0",
                     "method": "resources/update",
-                    "params": {
-                        "resources": formatted_resources
-                    }
+                    "params": formatted_resources
                 })
             }
 
             # Mantieni la connessione aperta
             while True:
                 await asyncio.sleep(1)
+                # Invia un heartbeat per mantenere la connessione
+                yield {
+                    "event": "heartbeat",
+                    "data": json.dumps({
+                        "jsonrpc": "2.0",
+                        "method": "heartbeat",
+                        "params": {"timestamp": int(time.time())}
+                    })
+                }
 
         except Exception as e:
             logger.error(f"Errore nella generazione degli eventi SSE: {e}")
