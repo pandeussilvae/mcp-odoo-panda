@@ -7,7 +7,7 @@ import logging
 import asyncio
 import time
 from collections import defaultdict, deque
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 from starlette.applications import Starlette
@@ -15,6 +15,9 @@ from starlette.responses import JSONResponse
 from starlette.requests import Request
 from starlette.routing import Route, Mount
 from sse_starlette.sse import EventSourceResponse
+from odoo_mcp.prompts.prompt_manager import OdooPromptManager
+from odoo_mcp.resources.resource_manager import OdooResourceManager
+from odoo_mcp.tools.tool_manager import OdooToolManager
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)
@@ -90,81 +93,63 @@ def odoo_login(*, username: str = None, password: str = None, database: str = No
         return {"success": False, "error": str(e)}
 
 # --- RISORSE MCP ---
+# Inizializza il ResourceManager
+resource_manager = OdooResourceManager(odoo)
+
 @mcp.resource("odoo://{model}/{id}")
-def get_odoo_record(model: str, id: int) -> types.Resource:
-    handler = odoo
-    record = handler.execute_kw(
-        model=model,
-        method="read",
-        args=[[id]],
-        kwargs={},
-    )
-    return types.Resource(
-        uri=f"odoo://{model}/{id}",
-        mimeType="application/json",
-        text=json.dumps(record[0] if record else {})
-    )
+async def get_odoo_record(model: str, id: int):
+    """Ottiene un singolo record Odoo."""
+    auth_details = {
+        "uid": odoo.global_uid,
+        "password": odoo.global_password
+    }
+    return resource_manager.get_resource(f"odoo://{model}/{id}", auth_details)
 
 @mcp.resource("odoo://{model}/list")
-def list_odoo_records(model: str) -> types.Resource:
-    handler = odoo
-    records = handler.execute_kw(
-        model=model,
-        method="search_read",
-        args=[[], ["id", "name"]],
-        kwargs={},
-    )
-    return types.Resource(
-        uri=f"odoo://{model}/list",
-        mimeType="application/json",
-        text=json.dumps(records)
-    )
+async def list_odoo_records(model: str):
+    """Ottiene una lista di record Odoo."""
+    auth_details = {
+        "uid": odoo.global_uid,
+        "password": odoo.global_password
+    }
+    return resource_manager.get_resource(f"odoo://{model}/list", auth_details)
 
 @mcp.resource("odoo://{model}/binary/{field}/{id}")
-def get_odoo_binary(model: str, field: str, id: int) -> types.Resource:
-    handler = odoo
-    data = handler.execute_kw(
-        model=model,
-        method="read",
-        args=[[id], [field]],
-        kwargs={},
-    )
-    binary = data[0][field] if data and field in data[0] else None
-    return types.Resource(
-        uri=f"odoo://{model}/binary/{field}/{id}",
-        mimeType="application/octet-stream",
-        text=binary
-    )
+async def get_odoo_binary(model: str, field: str, id: int):
+    """Ottiene un campo binario da un record Odoo."""
+    auth_details = {
+        "uid": odoo.global_uid,
+        "password": odoo.global_password
+    }
+    return resource_manager.get_resource(f"odoo://{model}/binary/{field}/{id}", auth_details)
 
 # --- TOOLS MCP ---
 @mcp.tool()
-def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None) -> list:
-    handler = odoo
+async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None) -> list:
+    """Cerca e legge record in un modello Odoo."""
     context = context or {}
-    records = handler.execute_kw(
+    return odoo.execute_kw(
         model=model,
         method="search_read",
         args=[domain, fields],
         kwargs={"limit": limit, "offset": offset, "context": context},
     )
-    return records
 
 @mcp.tool()
-def odoo_read(model: str, ids: list, fields: list, *, context: dict = None) -> list:
-    handler = odoo
+async def odoo_read(model: str, ids: list, fields: list, *, context: dict = None) -> list:
+    """Legge record specifici da un modello Odoo."""
     context = context or {}
-    records = handler.execute_kw(
+    return odoo.execute_kw(
         model=model,
         method="read",
         args=[ids, fields],
         kwargs={"context": context},
     )
-    return records
 
 @mcp.tool()
-def odoo_create(model: str, values: dict, *, context: dict = None) -> dict:
-    handler = odoo
-    record_id = handler.execute_kw(
+async def odoo_create(model: str, values: dict, *, context: dict = None) -> dict:
+    """Crea un nuovo record in un modello Odoo."""
+    record_id = odoo.execute_kw(
         model=model,
         method="create",
         args=[values],
@@ -173,10 +158,10 @@ def odoo_create(model: str, values: dict, *, context: dict = None) -> dict:
     return {"id": record_id}
 
 @mcp.tool()
-def odoo_write(model: str, ids: list, values: dict, *, context: dict = None) -> dict:
-    handler = odoo
+async def odoo_write(model: str, ids: list, values: dict, *, context: dict = None) -> dict:
+    """Aggiorna record esistenti in un modello Odoo."""
     context = context or {}
-    result = handler.execute_kw(
+    result = odoo.execute_kw(
         model=model,
         method="write",
         args=[ids, values],
@@ -185,9 +170,9 @@ def odoo_write(model: str, ids: list, values: dict, *, context: dict = None) -> 
     return {"success": result}
 
 @mcp.tool()
-def odoo_unlink(model: str, ids: list, *, context: dict = None) -> dict:
-    handler = odoo
-    result = handler.execute_kw(
+async def odoo_unlink(model: str, ids: list, *, context: dict = None) -> dict:
+    """Elimina record da un modello Odoo."""
+    result = odoo.execute_kw(
         model=model,
         method="unlink",
         args=[ids],
@@ -196,10 +181,10 @@ def odoo_unlink(model: str, ids: list, *, context: dict = None) -> dict:
     return {"success": result}
 
 @mcp.tool()
-def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = None) -> dict:
-    handler = odoo
+async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = None) -> dict:
+    """Chiama un metodo personalizzato su un modello Odoo."""
     context = context or {}
-    result = handler.execute_kw(
+    result = odoo.execute_kw(
         model=model,
         method=method,
         args=args or [],
@@ -208,17 +193,23 @@ def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict
     return {"result": result}
 
 # --- PROMPTS MCP (esempi base, da personalizzare) ---
-@mcp.prompt()
-def analyze_record(model: str, id: int) -> str:
-    return f"Analisi richiesta per {model} con ID {id}"
+# Inizializza il PromptManager
+prompt_manager = OdooPromptManager()
 
 @mcp.prompt()
-def create_record(model: str, values: dict) -> str:
-    return f"Creazione richiesta per {model} con valori {values}"
+async def analyze_record(model: str, id: int) -> str:
+    """Genera un prompt per analizzare un record Odoo."""
+    return prompt_manager.get_prompt("analyze_record", {"model": model, "id": str(id)})
 
 @mcp.prompt()
-def update_record(model: str, id: int, values: dict) -> str:
-    return f"Aggiornamento richiesto per {model} con ID {id} e valori {values}"
+async def create_record(model: str, values: dict) -> str:
+    """Genera un prompt per creare un nuovo record Odoo."""
+    return prompt_manager.get_prompt("create_record", {"model": model, "values": str(values)})
+
+@mcp.prompt()
+async def update_record(model: str, id: int, values: dict) -> str:
+    """Genera un prompt per aggiornare un record Odoo."""
+    return prompt_manager.get_prompt("update_record", {"model": model, "id": str(id), "values": str(values)})
 
 @mcp.prompt()
 def advanced_search(model: str, domain: list) -> str:
@@ -231,9 +222,8 @@ def call_method(model: str, method: str, *, args: list = None, kwargs: dict = No
 @mcp.tool()
 def odoo_list_models() -> list:
     """Elenca tutti i modelli Odoo disponibili (model e name)."""
-    handler = odoo
     logger.info("Chiamata a odoo_list_models")
-    models = handler.execute_kw(
+    models = odoo.execute_kw(
         model="ir.model",
         method="search_read",
         args=[[], ["model", "name"]],
@@ -374,6 +364,42 @@ async def log_registered_tools():
     resources = await mcp.list_resources()
     for resource in resources:
         logger.info(f"- Resource: {resource}")
+
+# Inizializza i gestori
+odoo = XMLRPCHandler()
+prompt_manager = OdooPromptManager()
+resource_manager = OdooResourceManager(odoo)
+tool_manager = OdooToolManager(odoo)
+
+def execute_tool(tool_name: str, **kwargs):
+    """Esegue uno strumento specifico.
+    
+    Args:
+        tool_name: Nome dello strumento da eseguire
+        **kwargs: Parametri per lo strumento
+        
+    Returns:
+        Risultato dell'esecuzione dello strumento
+    """
+    return tool_manager.execute_tool(tool_name, **kwargs)
+
+def list_tools():
+    """Lista tutti gli strumenti disponibili.
+    
+    Returns:
+        Dizionario con tutti gli strumenti e le loro descrizioni
+    """
+    return tool_manager.list_tools()
+
+def register_tool(name: str, description: str, parameters: dict):
+    """Registra un nuovo strumento.
+    
+    Args:
+        name: Nome dello strumento
+        description: Descrizione dello strumento
+        parameters: Dizionario dei parametri richiesti e le loro descrizioni
+    """
+    tool_manager.register_tool(name, description, parameters)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "sse":
