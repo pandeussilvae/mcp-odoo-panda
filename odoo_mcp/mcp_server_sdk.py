@@ -243,12 +243,70 @@ def odoo_list_models() -> list:
 async def mcp_messages_endpoint(request: Request):
     data = await request.json()
     logger.info(f"Ricevuta richiesta messages: {data}")
-    if hasattr(mcp, 'handle_jsonrpc'):
-        response = mcp.handle_jsonrpc(data)
-        logger.info(f"Risposta: {response}")
+    
+    # Gestione base del protocollo JSON-RPC
+    if not isinstance(data, dict):
+        return JSONResponse({"jsonrpc": "2.0", "error": {"code": -32600, "message": "Invalid Request"}, "id": None})
+    
+    method = data.get("method")
+    params = data.get("params", {})
+    req_id = data.get("id")
+    
+    if method == "initialize":
+        # Rispondi con le capabilities del server
+        response = {
+            "jsonrpc": "2.0",
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": True,
+                    "resources": True
+                }
+            },
+            "id": req_id
+        }
+    elif method == "getTools":
+        # Restituisci la lista degli strumenti disponibili
+        tools = await mcp.list_tools()
+        response = {
+            "jsonrpc": "2.0",
+            "result": {"tools": tools},
+            "id": req_id
+        }
+    elif method == "getResources":
+        # Restituisci la lista delle risorse disponibili
+        resources = await mcp.list_resources()
+        response = {
+            "jsonrpc": "2.0",
+            "result": {"resources": resources},
+            "id": req_id
+        }
     else:
-        response = {"error": "FastMCP non espone handle_jsonrpc"}
-        logger.error(response["error"])
+        # Prova a delegare la richiesta a FastMCP se possibile
+        try:
+            if hasattr(mcp, 'handle_jsonrpc'):
+                response = await mcp.handle_jsonrpc(data)
+            else:
+                response = {
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32601,
+                        "message": f"Method {method} not found"
+                    },
+                    "id": req_id
+                }
+        except Exception as e:
+            logger.error(f"Errore nella gestione della richiesta: {e}")
+            response = {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32000,
+                    "message": str(e)
+                },
+                "id": req_id
+            }
+    
+    logger.info(f"Risposta: {response}")
     return JSONResponse(response)
 
 routes = [
