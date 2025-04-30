@@ -181,29 +181,61 @@ async def get_odoo_binary(model: str, field: str, id: int):
     return await resource_manager.get_resource(f"odoo://{model}/binary/{field}/{id}", auth_details)
 
 # --- TOOLS MCP ---
-@mcp.tool()
-@sync_async
-async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None) -> list:
-    """Cerca e legge record in un modello Odoo."""
-    context = context or {}
-    return await odoo.execute_kw(
-        model=model,
-        method="search_read",
-        args=[domain, fields],
-        kwargs={"limit": limit, "offset": offset, "context": context},
-    )
+class AsyncOdooTools:
+    """Classe per gestire gli strumenti Odoo in modo asincrono."""
+    
+    def __init__(self, odoo_handler):
+        self.odoo = odoo_handler
+    
+    async def list_models(self):
+        """Elenca tutti i modelli Odoo disponibili."""
+        logger.info("Chiamata a odoo_list_models")
+        result = await self.odoo.execute_kw(
+            model="ir.model",
+            method="search_read",
+            args=[[], ["model", "name"]],
+            kwargs={}
+        )
+        return result
+    
+    async def search_read(self, model, domain, fields, limit=80, offset=0, context=None):
+        """Cerca e legge record in un modello Odoo."""
+        return await self.odoo.execute_kw(
+            model=model,
+            method="search_read",
+            args=[domain, fields],
+            kwargs={"limit": limit, "offset": offset, "context": context or {}}
+        )
+    
+    async def read(self, model, ids, fields, context=None):
+        """Legge record specifici da un modello Odoo."""
+        return await self.odoo.execute_kw(
+            model=model,
+            method="read",
+            args=[ids, fields],
+            kwargs={"context": context or {}}
+        )
+
+# Inizializza gli strumenti asincroni
+async_tools = AsyncOdooTools(odoo)
 
 @mcp.tool()
-@sync_async
-async def odoo_read(model: str, ids: list, fields: list, *, context: dict = None) -> list:
+def odoo_list_models():
+    """Elenca tutti i modelli Odoo disponibili (model e name)."""
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(async_tools.list_models())
+
+@mcp.tool()
+def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None):
+    """Cerca e legge record in un modello Odoo."""
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(async_tools.search_read(model, domain, fields, limit, offset, context))
+
+@mcp.tool()
+def odoo_read(model: str, ids: list, fields: list, *, context: dict = None):
     """Legge record specifici da un modello Odoo."""
-    context = context or {}
-    return await odoo.execute_kw(
-        model=model,
-        method="read",
-        args=[ids, fields],
-        kwargs={"context": context},
-    )
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(async_tools.read(model, ids, fields, context))
 
 @mcp.tool()
 @sync_async
@@ -254,18 +286,6 @@ async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs
         kwargs={**(kwargs or {}), "context": context},
     )
     return {"result": result}
-
-@mcp.tool()
-@sync_async
-async def odoo_list_models() -> list:
-    """Elenca tutti i modelli Odoo disponibili (model e name)."""
-    logger.info("Chiamata a odoo_list_models")
-    return await odoo.execute_kw(
-        model="ir.model",
-        method="search_read",
-        args=[[], ["model", "name"]],
-        kwargs={},
-    )
 
 # --- PROMPTS MCP (esempi base, da personalizzare) ---
 @mcp.prompt()
