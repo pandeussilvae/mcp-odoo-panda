@@ -243,13 +243,19 @@ def odoo_list_models() -> list:
 def format_tool(tool):
     """Formatta uno strumento nel formato atteso dal client MCP"""
     return {
-        "name": tool["name"],
-        "description": tool.get("description", ""),
-        "parameters": tool.get("inputSchema", {})
+        "name": tool.name if hasattr(tool, 'name') else str(tool),
+        "description": tool.description if hasattr(tool, 'description') else "",
+        "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
     }
 
 def format_resource(resource):
     """Formatta una risorsa nel formato atteso dal client MCP"""
+    if isinstance(resource, types.Resource):
+        return {
+            "uri": resource.uri,
+            "mimeType": resource.mimeType,
+            "description": getattr(resource, 'description', "")
+        }
     return {
         "uri": resource.get("uri", ""),
         "mimeType": resource.get("mimeType", "application/json"),
@@ -262,7 +268,9 @@ async def sse_endpoint(request: Request):
         try:
             # Invia subito gli strumenti e le risorse disponibili
             tools = await mcp.list_tools()
+            logger.info(f"Tools ricevuti: {tools}")
             formatted_tools = [format_tool(tool) for tool in tools]
+            logger.info(f"Tools formattati: {formatted_tools}")
             yield {
                 "data": json.dumps({
                     "jsonrpc": "2.0",
@@ -274,7 +282,9 @@ async def sse_endpoint(request: Request):
             }
 
             resources = await mcp.list_resources()
+            logger.info(f"Resources ricevute: {resources}")
             formatted_resources = [format_resource(resource) for resource in resources]
+            logger.info(f"Resources formattate: {formatted_resources}")
             yield {
                 "data": json.dumps({
                     "jsonrpc": "2.0",
@@ -291,6 +301,7 @@ async def sse_endpoint(request: Request):
 
         except Exception as e:
             logger.error(f"Errore nella generazione degli eventi SSE: {e}")
+            logger.exception("Dettaglio errore:")
             raise
 
     return EventSourceResponse(event_generator())
