@@ -525,6 +525,7 @@ async def mcp_messages_endpoint(request: Request):
                 "result": result
             }
         elif method in ('list_resources', 'resources/list'):
+            # Definisci direttamente i template qui per assicurarti che vengano restituiti
             resources = [
                 {
                     "uriTemplate": "odoo://{model}/{id}",
@@ -553,6 +554,9 @@ async def mcp_messages_endpoint(request: Request):
                 "id": req_id,
                 "result": {"resources": resources}
             }
+            # Log per debug
+            logger.info(f"Sending resources response: {response}")
+            return JSONResponse(response)
         else:
             response = {
                 "jsonrpc": "2.0",
