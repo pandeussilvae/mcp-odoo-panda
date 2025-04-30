@@ -9,7 +9,7 @@ from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, EventSourceResponse
 from starlette.requests import Request
-from starlette.routing import Route
+from starlette.routing import Route, Mount
 
 # Gerarchia di lettura credenziali
 # 1. Parametri runtime > 2. Variabili ambiente > 3. File config > 4. Errore
@@ -231,24 +231,18 @@ def odoo_list_models() -> list:
     )
     return models
 
+# Endpoint POST /messages (opzionale, per HTTP JSON-RPC)
 async def mcp_messages_endpoint(request: Request):
     data = await request.json()
-    # Qui chiami la logica FastMCP per processare la richiesta JSON-RPC
-    # Adatta questa riga in base a come FastMCP espone la gestione delle richieste:
     if hasattr(mcp, 'handle_jsonrpc'):
         response = mcp.handle_jsonrpc(data)
     else:
         response = {"error": "FastMCP non espone handle_jsonrpc. Adattare qui."}
     return JSONResponse(response)
 
-async def mcp_sse_endpoint(request):
-    async def event_generator():
-        yield {"data": "MCP SSE endpoint attivo"}
-    return EventSourceResponse(event_generator())
-
 routes = [
+    Mount('/sse', app=mcp.sse_app()),  # Espone l'app SSE di FastMCP su /sse
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
-    Route("/sse", mcp_sse_endpoint, methods=["GET"]),
 ]
 
 app = Starlette(debug=True, routes=routes)
