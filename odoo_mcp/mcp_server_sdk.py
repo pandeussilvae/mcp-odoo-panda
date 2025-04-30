@@ -12,6 +12,7 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.requests import Request
 from starlette.routing import Route, Mount
+from sse_starlette.sse import EventSourceResponse
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)
@@ -255,12 +256,50 @@ def format_resource(resource):
         "description": resource.get("description", "")
     }
 
+async def sse_endpoint(request: Request):
+    """Endpoint SSE per la comunicazione in tempo reale"""
+    async def event_generator():
+        try:
+            # Invia subito gli strumenti e le risorse disponibili
+            tools = await mcp.list_tools()
+            formatted_tools = [format_tool(tool) for tool in tools]
+            yield {
+                "data": json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": "tools/update",
+                    "params": {
+                        "tools": formatted_tools
+                    }
+                })
+            }
+
+            resources = await mcp.list_resources()
+            formatted_resources = [format_resource(resource) for resource in resources]
+            yield {
+                "data": json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": "resources/update",
+                    "params": {
+                        "resources": formatted_resources
+                    }
+                })
+            }
+
+            # Mantieni la connessione aperta
+            while True:
+                await asyncio.sleep(1)
+
+        except Exception as e:
+            logger.error(f"Errore nella generazione degli eventi SSE: {e}")
+            raise
+
+    return EventSourceResponse(event_generator())
+
 # Endpoint POST /messages
 async def mcp_messages_endpoint(request: Request):
     data = await request.json()
     logger.info(f"Ricevuta richiesta messages: {data}")
     
-    # Gestione base del protocollo JSON-RPC
     if not isinstance(data, dict):
         return JSONResponse({"jsonrpc": "2.0", "error": {"code": -32600, "message": "Invalid Request"}, "id": None})
     
@@ -270,7 +309,6 @@ async def mcp_messages_endpoint(request: Request):
     
     try:
         if method == "initialize":
-            # Rispondi con le capabilities del server
             response = {
                 "jsonrpc": "2.0",
                 "result": {
@@ -283,7 +321,6 @@ async def mcp_messages_endpoint(request: Request):
                 "id": req_id
             }
         elif method == "getTools":
-            # Restituisci la lista degli strumenti disponibili
             tools = await mcp.list_tools()
             formatted_tools = [format_tool(tool) for tool in tools]
             response = {
@@ -294,7 +331,6 @@ async def mcp_messages_endpoint(request: Request):
                 "id": req_id
             }
         elif method == "getResources":
-            # Restituisci la lista delle risorse disponibili
             resources = await mcp.list_resources()
             formatted_resources = [format_resource(resource) for resource in resources]
             response = {
@@ -305,7 +341,6 @@ async def mcp_messages_endpoint(request: Request):
                 "id": req_id
             }
         elif method == "invokeFunction":
-            # Gestione dell'invocazione di una funzione
             function_name = params.get("name")
             function_params = params.get("parameters", {})
             if hasattr(mcp, "invoke_function"):
@@ -325,7 +360,6 @@ async def mcp_messages_endpoint(request: Request):
                     "id": req_id
                 }
         else:
-            # Prova a delegare la richiesta a FastMCP se possibile
             if hasattr(mcp, 'handle_jsonrpc'):
                 response = await mcp.handle_jsonrpc(data)
             else:
@@ -352,7 +386,7 @@ async def mcp_messages_endpoint(request: Request):
     return JSONResponse(response)
 
 routes = [
-    Route("/sse", mcp.sse_app(), name='sse'),
+    Route("/sse", endpoint=sse_endpoint),
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
 ]
 
