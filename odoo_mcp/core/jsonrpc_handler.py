@@ -185,12 +185,21 @@ class JSONRPCHandler:
          Raises:
              AuthError, ProtocolError, NetworkError, OdooMCPError.
          """
-         payload_params = {
-             "service": service,
-             "method": method,
-             # Only add database for non-login methods
-             "args": args if (service == "common" and method == "login") else [self.database, *args]
-         }
+         if service == "object" and method == "execute_kw":
+             # Per execute_kw, riorganizza gli argomenti
+             db, uid, password, model, method_name, *rest = args
+             payload_params = {
+                 "service": service,
+                 "method": method,
+                 "args": [db, uid, password, model, method_name] + rest
+             }
+         else:
+             # Per altri metodi, usa la logica standard
+             payload_params = {
+                 "service": service,
+                 "method": method,
+                 "args": args if (service == "common" and method == "login") else [self.database, *args]
+             }
          payload = self._prepare_payload("call", payload_params)
          headers = {'Content-Type': 'application/json'}
 
@@ -208,18 +217,14 @@ class JSONRPCHandler:
                  full_error = f"Code {error_code}: {error_message} - {error_debug_info}".strip(" -")
 
                  # Map Odoo JSON-RPC error codes/messages to custom exceptions
-                 # These codes/strings might need adjustment based on Odoo version/specific errors
-                 if error_code == 100 or "AccessDenied" in error_message or "AccessError" in error_message or "session expired" in error_message.lower() or "Session expired" in error_message:
+                 if error_code == 100 or "AccessDenied" in error_message or "AccessError" in error_message:
                       raise AuthError(f"JSON-RPC Access/Auth Error: {full_error}", original_exception=Exception(str(error_data)))
-                 elif "UserError" in error_message or "ValidationError" in error_message or (error_data.get('data') and 'UserError' in error_data['data'].get('name', '')):
-                      # Try to get a cleaner message from data if available
+                 elif "UserError" in error_message or "ValidationError" in error_message:
                       clean_message = error_data.get('data', {}).get('message', error_message.split('\n')[0])
                       raise OdooValidationError(f"JSON-RPC Validation Error: {clean_message}", original_exception=Exception(str(error_data)))
-                 elif "Record does not exist" in error_message or "Missing record" in error_message or (error_data.get('data') and 'Record does not exist' in error_data['data'].get('message', '')):
+                 elif "Record does not exist" in error_message:
                       raise OdooRecordNotFoundError(f"JSON-RPC Record Not Found: {full_error}", original_exception=Exception(str(error_data)))
-                 # Add more specific mappings here if needed
                  else:
-                      # Fallback for other Odoo/JSON-RPC errors
                       raise ProtocolError(f"JSON-RPC Error Response: {full_error}", original_exception=Exception(str(error_data)))
 
              return result.get("result")
@@ -228,12 +233,11 @@ class JSONRPCHandler:
              raise NetworkError(f"JSON-RPC request timed out after {self.async_client.timeout.read} seconds", original_exception=e)
          except httpx.ConnectError as e:
               raise NetworkError(f"JSON-RPC Connection Error: Unable to connect to {self.jsonrpc_url}", original_exception=e)
-         except httpx.RequestError as e: # Catch other httpx request errors
+         except httpx.RequestError as e:
              raise NetworkError(f"JSON-RPC Network/HTTP Error: {e}", original_exception=e)
          except json.JSONDecodeError as e:
               raise ProtocolError("Failed to decode JSON-RPC response", original_exception=e)
          except Exception as e:
-              # Catch-all for unexpected errors during the call
               logger.exception(f"An unexpected error occurred during JSON-RPC call: {e}")
               raise OdooMCPError(f"An unexpected error occurred during JSON-RPC call: {e}", original_exception=e)
 

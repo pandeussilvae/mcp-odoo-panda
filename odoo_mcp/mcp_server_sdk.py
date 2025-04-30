@@ -230,13 +230,13 @@ class AsyncOdooTools:
                     service="object",
                     method="execute_kw",
                     args=[
-                        self.uid,           # uid deve essere il primo argomento
-                        self.password,      # password secondo
-                        self.odoo.database, # database terzo
+                        self.odoo.database,
+                        self.uid,
+                        self.password,
                         "ir.model",
                         "search_read",
-                        [[], ["model", "name"]],
-                        {}
+                        [[]], # domain
+                        {"fields": ["model", "name"]} # fields
                     ]
                 )
             else:
