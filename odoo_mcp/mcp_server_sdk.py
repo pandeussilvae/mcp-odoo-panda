@@ -555,100 +555,27 @@ async def mcp_messages_endpoint(request: Request):
             }
             return JSONResponse(response)
         elif method == 'resources/list':
-            # For resources/list, return the actual resource instances
-            resources = []
-            try:
-                # Get all available models
-                models = await odoo.execute_kw(
-                    model="ir.model",
-                    method="search_read",
-                    args=[[], ["model", "name"]],
-                    kwargs={},
-                    uid=odoo.global_uid,
-                    password=odoo.global_password
-                )
-                
-                for model_info in models:
-                    model_name = model_info["model"]
-                    
-                    # Add list resource for this model
-                    resources.append({
-                        "uri": f"odoo://{model_name}/list",
-                        "name": f"{model_info['name']} List",
-                        "type": "list",
-                        "mimeType": "application/json",
-                        "description": f"List of {model_info['name']} records",
-                        "metadata": {
-                            "model": model_name,
-                            "model_name": model_info["name"]
-                        }
-                    })
-                    
-                    # Get some records for this model
-                    try:
-                        records = await odoo.execute_kw(
-                            model=model_name,
-                            method="search_read",
-                            args=[[], ["id", "name"]],
-                            kwargs={"limit": 5},  # Limit to 5 records per model
-                            uid=odoo.global_uid,
-                            password=odoo.global_password
-                        )
-                        
-                        for record in records:
-                            # Add record resource
-                            resources.append({
-                                "uri": f"odoo://{model_name}/{record['id']}",
-                                "name": record.get("name", f"{model_info['name']} {record['id']}"),
-                                "type": "record",
-                                "mimeType": "application/json",
-                                "description": f"Single {model_info['name']} record",
-                                "metadata": {
-                                    "model": model_name,
-                                    "model_name": model_info["name"],
-                                    "record_id": record["id"]
-                                }
-                            })
-                            
-                            # Check for binary fields
-                            try:
-                                fields = await odoo.execute_kw(
-                                    model=model_name,
-                                    method="fields_get",
-                                    args=[],
-                                    kwargs={},
-                                    uid=odoo.global_uid,
-                                    password=odoo.global_password
-                                )
-                                
-                                for field_name, field_info in fields.items():
-                                    if field_info.get("type") == "binary":
-                                        record_name = record.get('name', f'Record {record["id"]}')
-                                        field_label = field_info.get('string', field_name)
-                                        resources.append({
-                                            "uri": f"odoo://{model_name}/binary/{field_name}/{record['id']}",
-                                            "name": f"{field_label} of {record_name}",
-                                            "type": "binary",
-                                            "mimeType": "application/octet-stream",
-                                            "description": f"Binary field {field_label} of {model_info['name']} record",
-                                            "metadata": {
-                                                "model": model_name,
-                                                "model_name": model_info["name"],
-                                                "record_id": record["id"],
-                                                "field": field_name,
-                                                "field_label": field_label
-                                            }
-                                        })
-                            except Exception as e:
-                                logger.error(f"Error fetching fields for model {model_name}: {e}")
-                                continue
-                                
-                    except Exception as e:
-                        logger.error(f"Error fetching records for model {model_name}: {e}")
-                        continue
-                        
-            except Exception as e:
-                logger.error(f"Error fetching models: {e}")
+            # For resources/list, return the resource templates in the correct format
+            resources = [
+                {
+                    "uri": "odoo://{model}/{id}",
+                    "type": "record",
+                    "data": None,
+                    "mime_type": "application/json"
+                },
+                {
+                    "uri": "odoo://{model}/list",
+                    "type": "list",
+                    "data": None,
+                    "mime_type": "application/json"
+                },
+                {
+                    "uri": "odoo://{model}/binary/{field}/{id}",
+                    "type": "binary",
+                    "data": None,
+                    "mime_type": "application/octet-stream"
+                }
+            ]
             
             response = {
                 "jsonrpc": "2.0",
