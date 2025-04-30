@@ -204,7 +204,8 @@ class AsyncOdooTools:
                         args=[
                             self.odoo.database,
                             self.odoo.config["username"],
-                            self.odoo.config["api_key"]
+                            self.odoo.config["api_key"],
+                            {"interactive": False}  # Required environment dictionary
                         ]
                     )
                     if not self.uid:
