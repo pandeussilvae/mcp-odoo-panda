@@ -82,27 +82,7 @@ class SSEProtocol:
         self._client_last_active[client_id] = time.time()
         print(f"[SSE] Nuovo client connesso: client_id={client_id}, totale clients: {len(self._clients)}", file=sys.stderr)
         try:
-            # Invia evento di benvenuto con client_id e capabilities
-            print(f"[SSE] Ricevuta richiesta da client: {request.headers}", file=sys.stderr)
-            print(f"[SSE] Query params: {request.query_string}", file=sys.stderr)
-            welcome_msg = {
-                "jsonrpc": "2.0",
-                "id": 0,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {}
-                    },
-                    "serverInfo": {
-                        "name": "MCP Odoo Server",
-                        "version": "1.0.0"
-                    }
-                }
-            }
-            print(f"[SSE] Invio messaggio di benvenuto a {client_id}: {welcome_msg}", file=sys.stderr)
-            await response.send(json.dumps(welcome_msg))
-            
-            # Invia anche il client_id come messaggio separato
+            # Invia solo il messaggio di benvenuto (non JSON-RPC) con client_id
             client_info = {
                 "type": "connected",
                 "data": {
@@ -110,6 +90,7 @@ class SSEProtocol:
                     "client_id": client_id
                 }
             }
+            print(f"[SSE] Connessione: invio messaggio di benvenuto a {client_id}: {client_info}", file=sys.stderr)
             await response.send(json.dumps(client_info))
             
             while not response.task.done():
@@ -175,7 +156,7 @@ class SSEProtocol:
             if not client_id or client_id not in self._client_queues:
                 print(f"[SSE] Client ID non valido o non trovato: {client_id}", file=sys.stderr)
                 return
-                
+            
             # Gestione cancellazione richieste
             if msg.get("method") == "cancel_request":
                 cancelled_id = msg.get("params", {}).get("id")
@@ -183,12 +164,34 @@ class SSEProtocol:
                     self._cancelled_requests.add(cancelled_id)
                     print(f"[SSE] Richiesta cancellata: id={cancelled_id}", file=sys.stderr)
                 return
-                
+            
             # Se la richiesta è stata cancellata, non processarla
             if msg.get("id") in self._cancelled_requests:
                 print(f"[SSE] Ignoro richiesta cancellata: id={msg.get('id')}", file=sys.stderr)
                 return
-                
+            
+            # Risposta custom per initialize
+            if msg.get("method") == "initialize":
+                print(f"[SSE] Riconosciuto initialize, preparo risposta MCP", file=sys.stderr)
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": 0,
+                    "result": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {
+                            "tools": {}
+                        },
+                        "serverInfo": {
+                            "name": "MCP Odoo Server",
+                            "version": "1.0.0"
+                        }
+                    }
+                }
+                print(f"[SSE] Invio risposta initialize a {client_id}: {response}", file=sys.stderr)
+                await self._client_queues[client_id].put(response)
+                self._client_last_active[client_id] = time.time()
+                return
+            
             print(f"[SSE] Chiamata handler per messaggio: {msg}", file=sys.stderr)
             response = self.request_handler(msg)
             print(f"[SSE] Risposta dall'handler: {response}", file=sys.stderr)
