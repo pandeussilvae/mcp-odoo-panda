@@ -108,32 +108,32 @@ tool_manager = OdooToolManager(odoo)
 mcp = FastMCP("odoo-mcp-server")
 
 # Registra i template delle risorse
-@mcp.resource_template("odoo://{model}/{id}")
-def record_template():
-    return {
+resource_templates = [
+    {
+        "uriTemplate": "odoo://{model}/{id}",
         "name": "Odoo Record",
         "description": "Represents a single record in an Odoo model",
         "type": "record",
         "mimeType": "application/json"
-    }
-
-@mcp.resource_template("odoo://{model}/list")
-def list_template():
-    return {
+    },
+    {
+        "uriTemplate": "odoo://{model}/list",
         "name": "Odoo Record List",
         "description": "Represents a list of records in an Odoo model",
         "type": "list",
         "mimeType": "application/json"
-    }
-
-@mcp.resource_template("odoo://{model}/binary/{field}/{id}")
-def binary_template():
-    return {
+    },
+    {
+        "uriTemplate": "odoo://{model}/binary/{field}/{id}",
         "name": "Odoo Binary Field",
         "description": "Represents a binary field value from an Odoo record",
         "type": "binary",
         "mimeType": "application/octet-stream"
     }
+]
+
+for template in resource_templates:
+    mcp.register_resource_template(template)
 
 # --- SESSION MANAGER IN MEMORIA (per estensioni future) ---
 sessions = {}
