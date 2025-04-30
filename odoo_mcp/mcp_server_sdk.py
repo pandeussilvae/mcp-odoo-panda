@@ -228,16 +228,5 @@ def odoo_list_models() -> list:
     return models
 
 if __name__ == "__main__":
-    import yaml
-    import asyncio
-    from odoo_mcp.core.mcp_server import OdooMCPServer
-
-    config_path = "odoo_mcp/config/config.yaml"
-    try:
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
-        server = OdooMCPServer(config)
-        print(f"[MCP] Modalità richiesta: {config.get('connection_type', 'stdio')}", file=sys.stderr)
-        asyncio.run(server.run())
-    except Exception as e:
-        print(f"[MCP] Errore durante l'avvio del server: {e}", file=sys.stderr) 
+    # Avvio server MCP runtime (FastMCP)
+    mcp.run() 
