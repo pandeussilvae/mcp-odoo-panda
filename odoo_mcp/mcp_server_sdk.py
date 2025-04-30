@@ -2,10 +2,10 @@ import yaml
 import json
 import uuid
 import os
+import sys
 from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
-import sys
 
 # Gerarchia di lettura credenziali
 # 1. Parametri runtime > 2. Variabili ambiente > 3. File config > 4. Errore
@@ -228,5 +228,8 @@ def odoo_list_models() -> list:
     return models
 
 if __name__ == "__main__":
-    # Avvio server MCP runtime (FastMCP)
-    mcp.run() 
+    if len(sys.argv) > 1 and sys.argv[1] == "sse":
+        import uvicorn
+        uvicorn.run(mcp.app, host="0.0.0.0", port=8080)
+    else:
+        mcp.run() 
