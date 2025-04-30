@@ -10,6 +10,7 @@ from collections import defaultdict, deque
 from fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
+from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.requests import Request
@@ -37,17 +38,55 @@ def get_credential(key, runtime_value=None, config=None, env_var=None):
 
 # Carica la configurazione Odoo
 def load_odoo_config(path="odoo_mcp/config/config.yaml"):
-    with open(path, "r") as f:
-        config = yaml.safe_load(f)
-    # Override con variabili di ambiente se presenti
+    """Carica la configurazione dal file YAML."""
+    if not os.path.exists(path):
+        # Se il file config.yaml non esiste, prova a usare config.example.yaml
+        example_path = "odoo_mcp/config/config.example.yaml"
+        if os.path.exists(example_path):
+            logger.warning(f"File {path} non trovato. Uso {example_path} come template.")
+            with open(example_path, "r") as f:
+                config = yaml.safe_load(f)
+        else:
+            raise FileNotFoundError(f"Nessun file di configurazione trovato in {path} o {example_path}")
+    else:
+        with open(path, "r") as f:
+            config = yaml.safe_load(f)
+
+    # Override con variabili di ambiente
     config["odoo_url"] = os.environ.get("ODOO_URL", config.get("odoo_url"))
     config["database"] = os.environ.get("ODOO_DATABASE", config.get("database"))
     config["username"] = os.environ.get("ODOO_USERNAME", config.get("username"))
     config["api_key"] = os.environ.get("ODOO_PASSWORD", config.get("api_key"))
+
+    # Configura il logging
+    if "logging" in config:
+        log_config = config["logging"]
+        logging.basicConfig(
+            level=getattr(logging, log_config.get("level", "INFO")),
+            format=log_config.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+
     return config
 
+def create_odoo_handler(config):
+    """Crea l'handler Odoo appropriato in base alla configurazione."""
+    protocol = config.get("protocol", "xmlrpc").lower()
+    
+    if protocol == "jsonrpc":
+        logger.info("Inizializzazione JSONRPCHandler...")
+        return JSONRPCHandler(config)
+    else:
+        logger.info("Inizializzazione XMLRPCHandler...")
+        return XMLRPCHandler(config)
+
+# Inizializza i gestori
 config = load_odoo_config()
-odoo = XMLRPCHandler(config)
+odoo = create_odoo_handler(config)
+prompt_manager = OdooPromptManager()
+resource_manager = OdooResourceManager(odoo)
+tool_manager = OdooToolManager(odoo)
+
+# Crea l'istanza FastMCP
 mcp = FastMCP("odoo-mcp-server")
 
 # --- SESSION MANAGER IN MEMORIA (per estensioni future) ---
@@ -93,9 +132,6 @@ def odoo_login(*, username: str = None, password: str = None, database: str = No
         return {"success": False, "error": str(e)}
 
 # --- RISORSE MCP ---
-# Inizializza il ResourceManager
-resource_manager = OdooResourceManager(odoo)
-
 @mcp.resource("odoo://{model}/{id}")
 async def get_odoo_record(model: str, id: int):
     """Ottiene un singolo record Odoo."""
@@ -128,7 +164,7 @@ async def get_odoo_binary(model: str, field: str, id: int):
 async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None) -> list:
     """Cerca e legge record in un modello Odoo."""
     context = context or {}
-    return odoo.execute_kw(
+    return await odoo.execute_kw(
         model=model,
         method="search_read",
         args=[domain, fields],
@@ -139,7 +175,7 @@ async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int
 async def odoo_read(model: str, ids: list, fields: list, *, context: dict = None) -> list:
     """Legge record specifici da un modello Odoo."""
     context = context or {}
-    return odoo.execute_kw(
+    return await odoo.execute_kw(
         model=model,
         method="read",
         args=[ids, fields],
@@ -149,7 +185,7 @@ async def odoo_read(model: str, ids: list, fields: list, *, context: dict = None
 @mcp.tool()
 async def odoo_create(model: str, values: dict, *, context: dict = None) -> dict:
     """Crea un nuovo record in un modello Odoo."""
-    record_id = odoo.execute_kw(
+    record_id = await odoo.execute_kw(
         model=model,
         method="create",
         args=[values],
@@ -161,7 +197,7 @@ async def odoo_create(model: str, values: dict, *, context: dict = None) -> dict
 async def odoo_write(model: str, ids: list, values: dict, *, context: dict = None) -> dict:
     """Aggiorna record esistenti in un modello Odoo."""
     context = context or {}
-    result = odoo.execute_kw(
+    result = await odoo.execute_kw(
         model=model,
         method="write",
         args=[ids, values],
@@ -172,7 +208,7 @@ async def odoo_write(model: str, ids: list, values: dict, *, context: dict = Non
 @mcp.tool()
 async def odoo_unlink(model: str, ids: list, *, context: dict = None) -> dict:
     """Elimina record da un modello Odoo."""
-    result = odoo.execute_kw(
+    result = await odoo.execute_kw(
         model=model,
         method="unlink",
         args=[ids],
@@ -184,7 +220,7 @@ async def odoo_unlink(model: str, ids: list, *, context: dict = None) -> dict:
 async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = None) -> dict:
     """Chiama un metodo personalizzato su un modello Odoo."""
     context = context or {}
-    result = odoo.execute_kw(
+    result = await odoo.execute_kw(
         model=model,
         method=method,
         args=args or [],
@@ -193,9 +229,6 @@ async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs
     return {"result": result}
 
 # --- PROMPTS MCP (esempi base, da personalizzare) ---
-# Inizializza il PromptManager
-prompt_manager = OdooPromptManager()
-
 @mcp.prompt()
 async def analyze_record(model: str, id: int) -> str:
     """Genera un prompt per analizzare un record Odoo."""
@@ -236,21 +269,20 @@ def odoo_list_models() -> list:
 sse_queues = defaultdict(deque)  # session_id -> queue di messaggi
 
 async def sse_endpoint(request: Request):
-    session_id = request.query_params.get("session_id")
-    if not session_id:
-        session_id = str(uuid.uuid4())
-        logger.info(f"Nessun session_id fornito, generato: {session_id}")
-    else:
-        logger.info(f"Connessione SSE con session_id: {session_id}")
-    queue = sse_queues[session_id]
+    """Endpoint SSE per la comunicazione in tempo reale."""
+    session_id = request.query_params.get("session_id", str(uuid.uuid4()))
+    logger.info(f"Nuova connessione SSE con session_id: {session_id}")
+    
     async def event_generator():
+        queue = sse_queues[session_id]
         while True:
             if queue:
                 msg = queue.popleft()
-                yield {"data": msg + "\n"}
+                yield {"data": json.dumps(msg) + "\n\n"}
             else:
                 await asyncio.sleep(10)
-                yield {"data": ": ping\n\n"}  # heartbeat SSE standard
+                yield {"data": ": ping\n\n"}
+    
     return EventSourceResponse(event_generator())
 
 # --- Funzioni di formattazione strumenti/risorse ---
@@ -276,76 +308,66 @@ def format_resource(resource):
 
 # --- Endpoint POST /messages ---
 async def mcp_messages_endpoint(request: Request):
+    """Endpoint per la gestione dei messaggi MCP."""
     data = await request.json()
     session_id = request.query_params.get("session_id")
+    
     if not session_id:
-        return JSONResponse({"error": "Missing session_id in query params"}, status_code=400)
-    logger.info(f"Ricevuta richiesta messages: {data} (session_id={session_id})")
-    method = data.get("method")
-    req_id = data.get("id")
+        return JSONResponse({"error": "Missing session_id"}, status_code=400)
+    
+    logger.info(f"Ricevuta richiesta MCP: {data} (session_id={session_id})")
+    
     try:
+        method = data.get("method")
+        req_id = data.get("id")
+        
         if method == "initialize":
             response = {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}, "resources": {}},
-                    "serverInfo": {"name": "odoo-mcp-server", "version": "0.1.0"}
+                    "capabilities": {
+                        "tools": await mcp.list_tools(),
+                        "resources": await mcp.list_resources()
+                    },
+                    "serverInfo": {
+                        "name": "odoo-mcp-server",
+                        "version": "0.1.0"
+                    }
                 }
-            }
-        elif method == "tools/list":
-            tools = await mcp.list_tools()
-            formatted_tools = [format_tool(tool) for tool in tools]
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {"tools": formatted_tools}
-            }
-        elif method == "resources/list":
-            resources = await mcp.list_resources()
-            formatted_resources = [format_resource(resource) for resource in resources]
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {"resources": formatted_resources}
             }
         elif method == "invokeFunction":
             function_name = data["params"].get("name")
             function_params = data["params"].get("parameters", {})
-            if hasattr(mcp, "invoke_function"):
-                result = await mcp.invoke_function(function_name, function_params)
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": result
-                }
-            else:
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {"code": -32601, "message": "Method not available"}
-                }
+            result = await mcp.invoke_function(function_name, function_params)
+            response = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": result
+            }
         else:
-            # Prova a delegare la richiesta a FastMCP se possibile
-            if hasattr(mcp, 'handle_jsonrpc'):
-                result = await mcp.handle_jsonrpc(data)
-                response = result if isinstance(result, dict) else {"jsonrpc": "2.0", "id": req_id, "result": result}
-            else:
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {"code": -32601, "message": f"Method {method} not found"}
+            response = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {
+                    "code": -32601,
+                    "message": f"Method {method} not found"
                 }
+            }
     except Exception as e:
         logger.error(f"Errore nella gestione della richiesta: {e}")
         response = {
             "jsonrpc": "2.0",
             "id": req_id,
-            "error": {"code": -32000, "message": str(e)}
+            "error": {
+                "code": -32000,
+                "message": str(e)
+            }
         }
-    # Metti la risposta nella coda SSE della sessione
-    sse_queues[session_id].append(json.dumps(response))
+    
+    # Invia la risposta attraverso SSE
+    sse_queues[session_id].append(response)
     return JSONResponse({"status": "ok"})
 
 routes = [
@@ -364,12 +386,6 @@ async def log_registered_tools():
     resources = await mcp.list_resources()
     for resource in resources:
         logger.info(f"- Resource: {resource}")
-
-# Inizializza i gestori
-odoo = XMLRPCHandler()
-prompt_manager = OdooPromptManager()
-resource_manager = OdooResourceManager(odoo)
-tool_manager = OdooToolManager(odoo)
 
 def execute_tool(tool_name: str, **kwargs):
     """Esegue uno strumento specifico.
@@ -402,10 +418,15 @@ def register_tool(name: str, description: str, parameters: dict):
     tool_manager.register_tool(name, description, parameters)
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "sse":
+    # Determina la modalità di esecuzione
+    is_sse = len(sys.argv) > 1 and sys.argv[1] == "sse"
+    
+    if is_sse:
+        # Modalità SSE
         import uvicorn
-        # Esegui il logging degli strumenti in modo asincrono
-        asyncio.run(log_registered_tools())
-        uvicorn.run("odoo_mcp.mcp_server_sdk:app", host="0.0.0.0", port=8080, factory=False)
+        logger.info("Avvio server MCP in modalità SSE...")
+        uvicorn.run(app, host="0.0.0.0", port=8080)
     else:
+        # Modalità stdio (default)
+        logger.info("Avvio server MCP in modalità stdio...")
         mcp.run() 
