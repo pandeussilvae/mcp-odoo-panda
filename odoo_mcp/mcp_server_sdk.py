@@ -241,11 +241,11 @@ async def mcp_messages_endpoint(request: Request):
     return JSONResponse(response)
 
 routes = [
-    Mount('/sse', app=mcp.sse_app()),  # Espone l'app SSE di FastMCP su /sse
+    Mount('/sse/', app=mcp.sse_app(), name='sse'),
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
 ]
 
-app = Starlette(debug=True, routes=routes)
+app = Starlette(debug=True, routes=routes, redirect_slashes=False)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "sse":
