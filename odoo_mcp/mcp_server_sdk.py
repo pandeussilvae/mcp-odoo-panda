@@ -107,6 +107,34 @@ tool_manager = OdooToolManager(odoo)
 # Crea l'istanza FastMCP
 mcp = FastMCP("odoo-mcp-server")
 
+# Registra i template delle risorse
+@mcp.resource_template("odoo://{model}/{id}")
+def record_template():
+    return {
+        "name": "Odoo Record",
+        "description": "Represents a single record in an Odoo model",
+        "type": "record",
+        "mimeType": "application/json"
+    }
+
+@mcp.resource_template("odoo://{model}/list")
+def list_template():
+    return {
+        "name": "Odoo Record List",
+        "description": "Represents a list of records in an Odoo model",
+        "type": "list",
+        "mimeType": "application/json"
+    }
+
+@mcp.resource_template("odoo://{model}/binary/{field}/{id}")
+def binary_template():
+    return {
+        "name": "Odoo Binary Field",
+        "description": "Represents a binary field value from an Odoo record",
+        "type": "binary",
+        "mimeType": "application/octet-stream"
+    }
+
 # --- SESSION MANAGER IN MEMORIA (per estensioni future) ---
 sessions = {}
 
