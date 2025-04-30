@@ -4,6 +4,7 @@ import uuid
 import os
 import sys
 import logging
+import asyncio
 from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -257,14 +258,21 @@ routes = [
 
 app = Starlette(debug=True, routes=routes)
 
+async def log_registered_tools():
+    """Log degli strumenti e risorse registrate"""
+    logger.info("Avvio server MCP con strumenti registrati:")
+    tools = await mcp.list_tools()
+    for tool in tools:
+        logger.info(f"- Tool: {tool}")
+    resources = await mcp.list_resources()
+    for resource in resources:
+        logger.info(f"- Resource: {resource}")
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "sse":
         import uvicorn
-        logger.info("Avvio server MCP con strumenti registrati:")
-        for tool in mcp.list_tools():
-            logger.info(f"- Tool: {tool}")
-        for resource in mcp.list_resources():
-            logger.info(f"- Resource: {resource}")
+        # Esegui il logging degli strumenti in modo asincrono
+        asyncio.run(log_registered_tools())
         uvicorn.run("odoo_mcp.mcp_server_sdk:app", host="0.0.0.0", port=8080, factory=False)
     else:
         mcp.run() 
