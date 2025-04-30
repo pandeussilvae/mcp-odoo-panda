@@ -239,6 +239,22 @@ def odoo_list_models() -> list:
     logger.info(f"Trovati {len(models)} modelli")
     return models
 
+def format_tool(tool):
+    """Formatta uno strumento nel formato atteso dal client MCP"""
+    return {
+        "name": tool["name"],
+        "description": tool.get("description", ""),
+        "parameters": tool.get("inputSchema", {})
+    }
+
+def format_resource(resource):
+    """Formatta una risorsa nel formato atteso dal client MCP"""
+    return {
+        "uri": resource.get("uri", ""),
+        "mimeType": resource.get("mimeType", "application/json"),
+        "description": resource.get("description", "")
+    }
+
 # Endpoint POST /messages
 async def mcp_messages_endpoint(request: Request):
     data = await request.json()
@@ -252,38 +268,64 @@ async def mcp_messages_endpoint(request: Request):
     params = data.get("params", {})
     req_id = data.get("id")
     
-    if method == "initialize":
-        # Rispondi con le capabilities del server
-        response = {
-            "jsonrpc": "2.0",
-            "result": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {
-                    "tools": True,
-                    "resources": True
+    try:
+        if method == "initialize":
+            # Rispondi con le capabilities del server
+            response = {
+                "jsonrpc": "2.0",
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": True,
+                        "resources": True
+                    }
+                },
+                "id": req_id
+            }
+        elif method == "getTools":
+            # Restituisci la lista degli strumenti disponibili
+            tools = await mcp.list_tools()
+            formatted_tools = [format_tool(tool) for tool in tools]
+            response = {
+                "jsonrpc": "2.0",
+                "result": {
+                    "tools": formatted_tools
+                },
+                "id": req_id
+            }
+        elif method == "getResources":
+            # Restituisci la lista delle risorse disponibili
+            resources = await mcp.list_resources()
+            formatted_resources = [format_resource(resource) for resource in resources]
+            response = {
+                "jsonrpc": "2.0",
+                "result": {
+                    "resources": formatted_resources
+                },
+                "id": req_id
+            }
+        elif method == "invokeFunction":
+            # Gestione dell'invocazione di una funzione
+            function_name = params.get("name")
+            function_params = params.get("parameters", {})
+            if hasattr(mcp, "invoke_function"):
+                result = await mcp.invoke_function(function_name, function_params)
+                response = {
+                    "jsonrpc": "2.0",
+                    "result": result,
+                    "id": req_id
                 }
-            },
-            "id": req_id
-        }
-    elif method == "getTools":
-        # Restituisci la lista degli strumenti disponibili
-        tools = await mcp.list_tools()
-        response = {
-            "jsonrpc": "2.0",
-            "result": {"tools": tools},
-            "id": req_id
-        }
-    elif method == "getResources":
-        # Restituisci la lista delle risorse disponibili
-        resources = await mcp.list_resources()
-        response = {
-            "jsonrpc": "2.0",
-            "result": {"resources": resources},
-            "id": req_id
-        }
-    else:
-        # Prova a delegare la richiesta a FastMCP se possibile
-        try:
+            else:
+                response = {
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32601,
+                        "message": "Method not available"
+                    },
+                    "id": req_id
+                }
+        else:
+            # Prova a delegare la richiesta a FastMCP se possibile
             if hasattr(mcp, 'handle_jsonrpc'):
                 response = await mcp.handle_jsonrpc(data)
             else:
@@ -295,16 +337,16 @@ async def mcp_messages_endpoint(request: Request):
                     },
                     "id": req_id
                 }
-        except Exception as e:
-            logger.error(f"Errore nella gestione della richiesta: {e}")
-            response = {
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32000,
-                    "message": str(e)
-                },
-                "id": req_id
-            }
+    except Exception as e:
+        logger.error(f"Errore nella gestione della richiesta: {e}")
+        response = {
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32000,
+                "message": str(e)
+            },
+            "id": req_id
+        }
     
     logger.info(f"Risposta: {response}")
     return JSONResponse(response)
