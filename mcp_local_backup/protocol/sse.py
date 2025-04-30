@@ -83,6 +83,8 @@ class SSEProtocol:
         print(f"[SSE] Nuovo client connesso: client_id={client_id}, totale clients: {len(self._clients)}", file=sys.stderr)
         try:
             # Invia evento di benvenuto con client_id e capabilities
+            print(f"[SSE] Ricevuta richiesta da client: {request.headers}", file=sys.stderr)
+            print(f"[SSE] Query params: {request.query_string}", file=sys.stderr)
             welcome_msg = {
                 "jsonrpc": "2.0",
                 "id": 0,
