@@ -7,7 +7,7 @@ from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 from starlette.applications import Starlette
-from starlette.responses import JSONResponse, EventSourceResponse
+from starlette.responses import JSONResponse
 from starlette.requests import Request
 from starlette.routing import Route, Mount
 
