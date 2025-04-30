@@ -197,17 +197,26 @@ class AsyncOdooTools:
         if self.uid is None:
             try:
                 if isinstance(self.odoo, JSONRPCHandler):
-                    # Per JSONRPCHandler, dobbiamo autenticarci esplicitamente
-                    self.uid = await self.odoo.authenticate(
-                        self.odoo.database,
-                        self.odoo.config["username"],
-                        self.odoo.config["api_key"]
+                    # Per JSONRPCHandler, dobbiamo autenticarci usando il metodo call
+                    self.uid = await self.odoo.call(
+                        service="common",
+                        method="authenticate",
+                        args=[
+                            self.odoo.database,
+                            self.odoo.config["username"],
+                            self.odoo.config["api_key"],
+                            {}
+                        ]
                     )
+                    if not self.uid:
+                        raise Exception("Autenticazione fallita: credenziali non valide")
                     self.password = self.odoo.config["api_key"]
+                    logger.info(f"Autenticazione JSON-RPC riuscita. UID: {self.uid}")
                 else:
                     # Per XMLRPCHandler, usa le credenziali globali
                     self.uid = self.odoo.global_uid
                     self.password = self.odoo.global_password
+                    logger.info(f"Usando credenziali XML-RPC globali. UID: {self.uid}")
             except Exception as e:
                 logger.error(f"Errore durante l'autenticazione: {e}")
                 raise
@@ -217,14 +226,29 @@ class AsyncOdooTools:
         logger.info("Chiamata a odoo_list_models")
         try:
             await self.authenticate()
-            result = await self.odoo.execute_kw(
-                model="ir.model",
-                method="search_read",
-                args=[[], ["model", "name"]],
-                kwargs={},
-                uid=self.uid,
-                password=self.password
-            )
+            if isinstance(self.odoo, JSONRPCHandler):
+                result = await self.odoo.call(
+                    service="object",
+                    method="execute_kw",
+                    args=[
+                        self.odoo.database,
+                        self.uid,
+                        self.password,
+                        "ir.model",
+                        "search_read",
+                        [[], ["model", "name"]],
+                        {}
+                    ]
+                )
+            else:
+                result = await self.odoo.execute_kw(
+                    model="ir.model",
+                    method="search_read",
+                    args=[[], ["model", "name"]],
+                    kwargs={},
+                    uid=self.uid,
+                    password=self.password
+                )
             return result
         except Exception as e:
             logger.error(f"Errore in list_models: {e}")
@@ -234,14 +258,29 @@ class AsyncOdooTools:
         """Cerca e legge record in un modello Odoo."""
         try:
             await self.authenticate()
-            return await self.odoo.execute_kw(
-                model=model,
-                method="search_read",
-                args=[domain, fields],
-                kwargs={"limit": limit, "offset": offset, "context": context or {}},
-                uid=self.uid,
-                password=self.password
-            )
+            if isinstance(self.odoo, JSONRPCHandler):
+                return await self.odoo.call(
+                    service="object",
+                    method="execute_kw",
+                    args=[
+                        self.odoo.database,
+                        self.uid,
+                        self.password,
+                        model,
+                        "search_read",
+                        [domain, fields],
+                        {"limit": limit, "offset": offset, "context": context or {}}
+                    ]
+                )
+            else:
+                return await self.odoo.execute_kw(
+                    model=model,
+                    method="search_read",
+                    args=[domain, fields],
+                    kwargs={"limit": limit, "offset": offset, "context": context or {}},
+                    uid=self.uid,
+                    password=self.password
+                )
         except Exception as e:
             logger.error(f"Errore in search_read: {e}")
             raise
@@ -250,14 +289,29 @@ class AsyncOdooTools:
         """Legge record specifici da un modello Odoo."""
         try:
             await self.authenticate()
-            return await self.odoo.execute_kw(
-                model=model,
-                method="read",
-                args=[ids, fields],
-                kwargs={"context": context or {}},
-                uid=self.uid,
-                password=self.password
-            )
+            if isinstance(self.odoo, JSONRPCHandler):
+                return await self.odoo.call(
+                    service="object",
+                    method="execute_kw",
+                    args=[
+                        self.odoo.database,
+                        self.uid,
+                        self.password,
+                        model,
+                        "read",
+                        [ids, fields],
+                        {"context": context or {}}
+                    ]
+                )
+            else:
+                return await self.odoo.execute_kw(
+                    model=model,
+                    method="read",
+                    args=[ids, fields],
+                    kwargs={"context": context or {}},
+                    uid=self.uid,
+                    password=self.password
+                )
         except Exception as e:
             logger.error(f"Errore in read: {e}")
             raise
