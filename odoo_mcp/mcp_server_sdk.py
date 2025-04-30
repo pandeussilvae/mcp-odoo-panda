@@ -190,102 +190,121 @@ class AsyncOdooTools:
     async def list_models(self):
         """Elenca tutti i modelli Odoo disponibili."""
         logger.info("Chiamata a odoo_list_models")
-        result = await self.odoo.execute_kw(
-            model="ir.model",
-            method="search_read",
-            args=[[], ["model", "name"]],
-            kwargs={}
-        )
-        return result
+        try:
+            result = await self.odoo.execute_kw(
+                model="ir.model",
+                method="search_read",
+                args=[[], ["model", "name"]],
+                kwargs={}
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Errore in list_models: {e}")
+            raise
     
     async def search_read(self, model, domain, fields, limit=80, offset=0, context=None):
         """Cerca e legge record in un modello Odoo."""
-        return await self.odoo.execute_kw(
-            model=model,
-            method="search_read",
-            args=[domain, fields],
-            kwargs={"limit": limit, "offset": offset, "context": context or {}}
-        )
+        try:
+            return await self.odoo.execute_kw(
+                model=model,
+                method="search_read",
+                args=[domain, fields],
+                kwargs={"limit": limit, "offset": offset, "context": context or {}}
+            )
+        except Exception as e:
+            logger.error(f"Errore in search_read: {e}")
+            raise
     
     async def read(self, model, ids, fields, context=None):
         """Legge record specifici da un modello Odoo."""
-        return await self.odoo.execute_kw(
-            model=model,
-            method="read",
-            args=[ids, fields],
-            kwargs={"context": context or {}}
-        )
+        try:
+            return await self.odoo.execute_kw(
+                model=model,
+                method="read",
+                args=[ids, fields],
+                kwargs={"context": context or {}}
+            )
+        except Exception as e:
+            logger.error(f"Errore in read: {e}")
+            raise
 
 # Inizializza gli strumenti asincroni
 async_tools = AsyncOdooTools(odoo)
 
 @mcp.tool()
-def odoo_list_models():
+async def odoo_list_models():
     """Elenca tutti i modelli Odoo disponibili (model e name)."""
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(async_tools.list_models())
+    return await async_tools.list_models()
 
 @mcp.tool()
-def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None):
+async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None):
     """Cerca e legge record in un modello Odoo."""
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(async_tools.search_read(model, domain, fields, limit, offset, context))
+    return await async_tools.search_read(model, domain, fields, limit, offset, context)
 
 @mcp.tool()
-def odoo_read(model: str, ids: list, fields: list, *, context: dict = None):
+async def odoo_read(model: str, ids: list, fields: list, *, context: dict = None):
     """Legge record specifici da un modello Odoo."""
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(async_tools.read(model, ids, fields, context))
+    return await async_tools.read(model, ids, fields, context)
 
 @mcp.tool()
-@sync_async
-async def odoo_create(model: str, values: dict, *, context: dict = None) -> dict:
+async def odoo_create(model: str, values: dict, *, context: dict = None):
     """Crea un nuovo record in un modello Odoo."""
-    record_id = await odoo.execute_kw(
-        model=model,
-        method="create",
-        args=[values],
-        kwargs={"context": context or {}},
-    )
-    return {"id": record_id}
+    try:
+        record_id = await odoo.execute_kw(
+            model=model,
+            method="create",
+            args=[values],
+            kwargs={"context": context or {}}
+        )
+        return {"id": record_id}
+    except Exception as e:
+        logger.error(f"Errore in create: {e}")
+        raise
 
 @mcp.tool()
-@sync_async
-async def odoo_write(model: str, ids: list, values: dict, *, context: dict = None) -> dict:
+async def odoo_write(model: str, ids: list, values: dict, *, context: dict = None):
     """Aggiorna record esistenti in un modello Odoo."""
-    context = context or {}
-    result = await odoo.execute_kw(
-        model=model,
-        method="write",
-        args=[ids, values],
-        kwargs={"context": context},
-    )
-    return {"success": result}
+    try:
+        result = await odoo.execute_kw(
+            model=model,
+            method="write",
+            args=[ids, values],
+            kwargs={"context": context or {}}
+        )
+        return {"success": result}
+    except Exception as e:
+        logger.error(f"Errore in write: {e}")
+        raise
 
 @mcp.tool()
-@sync_async
-async def odoo_unlink(model: str, ids: list, *, context: dict = None) -> dict:
+async def odoo_unlink(model: str, ids: list, *, context: dict = None):
     """Elimina record da un modello Odoo."""
-    result = await odoo.execute_kw(
-        model=model,
-        method="unlink",
-        args=[ids],
-        kwargs={"context": context or {}},
-    )
-    return {"success": result}
+    try:
+        result = await odoo.execute_kw(
+            model=model,
+            method="unlink",
+            args=[ids],
+            kwargs={"context": context or {}}
+        )
+        return {"success": result}
+    except Exception as e:
+        logger.error(f"Errore in unlink: {e}")
+        raise
 
 @mcp.tool()
-@sync_async
-async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = None) -> dict:
+async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = None):
     """Chiama un metodo personalizzato su un modello Odoo."""
-    context = context or {}
-    result = await odoo.execute_kw(
-        model=model,
-        method=method,
-        args=args or [],
-        kwargs={**(kwargs or {}), "context": context},
-    )
-    return {"result": result}
+    try:
+        result = await odoo.execute_kw(
+            model=model,
+            method=method,
+            args=args or [],
+            kwargs={**(kwargs or {}), "context": context or {}}
+        )
+        return {"result": result}
+    except Exception as e:
+        logger.error(f"Errore in call_method: {e}")
+        raise
 
 # --- PROMPTS MCP (esempi base, da personalizzare) ---
 @mcp.prompt()
