@@ -19,10 +19,28 @@ from sse_starlette.sse import EventSourceResponse
 from odoo_mcp.prompts.prompt_manager import OdooPromptManager
 from odoo_mcp.resources.resource_manager import OdooResourceManager
 from odoo_mcp.tools.tool_manager import OdooToolManager
+from functools import wraps
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def sync_async(func):
+    """Decoratore per gestire funzioni asincrone in contesti sincroni."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if asyncio.get_event_loop().is_running():
+            # Se siamo in un contesto asincrono, esegui normalmente
+            return func(*args, **kwargs)
+        else:
+            # Se siamo in un contesto sincrono, esegui in un nuovo event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(func(*args, **kwargs))
+            finally:
+                loop.close()
+    return wrapper
 
 # Gerarchia di lettura credenziali
 # 1. Parametri runtime > 2. Variabili ambiente > 3. File config > 4. Errore
@@ -133,34 +151,38 @@ def odoo_login(*, username: str = None, password: str = None, database: str = No
 
 # --- RISORSE MCP ---
 @mcp.resource("odoo://{model}/{id}")
+@sync_async
 async def get_odoo_record(model: str, id: int):
     """Ottiene un singolo record Odoo."""
     auth_details = {
         "uid": odoo.global_uid,
         "password": odoo.global_password
     }
-    return resource_manager.get_resource(f"odoo://{model}/{id}", auth_details)
+    return await resource_manager.get_resource(f"odoo://{model}/{id}", auth_details)
 
 @mcp.resource("odoo://{model}/list")
+@sync_async
 async def list_odoo_records(model: str):
     """Ottiene una lista di record Odoo."""
     auth_details = {
         "uid": odoo.global_uid,
         "password": odoo.global_password
     }
-    return resource_manager.get_resource(f"odoo://{model}/list", auth_details)
+    return await resource_manager.get_resource(f"odoo://{model}/list", auth_details)
 
 @mcp.resource("odoo://{model}/binary/{field}/{id}")
+@sync_async
 async def get_odoo_binary(model: str, field: str, id: int):
     """Ottiene un campo binario da un record Odoo."""
     auth_details = {
         "uid": odoo.global_uid,
         "password": odoo.global_password
     }
-    return resource_manager.get_resource(f"odoo://{model}/binary/{field}/{id}", auth_details)
+    return await resource_manager.get_resource(f"odoo://{model}/binary/{field}/{id}", auth_details)
 
 # --- TOOLS MCP ---
 @mcp.tool()
+@sync_async
 async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = None) -> list:
     """Cerca e legge record in un modello Odoo."""
     context = context or {}
@@ -172,6 +194,7 @@ async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int
     )
 
 @mcp.tool()
+@sync_async
 async def odoo_read(model: str, ids: list, fields: list, *, context: dict = None) -> list:
     """Legge record specifici da un modello Odoo."""
     context = context or {}
@@ -183,6 +206,7 @@ async def odoo_read(model: str, ids: list, fields: list, *, context: dict = None
     )
 
 @mcp.tool()
+@sync_async
 async def odoo_create(model: str, values: dict, *, context: dict = None) -> dict:
     """Crea un nuovo record in un modello Odoo."""
     record_id = await odoo.execute_kw(
@@ -194,6 +218,7 @@ async def odoo_create(model: str, values: dict, *, context: dict = None) -> dict
     return {"id": record_id}
 
 @mcp.tool()
+@sync_async
 async def odoo_write(model: str, ids: list, values: dict, *, context: dict = None) -> dict:
     """Aggiorna record esistenti in un modello Odoo."""
     context = context or {}
@@ -206,6 +231,7 @@ async def odoo_write(model: str, ids: list, values: dict, *, context: dict = Non
     return {"success": result}
 
 @mcp.tool()
+@sync_async
 async def odoo_unlink(model: str, ids: list, *, context: dict = None) -> dict:
     """Elimina record da un modello Odoo."""
     result = await odoo.execute_kw(
@@ -217,6 +243,7 @@ async def odoo_unlink(model: str, ids: list, *, context: dict = None) -> dict:
     return {"success": result}
 
 @mcp.tool()
+@sync_async
 async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = None) -> dict:
     """Chiama un metodo personalizzato su un modello Odoo."""
     context = context or {}
@@ -227,6 +254,18 @@ async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs
         kwargs={**(kwargs or {}), "context": context},
     )
     return {"result": result}
+
+@mcp.tool()
+@sync_async
+async def odoo_list_models() -> list:
+    """Elenca tutti i modelli Odoo disponibili (model e name)."""
+    logger.info("Chiamata a odoo_list_models")
+    return await odoo.execute_kw(
+        model="ir.model",
+        method="search_read",
+        args=[[], ["model", "name"]],
+        kwargs={},
+    )
 
 # --- PROMPTS MCP (esempi base, da personalizzare) ---
 @mcp.prompt()
@@ -251,19 +290,6 @@ def advanced_search(model: str, domain: list) -> str:
 @mcp.prompt()
 def call_method(model: str, method: str, *, args: list = None, kwargs: dict = None) -> str:
     return f"Chiamata metodo {method} su {model} con args={args} kwargs={kwargs}"
-
-@mcp.tool()
-def odoo_list_models() -> list:
-    """Elenca tutti i modelli Odoo disponibili (model e name)."""
-    logger.info("Chiamata a odoo_list_models")
-    models = odoo.execute_kw(
-        model="ir.model",
-        method="search_read",
-        args=[[], ["model", "name"]],
-        kwargs={},
-    )
-    logger.info(f"Trovati {len(models)} modelli")
-    return models
 
 # --- Gestione code SSE per sessione ---
 sse_queues = defaultdict(deque)  # session_id -> queue di messaggi
