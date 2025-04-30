@@ -623,18 +623,20 @@ async def mcp_messages_endpoint(request: Request):
                                 
                                 for field_name, field_info in fields.items():
                                     if field_info.get("type") == "binary":
+                                        record_name = record.get('name', f'Record {record["id"]}')
+                                        field_label = field_info.get('string', field_name)
                                         resources.append({
                                             "uri": f"odoo://{model_name}/binary/{field_name}/{record['id']}",
-                                            "name": f"{field_info.get('string', field_name)} of {record.get('name', f'Record {record['id']}')}",
+                                            "name": f"{field_label} of {record_name}",
                                             "type": "binary",
                                             "mimeType": "application/octet-stream",
-                                            "description": f"Binary field {field_info.get('string', field_name)} of {model_info['name']} record",
+                                            "description": f"Binary field {field_label} of {model_info['name']} record",
                                             "metadata": {
                                                 "model": model_name,
                                                 "model_name": model_info["name"],
                                                 "record_id": record["id"],
                                                 "field": field_name,
-                                                "field_label": field_info.get("string", field_name)
+                                                "field_label": field_label
                                             }
                                         })
                             except Exception as e:
