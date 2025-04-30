@@ -82,17 +82,8 @@ class SSEProtocol:
         self._client_last_active[client_id] = time.time()
         print(f"[SSE] Nuovo client connesso: client_id={client_id}, totale clients: {len(self._clients)}", file=sys.stderr)
         try:
-            # Invia solo il messaggio di benvenuto (non JSON-RPC) con client_id
-            client_info = {
-                "type": "connected",
-                "data": {
-                    "message": "Connected to MCP server",
-                    "client_id": client_id
-                }
-            }
-            print(f"[SSE] Connessione: invio messaggio di benvenuto a {client_id}: {client_info}", file=sys.stderr)
-            await response.send(json.dumps(client_info))
-            
+            # Nessun messaggio iniziale, il client deve inviare un JSON-RPC initialize
+
             while not response.task.done():
                 try:
                     # Timeout: se inattivo troppo a lungo, chiudi la connessione
@@ -170,28 +161,7 @@ class SSEProtocol:
                 print(f"[SSE] Ignoro richiesta cancellata: id={msg.get('id')}", file=sys.stderr)
                 return
             
-            # Risposta custom per initialize
-            if msg.get("method") == "initialize":
-                print(f"[SSE] Riconosciuto initialize, preparo risposta MCP", file=sys.stderr)
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": 0,
-                    "result": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {
-                            "tools": {}
-                        },
-                        "serverInfo": {
-                            "name": "MCP Odoo Server",
-                            "version": "1.0.0"
-                        }
-                    }
-                }
-                print(f"[SSE] Invio risposta initialize a {client_id}: {response}", file=sys.stderr)
-                await self._client_queues[client_id].put(response)
-                self._client_last_active[client_id] = time.time()
-                return
-            
+            # Nessuna gestione speciale per initialize: lo fa il request_handler
             print(f"[SSE] Chiamata handler per messaggio: {msg}", file=sys.stderr)
             response = self.request_handler(msg)
             print(f"[SSE] Risposta dall'handler: {response}", file=sys.stderr)
