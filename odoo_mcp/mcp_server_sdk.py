@@ -557,36 +557,50 @@ async def mcp_messages_endpoint(request: Request):
         elif method == 'resources/list':
             # For resources/list, return the actual resource instances
             resources = []
-            for template in RESOURCE_TEMPLATES:
-                if template["type"] == "record":
-                    # For record type, we need to get actual records
+            try:
+                # Get all available models
+                models = await odoo.execute_kw(
+                    model="ir.model",
+                    method="search_read",
+                    args=[[], ["model", "name"]],
+                    kwargs={},
+                    uid=odoo.global_uid,
+                    password=odoo.global_password
+                )
+                
+                for model_info in models:
+                    model_name = model_info["model"]
+                    # Add record template for this model
+                    resources.append({
+                        "uri": f"odoo://{model_name}/list",
+                        "name": f"{model_info['name']} List",
+                        "type": "list",
+                        "mimeType": "application/json"
+                    })
+                    
+                    # Get some records for this model
                     try:
-                        model = "res.partner"  # Example model, you might want to make this dynamic
                         records = await odoo.execute_kw(
-                            model=model,
+                            model=model_name,
                             method="search_read",
                             args=[[], ["id", "name"]],
-                            kwargs={},
+                            kwargs={"limit": 5},  # Limit to 5 records per model
                             uid=odoo.global_uid,
                             password=odoo.global_password
                         )
                         for record in records:
                             resources.append({
-                                "uri": f"odoo://{model}/{record['id']}",
-                                "name": record.get("name", f"Record {record['id']}"),
+                                "uri": f"odoo://{model_name}/{record['id']}",
+                                "name": record.get("name", f"{model_info['name']} {record['id']}"),
                                 "type": "record",
                                 "mimeType": "application/json"
                             })
                     except Exception as e:
-                        logger.error(f"Error fetching records: {e}")
-                elif template["type"] == "list":
-                    # For list type, add the model list resource
-                    resources.append({
-                        "uri": f"odoo://{template['uriTemplate'].split('/')[0].replace('{model}', 'res.partner')}/list",
-                        "name": "Partner List",
-                        "type": "list",
-                        "mimeType": "application/json"
-                    })
+                        logger.error(f"Error fetching records for model {model_name}: {e}")
+                        continue
+                        
+            except Exception as e:
+                logger.error(f"Error fetching models: {e}")
             
             response = {
                 "jsonrpc": "2.0",
