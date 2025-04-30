@@ -3,6 +3,7 @@ import json
 import uuid
 import os
 import sys
+import logging
 from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -10,6 +11,10 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.requests import Request
 from starlette.routing import Route, Mount
+
+# Configurazione logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Gerarchia di lettura credenziali
 # 1. Parametri runtime > 2. Variabili ambiente > 3. File config > 4. Errore
@@ -223,21 +228,26 @@ def call_method(model: str, method: str, *, args: list = None, kwargs: dict = No
 def odoo_list_models() -> list:
     """Elenca tutti i modelli Odoo disponibili (model e name)."""
     handler = odoo
+    logger.info("Chiamata a odoo_list_models")
     models = handler.execute_kw(
         model="ir.model",
         method="search_read",
         args=[[], ["model", "name"]],
         kwargs={},
     )
+    logger.info(f"Trovati {len(models)} modelli")
     return models
 
-# Endpoint POST /messages (opzionale, per HTTP JSON-RPC)
+# Endpoint POST /messages
 async def mcp_messages_endpoint(request: Request):
     data = await request.json()
+    logger.info(f"Ricevuta richiesta messages: {data}")
     if hasattr(mcp, 'handle_jsonrpc'):
         response = mcp.handle_jsonrpc(data)
+        logger.info(f"Risposta: {response}")
     else:
-        response = {"error": "FastMCP non espone handle_jsonrpc. Adattare qui."}
+        response = {"error": "FastMCP non espone handle_jsonrpc"}
+        logger.error(response["error"])
     return JSONResponse(response)
 
 routes = [
@@ -250,6 +260,11 @@ app = Starlette(debug=True, routes=routes)
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "sse":
         import uvicorn
+        logger.info("Avvio server MCP con strumenti registrati:")
+        for tool in mcp.list_tools():
+            logger.info(f"- Tool: {tool}")
+        for resource in mcp.list_resources():
+            logger.info(f"- Resource: {resource}")
         uvicorn.run("odoo_mcp.mcp_server_sdk:app", host="0.0.0.0", port=8080, factory=False)
     else:
         mcp.run() 
