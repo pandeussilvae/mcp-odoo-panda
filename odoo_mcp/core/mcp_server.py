@@ -238,25 +238,25 @@ class OdooMCPServer(Server):
         """List available resources."""
         return [
             {
-                "uri": "odoo://{model}/{id}",
+                "uriTemplate": "odoo://{model}/{id}",
                 "name": "Odoo Record",
+                "description": "Represents a single record in an Odoo model",
                 "type": "record",
-                "data": None,
-                "mime_type": "application/json",
+                "mimeType": "application/json"
             },
             {
-                "uri": "odoo://{model}/list",
+                "uriTemplate": "odoo://{model}/list",
                 "name": "Odoo Record List",
+                "description": "Represents a list of records in an Odoo model",
                 "type": "list",
-                "data": None,
-                "mime_type": "application/json",
+                "mimeType": "application/json"
             },
             {
-                "uri": "odoo://{model}/binary/{field}/{id}",
+                "uriTemplate": "odoo://{model}/binary/{field}/{id}",
                 "name": "Odoo Binary Field",
+                "description": "Represents a binary field value from an Odoo record",
                 "type": "binary",
-                "data": None,
-                "mime_type": "application/octet-stream",
+                "mimeType": "application/octet-stream"
             }
         ]
 
