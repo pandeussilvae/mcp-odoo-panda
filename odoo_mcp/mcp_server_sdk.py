@@ -186,16 +186,44 @@ class AsyncOdooTools:
     
     def __init__(self, odoo_handler):
         self.odoo = odoo_handler
+        self.uid = None
+        self.password = None
+        if hasattr(odoo_handler, 'global_uid'):
+            self.uid = odoo_handler.global_uid
+            self.password = odoo_handler.global_password
+    
+    async def authenticate(self):
+        """Autentica l'utente se necessario."""
+        if self.uid is None:
+            try:
+                if isinstance(self.odoo, JSONRPCHandler):
+                    # Per JSONRPCHandler, dobbiamo autenticarci esplicitamente
+                    self.uid = await self.odoo.authenticate(
+                        self.odoo.database,
+                        self.odoo.config["username"],
+                        self.odoo.config["api_key"]
+                    )
+                    self.password = self.odoo.config["api_key"]
+                else:
+                    # Per XMLRPCHandler, usa le credenziali globali
+                    self.uid = self.odoo.global_uid
+                    self.password = self.odoo.global_password
+            except Exception as e:
+                logger.error(f"Errore durante l'autenticazione: {e}")
+                raise
     
     async def list_models(self):
         """Elenca tutti i modelli Odoo disponibili."""
         logger.info("Chiamata a odoo_list_models")
         try:
+            await self.authenticate()
             result = await self.odoo.execute_kw(
                 model="ir.model",
                 method="search_read",
                 args=[[], ["model", "name"]],
-                kwargs={}
+                kwargs={},
+                uid=self.uid,
+                password=self.password
             )
             return result
         except Exception as e:
@@ -205,11 +233,14 @@ class AsyncOdooTools:
     async def search_read(self, model, domain, fields, limit=80, offset=0, context=None):
         """Cerca e legge record in un modello Odoo."""
         try:
+            await self.authenticate()
             return await self.odoo.execute_kw(
                 model=model,
                 method="search_read",
                 args=[domain, fields],
-                kwargs={"limit": limit, "offset": offset, "context": context or {}}
+                kwargs={"limit": limit, "offset": offset, "context": context or {}},
+                uid=self.uid,
+                password=self.password
             )
         except Exception as e:
             logger.error(f"Errore in search_read: {e}")
@@ -218,11 +249,14 @@ class AsyncOdooTools:
     async def read(self, model, ids, fields, context=None):
         """Legge record specifici da un modello Odoo."""
         try:
+            await self.authenticate()
             return await self.odoo.execute_kw(
                 model=model,
                 method="read",
                 args=[ids, fields],
-                kwargs={"context": context or {}}
+                kwargs={"context": context or {}},
+                uid=self.uid,
+                password=self.password
             )
         except Exception as e:
             logger.error(f"Errore in read: {e}")
