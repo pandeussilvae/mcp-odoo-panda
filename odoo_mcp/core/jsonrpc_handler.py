@@ -188,9 +188,8 @@ class JSONRPCHandler:
          payload_params = {
              "service": service,
              "method": method,
-             # Assuming Odoo JSON-RPC expects db as first arg in the list
-             "args": [self.database, *args]
-             # Context should be passed within kwargs in standard Odoo calls
+             # Only add database for non-login methods
+             "args": args if (service == "common" and method == "login") else [self.database, *args]
          }
          payload = self._prepare_payload("call", payload_params)
          headers = {'Content-Type': 'application/json'}
