@@ -498,6 +498,35 @@ async def mcp_messages_endpoint(request: Request):
                 "id": req_id,
                 "result": result
             }
+        elif method in ('list_resources', 'resources/list'):
+            resources = [
+                {
+                    "uriTemplate": "odoo://{model}/{id}",
+                    "name": "Odoo Record",
+                    "description": "Represents a single record in an Odoo model",
+                    "type": "record",
+                    "mimeType": "application/json"
+                },
+                {
+                    "uriTemplate": "odoo://{model}/list",
+                    "name": "Odoo Record List",
+                    "description": "Represents a list of records in an Odoo model",
+                    "type": "list",
+                    "mimeType": "application/json"
+                },
+                {
+                    "uriTemplate": "odoo://{model}/binary/{field}/{id}",
+                    "name": "Odoo Binary Field",
+                    "description": "Represents a binary field value from an Odoo record",
+                    "type": "binary",
+                    "mimeType": "application/octet-stream"
+                }
+            ]
+            response = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {"resources": resources}
+            }
         else:
             response = {
                 "jsonrpc": "2.0",
