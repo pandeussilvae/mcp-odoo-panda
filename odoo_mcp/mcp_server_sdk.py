@@ -104,11 +104,37 @@ prompt_manager = OdooPromptManager()
 resource_manager = OdooResourceManager(odoo)
 tool_manager = OdooToolManager(odoo)
 
+# Definisci i template delle risorse come costanti
+RESOURCE_TEMPLATES = [
+    {
+        "uriTemplate": "odoo://{model}/{id}",
+        "name": "Odoo Record",
+        "description": "Represents a single record in an Odoo model",
+        "type": "record",
+        "mimeType": "application/json"
+    },
+    {
+        "uriTemplate": "odoo://{model}/list",
+        "name": "Odoo Record List",
+        "description": "Represents a list of records in an Odoo model",
+        "type": "list",
+        "mimeType": "application/json"
+    },
+    {
+        "uriTemplate": "odoo://{model}/binary/{field}/{id}",
+        "name": "Odoo Binary Field",
+        "description": "Represents a binary field value from an Odoo record",
+        "type": "binary",
+        "mimeType": "application/octet-stream"
+    }
+]
+
 # Crea l'istanza FastMCP
 mcp = FastMCP("odoo-mcp-server")
 
-# Definisci i template delle risorse
+# Definisci i gestori delle risorse
 @mcp.resource("odoo://{model}/{id}")
+@sync_async
 async def get_odoo_record(model: str, id: int):
     """Ottiene un singolo record Odoo."""
     auth_details = {
@@ -118,6 +144,7 @@ async def get_odoo_record(model: str, id: int):
     return await resource_manager.get_resource(f"odoo://{model}/{id}", auth_details)
 
 @mcp.resource("odoo://{model}/list")
+@sync_async
 async def list_odoo_records(model: str):
     """Ottiene una lista di record Odoo."""
     auth_details = {
@@ -127,6 +154,7 @@ async def list_odoo_records(model: str):
     return await resource_manager.get_resource(f"odoo://{model}/list", auth_details)
 
 @mcp.resource("odoo://{model}/binary/{field}/{id}")
+@sync_async
 async def get_odoo_binary(model: str, field: str, id: int):
     """Ottiene un campo binario da un record Odoo."""
     auth_details = {
@@ -507,7 +535,7 @@ async def mcp_messages_endpoint(request: Request):
                     "protocolVersion": "2024-11-05",
                     "capabilities": {
                         "tools": await mcp.list_tools(),
-                        "resources": await mcp.list_resources()
+                        "resources": RESOURCE_TEMPLATES
                     },
                     "serverInfo": {
                         "name": "odoo-mcp-server",
@@ -515,6 +543,7 @@ async def mcp_messages_endpoint(request: Request):
                     }
                 }
             }
+            return JSONResponse(response)
         elif method == "invokeFunction":
             function_name = data["params"].get("name")
             function_params = data["params"].get("parameters", {})
@@ -524,38 +553,28 @@ async def mcp_messages_endpoint(request: Request):
                 "id": req_id,
                 "result": result
             }
-        elif method in ('list_resources', 'resources/list'):
-            # Definisci direttamente i template qui per assicurarti che vengano restituiti
-            resources = [
-                {
-                    "uriTemplate": "odoo://{model}/{id}",
-                    "name": "Odoo Record",
-                    "description": "Represents a single record in an Odoo model",
-                    "type": "record",
-                    "mimeType": "application/json"
-                },
-                {
-                    "uriTemplate": "odoo://{model}/list",
-                    "name": "Odoo Record List",
-                    "description": "Represents a list of records in an Odoo model",
-                    "type": "list",
-                    "mimeType": "application/json"
-                },
-                {
-                    "uriTemplate": "odoo://{model}/binary/{field}/{id}",
-                    "name": "Odoo Binary Field",
-                    "description": "Represents a binary field value from an Odoo record",
-                    "type": "binary",
-                    "mimeType": "application/octet-stream"
-                }
-            ]
+            return JSONResponse(response)
+        elif method == 'resources/list':
+            # Per resources/list, restituisci le istanze delle risorse
             response = {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "result": {"resources": resources}
+                "result": {
+                    "resources": RESOURCE_TEMPLATES
+                }
             }
-            # Log per debug
-            logger.info(f"Sending resources response: {response}")
+            logger.info(f"Sending resources/list response: {response}")
+            return JSONResponse(response)
+        elif method == 'resources/templates/list':
+            # Per resources/templates/list, restituisci i template
+            response = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "resourceTemplates": RESOURCE_TEMPLATES
+                }
+            }
+            logger.info(f"Sending resources/templates/list response: {response}")
             return JSONResponse(response)
         else:
             response = {
@@ -566,6 +585,7 @@ async def mcp_messages_endpoint(request: Request):
                     "message": f"Method {method} not found"
                 }
             }
+            return JSONResponse(response)
     except Exception as e:
         logger.error(f"Errore nella gestione della richiesta: {e}")
         response = {
@@ -576,10 +596,7 @@ async def mcp_messages_endpoint(request: Request):
                 "message": str(e)
             }
         }
-    
-    # Invia la risposta attraverso SSE
-    sse_queues[session_id].append(response)
-    return JSONResponse({"status": "ok"})
+        return JSONResponse(response)
 
 routes = [
     Route("/sse", endpoint=sse_endpoint),
