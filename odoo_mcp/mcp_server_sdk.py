@@ -248,7 +248,10 @@ sse_queues = defaultdict(deque)  # session_id -> queue di messaggi
 async def sse_endpoint(request: Request):
     session_id = request.query_params.get("session_id")
     if not session_id:
-        return JSONResponse({"error": "Missing session_id in query params"}, status_code=400)
+        session_id = str(uuid.uuid4())
+        logger.info(f"Nessun session_id fornito, generato: {session_id}")
+    else:
+        logger.info(f"Connessione SSE con session_id: {session_id}")
     queue = sse_queues[session_id]
     async def event_generator():
         while True:
