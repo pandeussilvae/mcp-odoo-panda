@@ -6,6 +6,10 @@ import sys
 from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.requests import Request
+from starlette.routing import Route
 
 # Gerarchia di lettura credenziali
 # 1. Parametri runtime > 2. Variabili ambiente > 3. File config > 4. Errore
@@ -227,9 +231,25 @@ def odoo_list_models() -> list:
     )
     return models
 
+async def mcp_messages_endpoint(request: Request):
+    data = await request.json()
+    # Qui chiami la logica FastMCP per processare la richiesta JSON-RPC
+    # Adatta questa riga in base a come FastMCP espone la gestione delle richieste:
+    if hasattr(mcp, 'handle_jsonrpc'):
+        response = mcp.handle_jsonrpc(data)
+    else:
+        response = {"error": "FastMCP non espone handle_jsonrpc. Adattare qui."}
+    return JSONResponse(response)
+
+routes = [
+    Route("/messages", mcp_messages_endpoint, methods=["POST"]),
+]
+
+app = Starlette(debug=True, routes=routes)
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "sse":
         import uvicorn
-        uvicorn.run(mcp.app, host="0.0.0.0", port=8080)
+        uvicorn.run("odoo_mcp.mcp_server_sdk:app", host="0.0.0.0", port=8080, factory=False)
     else:
         mcp.run() 
