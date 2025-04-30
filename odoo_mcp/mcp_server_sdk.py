@@ -329,19 +329,19 @@ async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int
     return await async_tools.search_read(model, domain, fields, limit, offset, context)
 
 @mcp.tool()
-async def odoo_read(model: str, ids: list, fields: list, *, context: dict = None):
+async def odoo_read(model: str, ids: list, fields: list, *, context: dict = {}):
     """Legge record specifici da un modello Odoo."""
     return await async_tools.read(model, ids, fields, context)
 
 @mcp.tool()
-async def odoo_create(model: str, values: dict, *, context: dict = None):
+async def odoo_create(model: str, values: dict, *, context: dict = {}):
     """Crea un nuovo record in un modello Odoo."""
     try:
         record_id = await odoo.execute_kw(
             model=model,
             method="create",
             args=[values],
-            kwargs={"context": context or {}}
+            kwargs={"context": context}
         )
         return {"id": record_id}
     except Exception as e:
@@ -349,14 +349,14 @@ async def odoo_create(model: str, values: dict, *, context: dict = None):
         raise
 
 @mcp.tool()
-async def odoo_write(model: str, ids: list, values: dict, *, context: dict = None):
+async def odoo_write(model: str, ids: list, values: dict, *, context: dict = {}):
     """Aggiorna record esistenti in un modello Odoo."""
     try:
         result = await odoo.execute_kw(
             model=model,
             method="write",
             args=[ids, values],
-            kwargs={"context": context or {}}
+            kwargs={"context": context}
         )
         return {"success": result}
     except Exception as e:
@@ -364,14 +364,14 @@ async def odoo_write(model: str, ids: list, values: dict, *, context: dict = Non
         raise
 
 @mcp.tool()
-async def odoo_unlink(model: str, ids: list, *, context: dict = None):
+async def odoo_unlink(model: str, ids: list, *, context: dict = {}):
     """Elimina record da un modello Odoo."""
     try:
         result = await odoo.execute_kw(
             model=model,
             method="unlink",
             args=[ids],
-            kwargs={"context": context or {}}
+            kwargs={"context": context}
         )
         return {"success": result}
     except Exception as e:
@@ -379,14 +379,14 @@ async def odoo_unlink(model: str, ids: list, *, context: dict = None):
         raise
 
 @mcp.tool()
-async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = None):
+async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = {}):
     """Chiama un metodo personalizzato su un modello Odoo."""
     try:
         result = await odoo.execute_kw(
             model=model,
             method=method,
             args=args or [],
-            kwargs={**(kwargs or {}), "context": context or {}}
+            kwargs={**(kwargs or {}), "context": context}
         )
         return {"result": result}
     except Exception as e:
