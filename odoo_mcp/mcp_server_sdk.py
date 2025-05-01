@@ -409,7 +409,24 @@ async def odoo_list_models():
 @mcp.tool()
 async def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = {}):
     """Cerca e legge record in un modello Odoo."""
-    return await async_tools.search_read(model, domain, fields, limit, offset, context)
+    try:
+        # Ensure model name is valid
+        models = await odoo_list_models()
+        valid_models = [m["model"] for m in models]
+        
+        # Check if the model exists
+        if model not in valid_models:
+            # Try to find the full model name
+            matching_models = [m for m in valid_models if m.startswith(model + ".") or m == model]
+            if matching_models:
+                model = matching_models[0]  # Use the first matching model
+            else:
+                raise ValueError(f"Model '{model}' not found. Available models: {', '.join(valid_models[:5])}...")
+        
+        return await async_tools.search_read(model, domain, fields, limit, offset, context)
+    except Exception as e:
+        logger.error(f"Error in search_read: {e}")
+        raise
 
 @mcp.tool()
 async def odoo_read(model: str, ids: list, fields: list, *, context: dict = {}):
@@ -1044,32 +1061,40 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
             
             if ref.get("type") == "ref/resource":
                 uri_template = ref.get("uri")
-                if uri_template == "odoo://{model}/{id}":
+                if uri_template == "odoo://{model}/{id}" or uri_template == "odoo://{model}/list":
                     if argument["name"] == "model":
                         # Get list of models for completion
                         try:
                             models = await odoo_list_models()
-                            completions = [
-                                {"label": model["model"], "detail": model["name"]}
-                                for model in models
-                            ]
+                            completions = []
+                            for model in models:
+                                model_name = model["model"]
+                                display_name = model["name"]
+                                # Add both technical name and user-friendly name
+                                completions.append({
+                                    "label": model_name,
+                                    "detail": display_name,
+                                    "value": model_name
+                                })
+                            
                             return {
                                 "jsonrpc": "2.0",
                                 "id": req_id,
                                 "result": {
-                                    "items": completions,
                                     "completion": {
-                                        "items": completions
+                                        "values": completions,
+                                        "isComplete": True
                                     }
                                 }
                             }
                         except Exception as e:
+                            logger.error(f"Error getting model completions: {e}")
                             return {
                                 "jsonrpc": "2.0",
                                 "id": req_id,
                                 "error": {
                                     "code": -32000,
-                                    "message": f"Error getting completions: {str(e)}"
+                                    "message": f"Error getting model completions: {str(e)}"
                                 }
                             }
                     elif argument["name"] == "id":
@@ -1080,40 +1105,46 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                                 records = await odoo_search_read(
                                     model=model,
                                     domain=[],
-                                    fields=["name"],
+                                    fields=["name", "id"],
                                     limit=10
                                 )
                                 completions = [
-                                    {"label": str(record["id"]), "detail": record.get("name", "")}
+                                    {
+                                        "label": str(record["id"]),
+                                        "detail": record.get("name", ""),
+                                        "value": str(record["id"])
+                                    }
                                     for record in records
                                 ]
                                 return {
                                     "jsonrpc": "2.0",
                                     "id": req_id,
                                     "result": {
-                                        "items": completions,
                                         "completion": {
-                                            "items": completions
+                                            "values": completions,
+                                            "isComplete": True
                                         }
                                     }
                                 }
                         except Exception as e:
+                            logger.error(f"Error getting record completions: {e}")
                             return {
                                 "jsonrpc": "2.0",
                                 "id": req_id,
                                 "error": {
                                     "code": -32000,
-                                    "message": f"Error getting completions: {str(e)}"
+                                    "message": f"Error getting record completions: {str(e)}"
                                 }
                             }
             
+            # Default empty completion response
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "items": [],
                     "completion": {
-                        "items": []
+                        "values": [],
+                        "isComplete": True
                     }
                 }
             }
