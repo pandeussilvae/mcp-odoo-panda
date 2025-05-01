@@ -1099,16 +1099,14 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                         # Get list of models for completion
                         try:
                             models = await odoo_list_models()
+                            # Limit to 100 completions and convert to strings
                             completions = []
-                            for model in models:
+                            for model in models[:100]:
                                 model_name = model["model"]
                                 display_name = model["name"]
-                                # Add both technical name and user-friendly name
-                                completions.append({
-                                    "label": str(model_name),
-                                    "detail": str(display_name),
-                                    "value": str(model_name)
-                                })
+                                # Add both technical name and user-friendly name as strings
+                                completions.append(str(model_name))
+                                completions.append(str(display_name))
                             
                             return {
                                 "jsonrpc": "2.0",
@@ -1139,16 +1137,15 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                                     model=model,
                                     domain=[],
                                     fields=["name", "id"],
-                                    limit=10
+                                    limit=50  # Limit to 50 records
                                 )
-                                completions = [
-                                    {
-                                        "label": str(record["id"]),
-                                        "detail": str(record.get("name", "")),
-                                        "value": str(record["id"])
-                                    }
-                                    for record in records
-                                ]
+                                # Convert to strings and limit total completions
+                                completions = []
+                                for record in records:
+                                    completions.append(str(record["id"]))
+                                    if record.get("name"):
+                                        completions.append(str(record["name"]))
+                                
                                 return {
                                     "jsonrpc": "2.0",
                                     "id": req_id,
