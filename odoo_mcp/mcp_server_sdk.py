@@ -950,6 +950,120 @@ async def mcp_messages_endpoint(request: Request):
             }
             logger.info(f"Sending resources/templates/list response: {response}")
             return JSONResponse(response)
+        elif method == 'prompts/list':
+            # Lista dei prompt disponibili
+            prompts_list = [
+                {
+                    "name": "analyze_record",
+                    "description": "Analyze an Odoo record and provide insights",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "id": {"type": "integer", "description": "Record ID"}
+                        },
+                        "required": ["model", "id"]
+                    }
+                },
+                {
+                    "name": "create_record",
+                    "description": "Generate a prompt to create a new Odoo record",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "values": {"type": "object", "description": "Values for the new record"}
+                        },
+                        "required": ["model", "values"]
+                    }
+                },
+                {
+                    "name": "update_record",
+                    "description": "Generate a prompt to update an existing Odoo record",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "id": {"type": "integer", "description": "Record ID"},
+                            "values": {"type": "object", "description": "Values to update"}
+                        },
+                        "required": ["model", "id", "values"]
+                    }
+                }
+            ]
+            
+            response = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "prompts": prompts_list
+                }
+            }
+            logger.info(f"Sending prompts/list response: {response}")
+            return JSONResponse(response)
+        elif method == 'prompts/call':
+            prompt_name = data["params"].get("name")
+            arguments = data["params"].get("arguments", {})
+            progress_token = data["params"].get("_meta", {}).get("progressToken")
+            
+            if not prompt_name:
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: missing prompt name"
+                    }
+                })
+            
+            try:
+                logger.info(f"Calling prompt {prompt_name} with arguments: {arguments}")
+                
+                # Mappa dei prompt disponibili
+                prompts_map = {
+                    "analyze_record": analyze_record,
+                    "create_record": create_record,
+                    "update_record": update_record
+                }
+                
+                if prompt_name not in prompts_map:
+                    return JSONResponse({
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"Prompt not found: {prompt_name}"
+                        }
+                    })
+                
+                # Esegui il prompt
+                prompt_func = prompts_map[prompt_name]
+                result = await prompt_func(**arguments)
+                
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "value": result,
+                        "_meta": {
+                            "progressToken": progress_token
+                        }
+                    }
+                }
+                
+                logger.info(f"Prompt {prompt_name} execution result: {response}")
+                return JSONResponse(response)
+                
+            except Exception as e:
+                logger.error(f"Error executing prompt {prompt_name}: {e}")
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32000,
+                        "message": f"Error executing prompt: {str(e)}"
+                    }
+                })
         elif method == 'ping':
             response = {
                 "jsonrpc": "2.0",
