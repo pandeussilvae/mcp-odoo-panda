@@ -1171,7 +1171,14 @@ async def mcp_messages_endpoint(request: Request):
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "prompt": prompts[prompt_name]
+                    "prompt": prompts[prompt_name],
+                    "messages": [{
+                        "role": "assistant",
+                        "content": {
+                            "type": "text",
+                            "text": "How can I help you with this prompt?"
+                        }
+                    }]
                 }
             }
             
