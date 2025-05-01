@@ -331,9 +331,9 @@ class OdooMCPServer(FastMCP):
     def __init__(self, transport_types):
         if isinstance(transport_types, str):
             transport_types = [transport_types]
-        super().__init__(transport_types)
-        self._version = SERVER_VERSION
         self._name = SERVER_NAME
+        self._version = SERVER_VERSION
+        super().__init__(server_name=self._name, transport_types=transport_types)
         self._capabilities = {
             "tools": {
                 "listChanged": True,
@@ -358,6 +358,7 @@ class OdooMCPServer(FastMCP):
         print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
         print(f"[DEBUG] - name: {self._name}", file=sys.stderr)
         print(f"[DEBUG] - version: {self._version}", file=sys.stderr)
+        print(f"[DEBUG] - transport types: {transport_types}", file=sys.stderr)
         print(f"[DEBUG] - capabilities: {json.dumps(self._capabilities, indent=2)}", file=sys.stderr)
     
     @property
