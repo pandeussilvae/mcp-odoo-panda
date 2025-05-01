@@ -559,7 +559,7 @@ async def get_server_capabilities():
     for tool_name, tool_func in registered_tools.items():
         tools_dict[tool_name] = {
             "description": tool_func.__doc__ or "",
-            "parameters": getattr(tool_func, 'inputSchema', {})
+            "inputSchema": getattr(tool_func, 'inputSchema', {})
         }
     
     # Converti i resource templates in un oggetto con uriTemplate come chiavi
@@ -671,7 +671,7 @@ async def mcp_messages_endpoint(request: Request):
                 {
                     "name": "odoo_login",
                     "description": odoo_login.__doc__ or "Login to Odoo server",
-                    "parameters": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {
                             "username": {"type": "string", "description": "Odoo username"},
@@ -684,7 +684,7 @@ async def mcp_messages_endpoint(request: Request):
                 {
                     "name": "odoo_list_models",
                     "description": odoo_list_models.__doc__ or "List all available Odoo models",
-                    "parameters": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {}
                     }
@@ -692,7 +692,7 @@ async def mcp_messages_endpoint(request: Request):
                 {
                     "name": "odoo_search_read",
                     "description": odoo_search_read.__doc__ or "Search and read records from an Odoo model",
-                    "parameters": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {
                             "model": {"type": "string", "description": "Odoo model name"},
@@ -708,7 +708,7 @@ async def mcp_messages_endpoint(request: Request):
                 {
                     "name": "odoo_read",
                     "description": odoo_read.__doc__ or "Read specific records from an Odoo model",
-                    "parameters": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {
                             "model": {"type": "string", "description": "Odoo model name"},
@@ -722,7 +722,7 @@ async def mcp_messages_endpoint(request: Request):
                 {
                     "name": "odoo_create",
                     "description": odoo_create.__doc__ or "Create a new record in an Odoo model",
-                    "parameters": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {
                             "model": {"type": "string", "description": "Odoo model name"},
@@ -735,7 +735,7 @@ async def mcp_messages_endpoint(request: Request):
                 {
                     "name": "odoo_write",
                     "description": odoo_write.__doc__ or "Update existing records in an Odoo model",
-                    "parameters": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {
                             "model": {"type": "string", "description": "Odoo model name"},
@@ -749,7 +749,7 @@ async def mcp_messages_endpoint(request: Request):
                 {
                     "name": "odoo_unlink",
                     "description": odoo_unlink.__doc__ or "Delete records from an Odoo model",
-                    "parameters": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {
                             "model": {"type": "string", "description": "Odoo model name"},
@@ -762,7 +762,7 @@ async def mcp_messages_endpoint(request: Request):
                 {
                     "name": "odoo_call_method",
                     "description": odoo_call_method.__doc__ or "Call a custom method on an Odoo model",
-                    "parameters": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {
                             "model": {"type": "string", "description": "Odoo model name"},
