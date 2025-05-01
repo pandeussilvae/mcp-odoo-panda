@@ -543,9 +543,8 @@ def format_resource(resource):
 # Aggiungi questa funzione per ottenere le capabilities del server
 async def get_server_capabilities():
     """Ottiene le capabilities del server MCP."""
-    tools = []
-    
-    # Ottieni i tools registrati usando gli attributi corretti di FastMCP
+    # Converti i tools in un oggetto con i nomi come chiavi
+    tools_dict = {}
     registered_tools = {
         "odoo_login": odoo_login,
         "odoo_list_models": odoo_list_models,
@@ -558,16 +557,30 @@ async def get_server_capabilities():
     }
     
     for tool_name, tool_func in registered_tools.items():
-        tools.append({
-            "name": tool_name,
+        tools_dict[tool_name] = {
             "description": tool_func.__doc__ or "",
             "parameters": getattr(tool_func, 'inputSchema', {})
-        })
+        }
+    
+    # Converti i resource templates in un oggetto con uriTemplate come chiavi
+    resources_dict = {}
+    for template in RESOURCE_TEMPLATES:
+        uri = template["uriTemplate"]
+        resources_dict[uri] = {
+            "name": template["name"],
+            "description": template["description"],
+            "type": template["type"],
+            "mimeType": template["mimeType"]
+        }
     
     return {
-        "tools": tools,
-        "resources": RESOURCE_TEMPLATES,
-        "transportTypes": ["stdio", "http", "streamable_http"]
+        "tools": tools_dict,
+        "resources": resources_dict,
+        "transportTypes": ["stdio", "http", "streamable_http"],
+        "sampling": {},
+        "roots": {
+            "listChanged": True
+        }
     }
 
 async def mcp_messages_endpoint(request: Request):
