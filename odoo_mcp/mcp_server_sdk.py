@@ -125,15 +125,7 @@ resource_manager = OdooResourceManager(odoo)
 tool_manager = OdooToolManager(odoo)
 
 # Initialize cache manager with config
-success = initialize_cache_manager()
-if success:
-    try:
-        cache_manager.configure(config)
-        logger.info(f"Cache manager ({CACHE_TYPE}) configured successfully")
-    except Exception as e:
-        logger.warning(f"Failed to configure cache manager: {str(e)}")
-else:
-    logger.warning("Cache manager initialization failed, using fallback implementation")
+initialize_cache_manager(config)
 
 # Definisci i template delle risorse come costanti
 RESOURCE_TEMPLATES = [

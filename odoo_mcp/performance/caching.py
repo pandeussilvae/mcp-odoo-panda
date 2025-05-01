@@ -110,7 +110,7 @@ class CacheManager:
             return async_wrapper if is_async else sync_wrapper
         return decorator
 
-def initialize_cache_manager():
+def initialize_cache_manager(config: Optional[Dict[str, Any]] = None) -> bool:
     """Initialize the cache manager with proper error handling."""
     global cache_manager, CACHE_TYPE
     
@@ -125,6 +125,16 @@ def initialize_cache_manager():
         cache_manager = CacheManager()
         CACHE_TYPE = 'cachetools'
         logger.info("CacheManager initialized successfully with cachetools")
+
+        # Configure if config is provided
+        if config:
+            try:
+                cache_manager.configure(config)
+                logger.info("CacheManager configured successfully")
+            except Exception as e:
+                logger.warning(f"Failed to configure CacheManager: {str(e)}")
+                # Continue with default values
+
         return True
 
     except Exception as e:
@@ -135,9 +145,19 @@ def initialize_cache_manager():
         # Create the dummy cache manager instance
         cache_manager = DummyCacheManager()
         CACHE_TYPE = 'functools'
+
+        # Configure if config is provided
+        if config:
+            try:
+                cache_manager.configure(config)
+                logger.info("DummyCacheManager configured successfully")
+            except Exception as e:
+                logger.warning(f"Failed to configure DummyCacheManager: {str(e)}")
+                # Continue with default values
+
         return False
 
-# Initialize the cache manager
+# Initialize the cache manager if not already initialized
 if cache_manager is None:
     initialize_cache_manager()
 
@@ -165,19 +185,10 @@ def lru_cache_with_stats(maxsize=128, typed=False) -> Callable:
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # Note: Accessing cache_info() can affect performance slightly.
-            # Consider adding conditional logging based on log level.
-            # Also, cache_info() might not be perfectly thread-safe/async-safe
-            # for stats if the underlying function is called concurrently,
-            # but it's generally good for indicative stats.
-
-            # Make args/kwargs hashable for cache lookup simulation (optional)
-            # key = functools._make_key(args, kwargs, typed) # Internal API, use with caution
-
             # Call the cached function
             result = cached_func(*args, **kwargs)
 
-            # Log cache status (example)
+            # Log cache status
             info = cached_func.cache_info()
             logger.debug(f"Cache lookup for {func.__name__}: Hits={info.hits}, Misses={info.misses}, Size={info.currsize}/{info.maxsize}")
 
