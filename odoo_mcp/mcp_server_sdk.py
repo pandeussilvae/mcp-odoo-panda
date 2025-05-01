@@ -336,15 +336,23 @@ def create_mcp_instance(transport_types):
         "experimental": {}
     }
     
-    # Create FastMCP instance
+    # Create FastMCP instance with proper name, version and capabilities
     mcp = FastMCP(
-        SERVER_NAME,
+        name=SERVER_NAME,
+        version=SERVER_VERSION,  # Explicitly set version
         transport_types=transport_types,
         capabilities=base_capabilities
     )
 
     # Store capabilities in the instance
     mcp.base_capabilities = base_capabilities
+    
+    # Log initialization for debugging
+    print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
+    print(f"[DEBUG] - name: {SERVER_NAME}", file=sys.stderr)
+    print(f"[DEBUG] - version: {SERVER_VERSION}", file=sys.stderr)
+    print(f"[DEBUG] - capabilities: {json.dumps(base_capabilities, indent=2)}", file=sys.stderr)
+    
     return mcp
 
 def parse_odoo_uri(uri: str) -> tuple:
