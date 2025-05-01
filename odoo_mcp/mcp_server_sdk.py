@@ -540,7 +540,24 @@ def format_resource(resource):
         "description": resource.get("description", "")
     }
 
-# --- Endpoint POST /messages ---
+# Aggiungi questa funzione per ottenere le capabilities del server
+async def get_server_capabilities():
+    """Ottiene le capabilities del server MCP."""
+    tools = []
+    for tool_name in mcp._tools:
+        tool = mcp._tools[tool_name]
+        tools.append({
+            "name": tool_name,
+            "description": tool.__doc__ or "",
+            "parameters": getattr(tool, 'inputSchema', {})
+        })
+    
+    return {
+        "tools": tools,
+        "resources": RESOURCE_TEMPLATES,
+        "transportTypes": ["stdio", "http", "streamable_http"]
+    }
+
 async def mcp_messages_endpoint(request: Request):
     """Endpoint per la gestione dei messaggi MCP."""
     data = await request.json()
@@ -560,22 +577,20 @@ async def mcp_messages_endpoint(request: Request):
         req_id = data.get("id")
         
         if method == "initialize":
+            capabilities = await get_server_capabilities()
             response = {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": await mcp.list_tools(),
-                        "resources": RESOURCE_TEMPLATES,
-                        "transportTypes": ["stdio", "http", "streamable_http"]
-                    },
+                    "capabilities": capabilities,
                     "serverInfo": {
                         "name": "odoo-mcp-server",
                         "version": "0.1.0"
                     }
                 }
             }
+            logger.info(f"Sending initialize response: {response}")
             return JSONResponse(response)
         elif method == "invokeFunction":
             function_name = data["params"].get("name")
