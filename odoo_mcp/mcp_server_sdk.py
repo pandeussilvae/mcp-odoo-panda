@@ -1269,6 +1269,92 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
     finally:
         loop.close()
 
+# Set the stdio handler
+mcp.handle_request = _handle_stdio_request
+
+# Register tools with FastMCP
+@mcp.tool()
+def odoo_login(*, username: str = None, password: str = None, database: str = None, odoo_url: str = None) -> dict:
+    """Login to Odoo server."""
+    return sync_async(odoo_login)(username=username, password=password, database=database, odoo_url=odoo_url)
+
+@mcp.tool()
+def odoo_list_models() -> list:
+    """Elenca tutti i modelli Odoo disponibili."""
+    return sync_async(odoo_list_models)()
+
+@mcp.tool()
+def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = {}) -> list:
+    """Cerca e legge record in un modello Odoo."""
+    return sync_async(odoo_search_read)(model=model, domain=domain, fields=fields, limit=limit, offset=offset, context=context)
+
+@mcp.tool()
+def odoo_read(model: str, ids: list, fields: list, *, context: dict = {}) -> list:
+    """Legge record specifici da un modello Odoo."""
+    return sync_async(odoo_read)(model=model, ids=ids, fields=fields, context=context)
+
+@mcp.tool()
+def odoo_create(model: str, values: dict, *, context: dict = {}) -> dict:
+    """Crea un nuovo record in un modello Odoo."""
+    return sync_async(odoo_create)(model=model, values=values, context=context)
+
+@mcp.tool()
+def odoo_write(model: str, ids: list, values: dict, *, context: dict = {}) -> dict:
+    """Aggiorna record esistenti in un modello Odoo."""
+    return sync_async(odoo_write)(model=model, ids=ids, values=values, context=context)
+
+@mcp.tool()
+def odoo_unlink(model: str, ids: list, *, context: dict = {}) -> dict:
+    """Elimina record da un modello Odoo."""
+    return sync_async(odoo_unlink)(model=model, ids=ids, context=context)
+
+@mcp.tool()
+def odoo_call_method(model: str, method: str, *, args: list = None, kwargs: dict = None, context: dict = {}) -> dict:
+    """Chiama un metodo personalizzato su un modello Odoo."""
+    return sync_async(odoo_call_method)(model=model, method=method, args=args, kwargs=kwargs, context=context)
+
+# Register prompts with FastMCP
+@mcp.prompt()
+def analyze_record(model: str, id: int) -> str:
+    """Analyze an Odoo record and provide insights."""
+    return sync_async(analyze_record)(model=model, id=id)
+
+@mcp.prompt()
+def create_record(model: str, values: dict) -> str:
+    """Generate a prompt to create a new Odoo record."""
+    return sync_async(create_record)(model=model, values=values)
+
+@mcp.prompt()
+def update_record(model: str, id: int, values: dict) -> str:
+    """Generate a prompt to update an existing Odoo record."""
+    return sync_async(update_record)(model=model, id=id, values=values)
+
+@mcp.prompt()
+def advanced_search(model: str, domain: list) -> str:
+    """Generate a prompt for advanced search."""
+    return sync_async(advanced_search)(model=model, domain=domain)
+
+@mcp.prompt()
+def call_method(model: str, method: str, *, args: list = None, kwargs: dict = None) -> str:
+    """Generate a prompt for calling a method."""
+    return sync_async(call_method)(model=model, method=method, args=args, kwargs=kwargs)
+
+# Register resources with FastMCP
+@mcp.resource("odoo://{model}/{id}")
+def get_odoo_record(model: str, id: int):
+    """Get a single Odoo record."""
+    return sync_async(get_odoo_record)(model=model, id=id)
+
+@mcp.resource("odoo://{model}/list")
+def list_odoo_records(model: str):
+    """Get a list of Odoo records."""
+    return sync_async(list_odoo_records)(model=model)
+
+@mcp.resource("odoo://{model}/binary/{field}/{id}")
+def get_odoo_binary(model: str, field: str, id: int):
+    """Get a binary field from an Odoo record."""
+    return sync_async(get_odoo_binary)(model=model, field=field, id=id)
+
 # Definisci le routes
 routes = [
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
