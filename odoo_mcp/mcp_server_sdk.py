@@ -329,8 +329,11 @@ class OdooMCPServer(FastMCP):
     """Custom MCP Server implementation that ensures proper version and capabilities."""
     
     def __init__(self, transport_types):
+        if isinstance(transport_types, str):
+            transport_types = [transport_types]
         super().__init__(transport_types)
-        self._version = "2024.2.5"
+        self._version = SERVER_VERSION
+        self._name = SERVER_NAME
         self._capabilities = {
             "tools": {
                 "listChanged": True,
@@ -353,13 +356,17 @@ class OdooMCPServer(FastMCP):
         
         # Log initialization
         print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
-        print(f"[DEBUG] - name: {SERVER_NAME}", file=sys.stderr)
-        print(f"[DEBUG] - version: {SERVER_VERSION}", file=sys.stderr)
+        print(f"[DEBUG] - name: {self._name}", file=sys.stderr)
+        print(f"[DEBUG] - version: {self._version}", file=sys.stderr)
         print(f"[DEBUG] - capabilities: {json.dumps(self._capabilities, indent=2)}", file=sys.stderr)
     
     @property
     def version(self) -> str:
         return self._version
+
+    @property
+    def name(self) -> str:
+        return self._name
 
     @property
     def capabilities(self):
@@ -408,6 +415,8 @@ class OdooMCPServer(FastMCP):
 
 def create_mcp_instance(transport_types):
     """Create a FastMCP instance with all capabilities."""
+    if isinstance(transport_types, str):
+        transport_types = [transport_types]
     return OdooMCPServer(transport_types)
 
 def parse_odoo_uri(uri: str) -> tuple:
@@ -450,6 +459,7 @@ def initialize_mcp(transport_type):
     elif transport_type == "http":
         transport_types.append("http")
     
+    logger.info(f"Initializing MCP server with transport types: {transport_types}")
     mcp = create_mcp_instance(transport_types)
 
     # Register request handler
