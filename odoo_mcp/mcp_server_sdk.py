@@ -563,22 +563,31 @@ def get_server_capabilities():
     }
     
     # Converti i resource templates in un oggetto con uri come chiavi
-    resources_list = []
+    resources_dict = {}
     for template in RESOURCE_TEMPLATES:
         uri = template["uriTemplate"]
-        resources_list.append({
+        resources_dict[uri] = {
             "uri": uri,
             "name": template["name"],
             "description": template["description"],
             "type": template["type"],
             "mimeType": template["mimeType"]
-        })
+        }
     
     return {
-        "tools": tools_dict,
-        "prompts": prompts_dict,
-        "resources": resources_list,
-        "transportTypes": ["stdio", "http", "streamable_http", "sse"],
+        "tools": {
+            "listChanged": True,
+            "tools": tools_dict
+        },
+        "prompts": {
+            "listChanged": True,
+            "prompts": prompts_dict
+        },
+        "resources": {
+            "listChanged": True,
+            "resources": resources_dict
+        },
+        "transportTypes": ["stdio", "http", "streamable_http"],
         "sampling": {},
         "roots": {
             "listChanged": True
@@ -604,6 +613,30 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                         "name": "odoo-mcp-server",
                         "version": "0.1.0"
                     }
+                }
+            }
+        elif method == "prompts/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "prompts": list(get_server_capabilities()["prompts"]["prompts"].keys())
+                }
+            }
+        elif method == "resources/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "resources": list(get_server_capabilities()["resources"]["resources"].values())
+                }
+            }
+        elif method == "resources/templates/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "resourceTemplates": list(get_server_capabilities()["resources"]["resources"].values())
                 }
             }
         elif method == "prompts/get":
@@ -698,15 +731,6 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                         "message": f"Error executing tool: {str(e)}"
                     }
                 }
-        elif method == "resources/list":
-            resources = list(get_server_capabilities()["resources"])
-            return {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "resources": resources
-                }
-            }
         else:
             return {
                 "jsonrpc": "2.0",
@@ -759,100 +783,20 @@ async def mcp_messages_endpoint(request: Request):
         }
         return JSONResponse(response)
 
-async def sse_endpoint(request: Request):
-    """Endpoint SSE per la comunicazione in tempo reale."""
-    session_id = request.query_params.get("session_id", str(uuid.uuid4()))
-    logger.info(f"Nuova connessione SSE con session_id: {session_id}")
-    
-    # Inizializza la coda per questa sessione
-    if session_id not in sse_queues:
-        sse_queues[session_id] = deque()
-    
-    async def event_generator():
-        queue = sse_queues[session_id]
-        
-        # Invia il messaggio di inizializzazione
-        init_request = {
-            "jsonrpc": "2.0",
-            "id": str(uuid.uuid4()),
-            "method": "initialize",
-            "params": {}
-        }
-        init_response = handle_request(init_request, "sse")
-        yield {"data": json.dumps(init_response) + "\n\n"}
-        
-        while True:
-            if queue:
-                msg = queue.popleft()
-                response = handle_request(msg, "sse")
-                yield {"data": json.dumps(response) + "\n\n"}
-            else:
-                # Invia un ping formattato come messaggio JSON-RPC
-                ping_msg = {
-                    "jsonrpc": "2.0",
-                    "id": str(uuid.uuid4()),
-                    "result": {"type": "ping"}
-                }
-                await asyncio.sleep(10)
-                yield {"data": json.dumps(ping_msg) + "\n\n"}
-    
-    return EventSourceResponse(event_generator())
-
 # Definisci le routes
 routes = [
-    Route("/sse", endpoint=sse_endpoint),
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
     Route("/streamable", mcp_messages_endpoint, methods=["POST"]),  # Endpoint per Streamable HTTP
 ]
 
 app = Starlette(debug=True, routes=routes)
 
-async def log_registered_tools():
-    """Log degli strumenti e risorse registrate"""
-    logger.info("Avvio server MCP con strumenti registrati:")
-    tools = await mcp.list_tools()
-    for tool in tools:
-        logger.info(f"- Tool: {tool}")
-    resources = await mcp.list_resources()
-    for resource in resources:
-        logger.info(f"- Resource: {resource}")
-
-def execute_tool(tool_name: str, **kwargs):
-    """Esegue uno strumento specifico.
-    
-    Args:
-        tool_name: Nome dello strumento da eseguire
-        **kwargs: Parametri per lo strumento
-        
-    Returns:
-        Risultato dell'esecuzione dello strumento
-    """
-    return tool_manager.execute_tool(tool_name, **kwargs)
-
-def list_tools():
-    """Lista tutti gli strumenti disponibili.
-    
-    Returns:
-        Dizionario con tutti gli strumenti e le loro descrizioni
-    """
-    return tool_manager.list_tools()
-
-def register_tool(name: str, description: str, parameters: dict):
-    """Registra un nuovo strumento.
-    
-    Args:
-        name: Nome dello strumento
-        description: Descrizione dello strumento
-        parameters: Dizionario dei parametri richiesti e le loro descrizioni
-    """
-    tool_manager.register_tool(name, description, parameters)
-
 if __name__ == "__main__":
     # Determina la modalità di esecuzione
     parser = argparse.ArgumentParser(description='MCP Server for Odoo')
     parser.add_argument('mode', nargs='?', default='stdio',
-                      choices=['stdio', 'http', 'streamable_http', 'sse'],
-                      help='Server mode (stdio, http, streamable_http, or sse)')
+                      choices=['stdio', 'http', 'streamable_http'],
+                      help='Server mode (stdio, http, or streamable_http)')
     args = parser.parse_args()
     
     # Carica la configurazione
@@ -862,25 +806,13 @@ if __name__ == "__main__":
     if args.mode != 'stdio':
         logger.info(f"Override configurazione da argomento da linea di comando: transport_type={args.mode}")
         config['transport_type'] = args.mode
-        if args.mode == 'sse':
-            config['connection_type'] = 'sse'
     
     connection_type = config.get("connection_type", "stdio")
     transport_type = config.get("transport_type", "stdio")
     
     logger.info(f"Configurazione finale: connection_type={connection_type}, transport_type={transport_type}")
     
-    if connection_type == "sse" and transport_type == "sse":
-        # Modalità SSE
-        import uvicorn
-        logger.info("Avvio server MCP in modalità SSE...")
-        sse_config = config.get("sse", {})
-        uvicorn.run(
-            app, 
-            host=sse_config.get("host", "0.0.0.0"), 
-            port=sse_config.get("port", 8080)
-        )
-    elif transport_type in ["http", "streamable_http"]:
+    if transport_type in ["http", "streamable_http"]:
         # Modalità HTTP
         import uvicorn
         logger.info(f"Avvio server MCP in modalità {transport_type}...")
