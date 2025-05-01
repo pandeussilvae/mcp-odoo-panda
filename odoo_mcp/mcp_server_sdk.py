@@ -665,6 +665,85 @@ async def mcp_messages_endpoint(request: Request):
             }
             logger.info(f"Sending resources/list response: {response}")
             return JSONResponse(response)
+        elif method == 'resources/read':
+            uri = data["params"].get("uri")
+            if not uri:
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: missing uri"
+                    }
+                })
+            
+            try:
+                # Estrai le informazioni dall'URI
+                if "{model}" in uri or "{id}" in uri:
+                    # Se l'URI contiene placeholder, restituisci un template vuoto
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "resource": {
+                                "name": "odoo-record",
+                                "uri": uri,
+                                "type": "record",
+                                "data": None,
+                                "mimeType": "application/json",
+                                "description": "Template for Odoo record"
+                            }
+                        }
+                    }
+                else:
+                    # Estrai model e id dall'URI
+                    # Formato atteso: odoo://model/id
+                    parts = uri.replace("odoo://", "").split("/")
+                    if len(parts) != 2:
+                        raise ValueError(f"Invalid URI format: {uri}")
+                    
+                    model = parts[0]
+                    record_id = int(parts[1])
+                    
+                    # Leggi il record da Odoo
+                    record = await odoo.execute_kw(
+                        model=model,
+                        method="read",
+                        args=[[record_id]],
+                        kwargs={}
+                    )
+                    
+                    if not record:
+                        raise ValueError(f"Record not found: {uri}")
+                    
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "resource": {
+                                "name": "odoo-record",
+                                "uri": uri,
+                                "type": "record",
+                                "data": record[0],
+                                "mimeType": "application/json",
+                                "description": f"Odoo record from {model}"
+                            }
+                        }
+                    }
+                
+                logger.info(f"Sending resources/read response: {response}")
+                return JSONResponse(response)
+                
+            except Exception as e:
+                logger.error(f"Error reading resource: {e}")
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32000,
+                        "message": f"Error reading resource: {str(e)}"
+                    }
+                })
         elif method == 'resources/templates/list':
             # For resources/templates/list, return our defined templates
             response = {
