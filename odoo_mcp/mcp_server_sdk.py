@@ -22,7 +22,7 @@ from odoo_mcp.tools.tool_manager import OdooToolManager
 from functools import wraps
 import argparse
 from typing import Dict, Any
-from odoo_mcp.performance.caching import initialize_cache_manager
+from odoo_mcp.performance.caching import initialize_cache_manager, cache_manager
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)

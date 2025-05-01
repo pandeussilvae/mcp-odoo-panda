@@ -18,7 +18,8 @@ def initialize_cache_manager():
     try:
         logger.info("Attempting to import cachetools...")
         logger.info(f"Python path: {sys.path}")
-        from cachetools import TTLCache, cached, hashkey
+        from cachetools import TTLCache, cached
+        from cachetools.keys import hashkey
         logger.info("Successfully imported cachetools")
         logger.info(f"cachetools version: {TTLCache.__module__}")
 
