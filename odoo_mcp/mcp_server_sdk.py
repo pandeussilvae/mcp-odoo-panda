@@ -610,6 +610,34 @@ def get_server_capabilities():
         }
     }
 
+def parse_odoo_uri(uri: str) -> tuple:
+    """Parse an Odoo URI into its components."""
+    if not uri.startswith("odoo://"):
+        raise ValueError("Invalid URI scheme - must start with odoo://")
+    
+    # Remove the scheme
+    path = uri[7:]  # len("odoo://") == 7
+    parts = path.split("/")
+    
+    if len(parts) < 2:
+        raise ValueError("Invalid URI format - must contain at least model")
+    
+    model = parts[0]
+    
+    if len(parts) == 2:
+        if parts[1] == "list":
+            return model, "list", None
+        try:
+            id = int(parts[1])
+            return model, "record", id
+        except ValueError:
+            raise ValueError("Invalid record ID")
+    
+    if len(parts) == 4 and parts[2] == "binary":
+        return model, "binary", {"field": parts[2], "id": int(parts[3])}
+    
+    raise ValueError("Invalid URI format")
+
 def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str, Any]:
     """Gestore centralizzato delle richieste per tutti i protocolli."""
     try:
@@ -757,7 +785,6 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                     }
                 }
             
-            # Estrai model e id dall'URI
             try:
                 # Se è un template URI, restituisci il template
                 if uri in get_server_capabilities()["resources"]["resources"]:
@@ -777,43 +804,94 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                         }
                     }
                 
-                # Esempio: odoo://res.partner/1
-                parts = uri.split("/")
-                if len(parts) != 3:
-                    raise ValueError("Invalid URI format")
+                # Parse the URI
+                model, type, id_or_info = parse_odoo_uri(uri)
                 
-                model = parts[1]
-                id = int(parts[2])
-                
-                # Usa odoo_read per ottenere i dati
-                result = asyncio.run(odoo_read(model, [id], ["name", "id"]))
-                if not result:
+                if type == "list":
+                    # Return list of records
+                    result = asyncio.run(odoo_search_read(model, [], ["name", "id"]))
                     return {
                         "jsonrpc": "2.0",
                         "id": req_id,
-                        "error": {
-                            "code": -32603,
-                            "message": f"Resource not found: {uri}"
+                        "result": {
+                            "resource": {
+                                "uri": uri,
+                                "type": "list",
+                                "mimeType": "application/json"
+                            },
+                            "contents": [
+                                {
+                                    "uri": uri,
+                                    "type": "text",
+                                    "text": json.dumps(result, indent=2)
+                                }
+                            ]
                         }
                     }
-                
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "resource": {
-                            "uri": uri,
-                            "content": result[0]
-                        },
-                        "contents": [
-                            {
-                                "uri": uri,
-                                "type": "text",
-                                "text": json.dumps(result[0], indent=2)
+                elif type == "record":
+                    # Return single record
+                    result = asyncio.run(odoo_read(model, [id_or_info], ["name", "id"]))
+                    if not result:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "error": {
+                                "code": -32603,
+                                "message": f"Resource not found: {uri}"
                             }
-                        ]
+                        }
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "resource": {
+                                "uri": uri,
+                                "type": "record",
+                                "mimeType": "application/json"
+                            },
+                            "contents": [
+                                {
+                                    "uri": uri,
+                                    "type": "text",
+                                    "text": json.dumps(result[0], indent=2)
+                                }
+                            ]
+                        }
                     }
-                }
+                elif type == "binary":
+                    # Handle binary field
+                    field = id_or_info["field"]
+                    record_id = id_or_info["id"]
+                    result = asyncio.run(odoo_read(model, [record_id], [field]))
+                    if not result:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "error": {
+                                "code": -32603,
+                                "message": f"Resource not found: {uri}"
+                            }
+                        }
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "resource": {
+                                "uri": uri,
+                                "type": "binary",
+                                "mimeType": "application/octet-stream"
+                            },
+                            "contents": [
+                                {
+                                    "uri": uri,
+                                    "type": "binary",
+                                    "blob": result[0][field]
+                                }
+                            ]
+                        }
+                    }
             except ValueError as e:
                 return {
                     "jsonrpc": "2.0",
@@ -847,23 +925,24 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                     }
                 }
             
-            try:
-                tools_map = get_server_capabilities()["tools"]
-                if tool_name not in tools_map:
-                    return {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "error": {
-                            "code": -32601,
-                            "message": f"Tool not found: {tool_name}"
-                        }
+            tools = get_server_capabilities()["tools"]["tools"]
+            if tool_name not in tools:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32601,
+                        "message": f"Tool not found: {tool_name}"
                     }
-                
-                # Esegui il tool
+                }
+            
+            try:
+                # Get the actual function
                 tool_func = globals()[tool_name]
+                
+                # Execute the tool
                 if asyncio.iscoroutinefunction(tool_func):
-                    loop = asyncio.get_event_loop()
-                    result = loop.run_until_complete(tool_func(**arguments))
+                    result = asyncio.run(tool_func(**arguments))
                 else:
                     result = tool_func(**arguments)
                 
@@ -877,7 +956,6 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                         }
                     }
                 }
-                
             except Exception as e:
                 return {
                     "jsonrpc": "2.0",
@@ -887,6 +965,45 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                         "message": f"Error executing tool: {str(e)}"
                     }
                 }
+        elif method == "completion/complete":
+            argument = params.get("argument", {})
+            ref = params.get("ref", {})
+            
+            if ref.get("type") == "ref/resource":
+                uri_template = ref.get("uri")
+                if uri_template == "odoo://{model}/{id}":
+                    if argument["name"] == "model":
+                        # Get list of models for completion
+                        try:
+                            models = asyncio.run(odoo_list_models())
+                            completions = [
+                                {"label": model["model"], "detail": model["name"]}
+                                for model in models
+                            ]
+                            return {
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "result": {
+                                    "items": completions
+                                }
+                            }
+                        except Exception as e:
+                            return {
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "error": {
+                                    "code": -32000,
+                                    "message": f"Error getting completions: {str(e)}"
+                                }
+                            }
+            
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "items": []
+                }
+            }
         else:
             return {
                 "jsonrpc": "2.0",
