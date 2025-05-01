@@ -656,41 +656,6 @@ async def get_server_capabilities():
         }
     }
 
-async def mcp_messages_endpoint(request: Request):
-    """Endpoint per la gestione dei messaggi MCP."""
-    data = await request.json()
-    session_id = request.query_params.get("session_id")
-    
-    # Per streamable HTTP, generiamo un session_id se non presente
-    if not session_id and request.url.path == "/streamable":
-        session_id = str(uuid.uuid4())
-        logger.info(f"Generato nuovo session_id per streamable HTTP: {session_id}")
-    elif not session_id:
-        return JSONResponse({"error": "Missing session_id"}, status_code=400)
-    
-    logger.info(f"Ricevuta richiesta MCP: {data} (session_id={session_id})")
-    
-    try:
-        method = data.get("method")
-        req_id = data.get("id")
-        params = data.get("params", {})
-        
-        # Usa la stessa logica di gestione delle richieste di stdio
-        response = _handle_stdio_request(data)
-        return JSONResponse(response)
-        
-    except Exception as e:
-        logger.error(f"Errore nella gestione della richiesta: {e}")
-        response = {
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "error": {
-                "code": -32000,
-                "message": str(e)
-            }
-        }
-        return JSONResponse(response)
-
 def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
     """Handle incoming stdio requests with the same format as http_streamable."""
     try:
@@ -699,7 +664,14 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
         params = request.get("params", {})
 
         if method == "initialize":
-            capabilities = get_server_capabilities()
+            # Esegui get_server_capabilities in modo sincrono
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                capabilities = loop.run_until_complete(get_server_capabilities())
+            finally:
+                loop.close()
+            
             response = {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -828,9 +800,17 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                         }
                     }
                 
-                # Esegui il tool
+                # Esegui il tool in modo sincrono se è una coroutine
                 tool_func = tools_map[tool_name]
-                result = tool_func(**arguments)
+                if asyncio.iscoroutinefunction(tool_func):
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        result = loop.run_until_complete(tool_func(**arguments))
+                    finally:
+                        loop.close()
+                else:
+                    result = tool_func(**arguments)
                 
                 response = {
                     "jsonrpc": "2.0",
