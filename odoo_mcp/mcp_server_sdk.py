@@ -315,23 +315,27 @@ PROMPTS = {
 # Crea l'istanza FastMCP con le capabilities
 def create_mcp_instance(transport_types):
     """Create a FastMCP instance with all capabilities."""
+    capabilities = {
+        "tools": {
+            "listChanged": True,
+            "tools": TOOLS
+        },
+        "prompts": {
+            "listChanged": True,
+            "prompts": PROMPTS
+        },
+        "resources": {
+            "listChanged": True,
+            "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
+            "subscribe": False
+        },
+        "experimental": {}
+    }
+    
     return FastMCP(
         "odoo-mcp-server",
         transport_types=transport_types,
-        capabilities={
-            "tools": {
-                "listChanged": True,
-                "tools": TOOLS
-            },
-            "prompts": {
-                "listChanged": True,
-                "prompts": PROMPTS
-            },
-            "resources": {
-                "listChanged": True,
-                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES}
-            }
-        }
+        capabilities=capabilities
     )
 
 def parse_odoo_uri(uri: str) -> tuple:
@@ -373,30 +377,8 @@ def initialize_mcp(transport_type):
         transport_types.append("streamable_http")
     elif transport_type == "http":
         transport_types.append("http")
-
-    # Create capabilities object
-    capabilities = {
-        "tools": {
-            "listChanged": True,
-            "tools": TOOLS
-        },
-        "prompts": {
-            "listChanged": True,
-            "prompts": PROMPTS
-        },
-        "resources": {
-            "listChanged": True,
-            "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
-            "subscribe": False
-        },
-        "experimental": {}
-    }
     
-    mcp = FastMCP(
-        "odoo-mcp-server",
-        transport_types=transport_types,
-        capabilities=capabilities
-    )
+    mcp = create_mcp_instance(transport_types)
 
     # Register request handler
     async def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -412,7 +394,7 @@ def initialize_mcp(transport_type):
                     "id": req_id,
                     "result": {
                         "protocolVersion": "2024-01-01",
-                        "capabilities": capabilities,
+                        "capabilities": mcp.capabilities,
                         "serverInfo": {
                             "name": "odoo-mcp-server",
                             "version": "1.6.0"
@@ -702,45 +684,136 @@ def initialize_mcp(transport_type):
 
     # Register all prompts
     @mcp.prompt()
-    def analyze_record(model: str, id: int) -> str:
+    async def analyze_record(model: str, id: int) -> str:
         """Analyze an Odoo record and provide insights."""
-        return sync_async(analyze_record)(model=model, id=id)
+        if not hasattr(odoo, 'global_uid') or not hasattr(odoo, 'global_password'):
+            raise Exception("Authentication required. Please call odoo_login first.")
+        
+        record = await odoo.execute_kw(
+            model=model,
+            method="read",
+            args=[[id]],
+            kwargs={},
+            uid=odoo.global_uid,
+            password=odoo.global_password
+        )
+        if not record:
+            return f"Record {id} not found in model {model}"
+        return f"Analysis of {model} record {id}:\n{json.dumps(record[0], indent=2)}"
 
     @mcp.prompt()
-    def create_record(model: str, values: dict) -> str:
+    async def create_record(model: str, values: dict) -> str:
         """Generate a prompt to create a new Odoo record."""
-        return sync_async(create_record)(model=model, values=values)
+        if not hasattr(odoo, 'global_uid') or not hasattr(odoo, 'global_password'):
+            raise Exception("Authentication required. Please call odoo_login first.")
+        
+        fields_info = await odoo.execute_kw(
+            model=model,
+            method="fields_get",
+            args=[],
+            kwargs={},
+            uid=odoo.global_uid,
+            password=odoo.global_password
+        )
+        return f"Creating new {model} record with values:\n{json.dumps(values, indent=2)}\n\nAvailable fields:\n{json.dumps(fields_info, indent=2)}"
 
     @mcp.prompt()
-    def update_record(model: str, id: int, values: dict) -> str:
+    async def update_record(model: str, id: int, values: dict) -> str:
         """Generate a prompt to update an existing Odoo record."""
-        return sync_async(update_record)(model=model, id=id, values=values)
+        if not hasattr(odoo, 'global_uid') or not hasattr(odoo, 'global_password'):
+            raise Exception("Authentication required. Please call odoo_login first.")
+        
+        record = await odoo.execute_kw(
+            model=model,
+            method="read",
+            args=[[id]],
+            kwargs={},
+            uid=odoo.global_uid,
+            password=odoo.global_password
+        )
+        if not record:
+            return f"Record {id} not found in model {model}"
+        return f"Updating {model} record {id}:\nCurrent values:\n{json.dumps(record[0], indent=2)}\n\nNew values:\n{json.dumps(values, indent=2)}"
 
     @mcp.prompt()
-    def advanced_search(model: str, domain: list) -> str:
+    async def advanced_search(model: str, domain: list) -> str:
         """Generate a prompt for advanced search."""
-        return sync_async(advanced_search)(model=model, domain=domain)
+        if not hasattr(odoo, 'global_uid') or not hasattr(odoo, 'global_password'):
+            raise Exception("Authentication required. Please call odoo_login first.")
+        
+        fields_info = await odoo.execute_kw(
+            model=model,
+            method="fields_get",
+            args=[],
+            kwargs={},
+            uid=odoo.global_uid,
+            password=odoo.global_password
+        )
+        return f"Advanced search in {model} with domain:\n{json.dumps(domain, indent=2)}\n\nAvailable fields:\n{json.dumps(fields_info, indent=2)}"
 
     @mcp.prompt()
-    def call_method(model: str, method: str, *, args: list = None, kwargs: dict = None) -> str:
+    async def call_method(model: str, method: str, *, args: list = None, kwargs: dict = None) -> str:
         """Generate a prompt for calling a method."""
-        return sync_async(call_method)(model=model, method=method, args=args, kwargs=kwargs)
+        if not hasattr(odoo, 'global_uid') or not hasattr(odoo, 'global_password'):
+            raise Exception("Authentication required. Please call odoo_login first.")
+        
+        methods = await odoo.execute_kw(
+            model=model,
+            method="fields_get",
+            args=[],
+            kwargs={"attributes": ["method"]},
+            uid=odoo.global_uid,
+            password=odoo.global_password
+        )
+        return f"Calling method {method} on {model} with:\nargs: {json.dumps(args or [], indent=2)}\nkwargs: {json.dumps(kwargs or {}, indent=2)}\n\nAvailable methods:\n{json.dumps(methods, indent=2)}"
 
     # Register all resources
     @mcp.resource("odoo://{model}/{id}")
-    def get_odoo_record(model: str, id: int):
+    async def get_odoo_record(model: str, id: int):
         """Get a single Odoo record."""
-        return sync_async(get_odoo_record)(model=model, id=id)
+        if not hasattr(odoo, 'global_uid') or not hasattr(odoo, 'global_password'):
+            raise Exception("Authentication required. Please call odoo_login first.")
+        
+        record = await odoo.execute_kw(
+            model=model,
+            method="read",
+            args=[[id]],
+            kwargs={},
+            uid=odoo.global_uid,
+            password=odoo.global_password
+        )
+        return record[0] if record else None
 
     @mcp.resource("odoo://{model}/list")
-    def list_odoo_records(model: str):
+    async def list_odoo_records(model: str):
         """Get a list of Odoo records."""
-        return sync_async(list_odoo_records)(model=model)
+        if not hasattr(odoo, 'global_uid') or not hasattr(odoo, 'global_password'):
+            raise Exception("Authentication required. Please call odoo_login first.")
+        
+        return await odoo.execute_kw(
+            model=model,
+            method="search_read",
+            args=[[], ["name", "id"]],
+            kwargs={"limit": 50},
+            uid=odoo.global_uid,
+            password=odoo.global_password
+        )
 
     @mcp.resource("odoo://{model}/binary/{field}/{id}")
-    def get_odoo_binary(model: str, field: str, id: int):
+    async def get_odoo_binary(model: str, field: str, id: int):
         """Get a binary field from an Odoo record."""
-        return sync_async(get_odoo_binary)(model=model, field=field, id=id)
+        if not hasattr(odoo, 'global_uid') or not hasattr(odoo, 'global_password'):
+            raise Exception("Authentication required. Please call odoo_login first.")
+        
+        record = await odoo.execute_kw(
+            model=model,
+            method="read",
+            args=[[id], [field]],
+            kwargs={},
+            uid=odoo.global_uid,
+            password=odoo.global_password
+        )
+        return record[0][field] if record else None
 
     return mcp
 
