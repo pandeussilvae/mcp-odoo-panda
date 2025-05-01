@@ -568,6 +568,7 @@ def get_server_capabilities():
         uri = template["uriTemplate"]
         resources_dict[uri] = {
             "uri": uri,
+            "uriTemplate": uri,  # Aggiungiamo anche uriTemplate per compatibilità
             "name": template["name"],
             "description": template["description"],
             "type": template["type"],
@@ -639,6 +640,59 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                     "resourceTemplates": list(get_server_capabilities()["resources"]["resources"].values())
                 }
             }
+        elif method == "resources/read":
+            uri = params.get("uri")
+            if not uri:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: missing uri"
+                    }
+                }
+            
+            # Estrai model e id dall'URI
+            try:
+                # Esempio: odoo://res.partner/1
+                parts = uri.split("/")
+                if len(parts) != 3:
+                    raise ValueError("Invalid URI format")
+                
+                model = parts[1]
+                id = int(parts[2])
+                
+                # Usa odoo_read per ottenere i dati
+                result = asyncio.run(odoo_read(model, [id], ["name", "id"]))
+                if not result:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32603,
+                            "message": f"Resource not found: {uri}"
+                        }
+                    }
+                
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "resource": {
+                            "uri": uri,
+                            "content": result[0]
+                        }
+                    }
+                }
+            except Exception as e:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32603,
+                        "message": f"Error reading resource: {str(e)}"
+                    }
+                }
         elif method == "prompts/get":
             prompt_name = params.get("name")
             if not prompt_name:
