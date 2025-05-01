@@ -92,16 +92,18 @@ def initialize_cache_manager():
         logger.info("Successfully imported cachetools")
         logger.info(f"cachetools version: {cachetools.__version__}")
 
+        # Create the cache manager instance
         cache_manager = CacheManager()
         CACHE_TYPE = 'cachetools'
         logger.info("CacheManager initialized successfully with cachetools")
         return True
 
-    except ImportError as e:
-        logger.error(f"Failed to import cachetools: {str(e)}")
+    except Exception as e:
+        logger.error(f"Failed to initialize cachetools: {str(e)}")
         logger.error(f"Python path: {sys.path}")
-        logger.warning("cachetools library not found. Falling back to functools.lru_cache (no TTL).")
+        logger.warning("Falling back to functools.lru_cache (no TTL).")
         
+        # Create the dummy cache manager instance
         cache_manager = DummyCacheManager()
         CACHE_TYPE = 'functools'
         return False
