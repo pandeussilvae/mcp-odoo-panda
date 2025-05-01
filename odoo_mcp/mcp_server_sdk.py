@@ -338,7 +338,7 @@ class OdooMCPServer(FastMCP):
             },
             "prompts": {
                 "listChanged": True,
-                "prompts": {p.name: p.to_dict() for p in prompt_manager.list_prompts()}
+                "prompts": {p.name: p.model_dump() for p in prompt_manager.list_prompts()}
             },
             "resources": {
                 "listChanged": True,

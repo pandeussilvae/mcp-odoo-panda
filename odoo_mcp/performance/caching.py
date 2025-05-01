@@ -23,9 +23,10 @@ def initialize_cache_manager():
     try:
         logger.info("Attempting to import cachetools...")
         logger.info(f"Python path: {sys.path}")
+        import cachetools
         from cachetools import TTLCache, cached
         logger.info("Successfully imported cachetools")
-        logger.info(f"cachetools version: {TTLCache.__module__}")
+        logger.info(f"cachetools version: {cachetools.__version__}")
 
         class CacheManager:
             """Manages cache instances, primarily using cachetools if available."""
@@ -92,7 +93,11 @@ def initialize_cache_manager():
 
             def get_ttl_cache_decorator(self, *args, **kwargs) -> Callable:
                 def decorator(func: Callable) -> Callable:
-                    return func
+                    @functools.lru_cache(maxsize=self.default_maxsize)
+                    @functools.wraps(func)
+                    def wrapper(*args, **kwargs):
+                        return func(*args, **kwargs)
+                    return wrapper
                 return decorator
         
         cache_manager = DummyCacheManager()
