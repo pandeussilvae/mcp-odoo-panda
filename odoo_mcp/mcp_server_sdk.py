@@ -22,7 +22,7 @@ from odoo_mcp.tools.tool_manager import OdooToolManager
 from functools import wraps
 import argparse
 from typing import Dict, Any
-from odoo_mcp.performance.caching import initialize_cache_manager, cache_manager
+from odoo_mcp.performance.caching import initialize_cache_manager, cache_manager, CACHE_TYPE
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)
@@ -125,12 +125,15 @@ resource_manager = OdooResourceManager(odoo)
 tool_manager = OdooToolManager(odoo)
 
 # Initialize cache manager with config
-initialize_cache_manager()
-if cache_manager:
+success = initialize_cache_manager()
+if success:
     try:
         cache_manager.configure(config)
+        logger.info(f"Cache manager ({CACHE_TYPE}) configured successfully")
     except Exception as e:
         logger.warning(f"Failed to configure cache manager: {str(e)}")
+else:
+    logger.warning("Cache manager initialization failed, using fallback implementation")
 
 # Definisci i template delle risorse come costanti
 RESOURCE_TEMPLATES = [

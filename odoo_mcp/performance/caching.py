@@ -41,13 +41,17 @@ class DummyCacheManager:
 class CacheManager:
     """Manages cache instances using cachetools."""
     def __init__(self, default_maxsize: int = 128, default_ttl: int = 300):
-        from cachetools import TTLCache, cached
-        self.default_maxsize = default_maxsize
-        self.default_ttl = default_ttl
-        self.TTLCache = TTLCache
-        self.cached = cached
-        self.odoo_read_cache = TTLCache(maxsize=default_maxsize, ttl=default_ttl)
-        logger.info(f"CacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
+        try:
+            from cachetools import TTLCache, cached
+            self.default_maxsize = default_maxsize
+            self.default_ttl = default_ttl
+            self.TTLCache = TTLCache
+            self.cached = cached
+            self.odoo_read_cache = TTLCache(maxsize=default_maxsize, ttl=default_ttl)
+            logger.info(f"CacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
+        except ImportError as e:
+            logger.error(f"Failed to initialize CacheManager: {str(e)}")
+            raise
 
     def configure(self, config: Dict[str, Any]):
         cache_config = config.get('cache', {})
@@ -109,7 +113,8 @@ def initialize_cache_manager():
         return False
 
 # Initialize the cache manager
-initialize_cache_manager()
+if cache_manager is None:
+    initialize_cache_manager()
 
 # --- LRU Cache Implementation ---
 
