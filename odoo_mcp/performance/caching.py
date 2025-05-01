@@ -80,13 +80,9 @@ try:
             """
             self.default_maxsize = default_maxsize
             self.default_ttl = default_ttl
-            # Example cache instance for general Odoo read operations
-            self.odoo_read_cache: TTLCache = TTLCache(maxsize=default_maxsize, ttl=default_ttl)
-            # Add more specific caches as needed, e.g., for specific models or methods
-            # self.partner_cache: TTLCache = TTLCache(maxsize=256, ttl=600)
-            # Initialize with placeholders, configure() will set actual values
-            self.odoo_read_cache: TTLCache = TTLCache(maxsize=1, ttl=1) # Placeholder
-            logger.info(f"CacheManager initialized (defaults: maxsize={default_maxsize}, ttl={default_ttl}s). Waiting for configuration...")
+            # Initialize the main cache instance with default values
+            self.odoo_read_cache = TTLCache(maxsize=default_maxsize, ttl=default_ttl)
+            logger.info(f"CacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
 
         def configure(self, config: Dict[str, Any]):
             """
@@ -96,8 +92,8 @@ try:
                 config: The main application configuration dictionary.
             """
             cache_config = config.get('cache', {}) # Look for a 'cache' section
-            self.default_maxsize = cache_config.get('default_maxsize', 128)
-            self.default_ttl = cache_config.get('default_ttl', 300)
+            self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
+            self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
 
             # Recreate the main cache instance with configured settings
             self.odoo_read_cache = TTLCache(maxsize=self.default_maxsize, ttl=self.default_ttl)

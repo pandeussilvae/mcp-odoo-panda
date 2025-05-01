@@ -320,42 +320,41 @@ class OdooMCPServer(FastMCP):
     """Custom MCP Server implementation that ensures proper version and capabilities."""
     
     def __init__(self, transport_types):
-        # Define base capabilities
-        self._base_capabilities = {
+        super().__init__(transport_types)
+        self._version = "2024.2.5"
+        self._capabilities = {
             "tools": {
                 "listChanged": True,
                 "tools": TOOLS
             },
             "prompts": {
                 "listChanged": True,
-                "prompts": PROMPTS
+                "prompts": prompt_manager.get_prompts()
             },
             "resources": {
                 "listChanged": True,
                 "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
-                "subscribe": False
+                "subscribe": True
             },
+            "streaming": True,
+            "sse": True,
+            "websocket": True,
             "experimental": {}
         }
-        
-        # Initialize parent with our specific configuration
-        super().__init__(
-            name=SERVER_NAME,
-            version=SERVER_VERSION,
-            transport_types=transport_types,
-            capabilities=self._base_capabilities
-        )
         
         # Log initialization
         print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
         print(f"[DEBUG] - name: {SERVER_NAME}", file=sys.stderr)
         print(f"[DEBUG] - version: {SERVER_VERSION}", file=sys.stderr)
-        print(f"[DEBUG] - capabilities: {json.dumps(self._base_capabilities, indent=2)}", file=sys.stderr)
+        print(f"[DEBUG] - capabilities: {json.dumps(self._capabilities, indent=2)}", file=sys.stderr)
     
     @property
+    def version(self) -> str:
+        return self._version
+
+    @property
     def capabilities(self):
-        """Override capabilities property to ensure our values are used."""
-        return self._base_capabilities
+        return self._capabilities
 
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Override handle_request to ensure proper version and capabilities in responses."""
@@ -378,7 +377,7 @@ class OdooMCPServer(FastMCP):
                             'name': SERVER_NAME,
                             'version': SERVER_VERSION
                         },
-                        'capabilities': self._base_capabilities
+                        'capabilities': self._capabilities
                     },
                     'id': request_id
                 }
