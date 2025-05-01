@@ -1099,21 +1099,25 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                         # Get list of models for completion
                         try:
                             models = await odoo_list_models()
-                            # Limit to 100 completions and convert to strings
-                            completions = []
-                            for model in models[:100]:
-                                model_name = model["model"]
-                                display_name = model["name"]
-                                # Add both technical name and user-friendly name as strings
-                                completions.append(str(model_name))
-                                completions.append(str(display_name))
-                            
+                            # Use a set to ensure unique values
+                            completions = set()
+                            # Add models until we reach the limit
+                            for model in models:
+                                if len(completions) >= 100:
+                                    break
+                                model_name = str(model["model"])
+                                display_name = str(model["name"])
+                                # Only add if we haven't reached the limit
+                                if len(completions) < 98:  # Leave room for both values
+                                    completions.add(model_name)
+                                    completions.add(display_name)
+                        
                             return {
                                 "jsonrpc": "2.0",
                                 "id": req_id,
                                 "result": {
                                     "completion": {
-                                        "values": completions,
+                                        "values": list(completions),
                                         "isComplete": True
                                     }
                                 }
@@ -1139,23 +1143,30 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                                     fields=["name", "id"],
                                     limit=50  # Limit to 50 records
                                 )
-                                # Convert to strings and limit total completions
-                                completions = []
+                                # Use a set to ensure unique values
+                                completions = set()
+                                # Add records until we reach the limit
                                 for record in records:
-                                    completions.append(str(record["id"]))
-                                    if record.get("name"):
-                                        completions.append(str(record["name"]))
-                                
-                                return {
-                                    "jsonrpc": "2.0",
-                                    "id": req_id,
-                                    "result": {
-                                        "completion": {
-                                            "values": completions,
-                                            "isComplete": True
-                                        }
+                                    if len(completions) >= 100:
+                                        break
+                                    record_id = str(record["id"])
+                                    record_name = str(record.get("name", ""))
+                                    # Only add if we haven't reached the limit
+                                    if len(completions) < 98:  # Leave room for both values
+                                        completions.add(record_id)
+                                        if record_name:
+                                            completions.add(record_name)
+                        
+                            return {
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "result": {
+                                    "completion": {
+                                        "values": list(completions),
+                                        "isComplete": True
                                     }
                                 }
+                            }
                         except Exception as e:
                             logger.error(f"Error getting record completions: {e}")
                             return {
