@@ -299,7 +299,23 @@ class OdooMCPServer(Server):
     async def initialize(self, client_info: ClientInfo) -> ServerInfo:
         """Handle initialization request."""
         # Get current capabilities
-        current_capabilities = self.capabilities
+        current_capabilities = {
+            "tools": {
+                "listChanged": True,
+                "tools": TOOLS
+            },
+            "prompts": {
+                "listChanged": True,
+                "prompts": PROMPTS
+            },
+            "resources": {
+                "listChanged": True,
+                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
+                "subscribe": False
+            },
+            "experimental": {}
+        }
+        
         print(f"[DEBUG] Current capabilities: {json.dumps(current_capabilities, indent=2)}", file=sys.stderr)
         
         # Create server info with proper capabilities
@@ -884,8 +900,8 @@ class OdooMCPServer(Server):
                     'result': {
                         'protocolVersion': PROTOCOL_VERSION,
                         'serverInfo': {
-                            'name': server_info.name,
-                            'version': server_info.version
+                            'name': SERVER_NAME,
+                            'version': SERVER_VERSION
                         },
                         'capabilities': capabilities
                     },
