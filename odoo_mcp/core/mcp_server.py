@@ -298,11 +298,21 @@ class OdooMCPServer(Server):
 
     async def initialize(self, client_info: ClientInfo) -> ServerInfo:
         """Handle initialization request."""
-        return ServerInfo(
-            name=self.name,
-            version=self.version,
-            capabilities=self.capabilities
+        # Get current capabilities
+        current_capabilities = self.capabilities
+        print(f"[DEBUG] Current capabilities: {json.dumps(current_capabilities, indent=2)}", file=sys.stderr)
+        
+        # Create server info with proper capabilities
+        server_info = ServerInfo(
+            name=SERVER_NAME,
+            version=SERVER_VERSION,
+            capabilities=current_capabilities
         )
+        
+        # Log the server info for debugging
+        print(f"[DEBUG] Server info: {json.dumps(server_info.__dict__, indent=2)}", file=sys.stderr)
+        
+        return server_info
 
     async def get_resource(self, uri: str) -> dict:
         """Get a resource by URI."""
@@ -842,7 +852,7 @@ class OdooMCPServer(Server):
     def _handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle incoming requests."""
         try:
-            print(f"[DEBUG] MCP request: {request}", file=sys.stderr)
+            print(f"[DEBUG] MCP request: {json.dumps(request, indent=2)}", file=sys.stderr)
             # Validate request format
             if not isinstance(request, dict):
                 raise ValueError("Request must be a JSON object")
@@ -864,6 +874,11 @@ class OdooMCPServer(Server):
             if method == 'initialize':
                 client_info = ClientInfo.from_dict(params)
                 server_info = run_async(self.initialize(client_info))
+                
+                # Ensure capabilities are properly structured
+                capabilities = server_info.capabilities
+                print(f"[DEBUG] Capabilities before response: {json.dumps(capabilities, indent=2)}", file=sys.stderr)
+                
                 response = {
                     'jsonrpc': '2.0',
                     'result': {
@@ -872,11 +887,11 @@ class OdooMCPServer(Server):
                             'name': server_info.name,
                             'version': server_info.version
                         },
-                        'capabilities': server_info.capabilities
+                        'capabilities': capabilities
                     },
                     'id': request_id
                 }
-                print(f"[DEBUG] MCP response: {response}", file=sys.stderr)
+                print(f"[DEBUG] MCP initialize response: {json.dumps(response, indent=2)}", file=sys.stderr)
                 return response
             elif method == 'get_resource' or method == 'resources/read':
                 resource = run_async(self.get_resource(params['uri']))
