@@ -632,13 +632,67 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                     ]
                 }
             }
+        elif method == "prompts/get":
+            prompt_name = params.get("name")
+            if not prompt_name:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: missing prompt name"
+                    }
+                }
+            
+            prompts = get_server_capabilities()["prompts"]["prompts"]
+            if prompt_name not in prompts:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32601,
+                        "message": f"Prompt not found: {prompt_name}"
+                    }
+                }
+            
+            prompt = prompts[prompt_name]
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "prompt": {
+                        "name": prompt_name,
+                        "description": prompt["description"],
+                        "inputSchema": prompt["inputSchema"]
+                    },
+                    "contents": [
+                        {
+                            "role": "assistant",
+                            "content": {
+                                "type": "text",
+                                "text": f"How can I help you with {prompt_name}?"
+                            }
+                        }
+                    ]
+                }
+            }
         elif method == "resources/list":
             resources = get_server_capabilities()["resources"]["resources"]
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "resources": list(resources.values())
+                    "resources": [
+                        {
+                            "uri": uri,
+                            "uriTemplate": resource["uriTemplate"],
+                            "name": resource["name"],
+                            "description": resource["description"],
+                            "type": resource["type"],
+                            "mimeType": resource["mimeType"]
+                        }
+                        for uri, resource in resources.items()
+                    ]
                 }
             }
         elif method == "resources/templates/list":
@@ -647,7 +701,17 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "resourceTemplates": list(resources.values())
+                    "resourceTemplates": [
+                        {
+                            "uri": uri,
+                            "uriTemplate": resource["uriTemplate"],
+                            "name": resource["name"],
+                            "description": resource["description"],
+                            "type": resource["type"],
+                            "mimeType": resource["mimeType"]
+                        }
+                        for uri, resource in resources.items()
+                    ]
                 }
             }
         elif method == "resources/read":
@@ -721,43 +785,6 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                         "message": f"Error reading resource: {str(e)}"
                     }
                 }
-        elif method == "prompts/get":
-            prompt_name = params.get("name")
-            if not prompt_name:
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {
-                        "code": -32602,
-                        "message": "Invalid params: missing prompt name"
-                    }
-                }
-            
-            prompts = get_server_capabilities()["prompts"]
-            if prompt_name not in prompts:
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {
-                        "code": -32601,
-                        "message": f"Prompt not found: {prompt_name}"
-                    }
-                }
-            
-            return {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "prompt": prompts[prompt_name],
-                    "messages": [{
-                        "role": "assistant",
-                        "content": {
-                            "type": "text",
-                            "text": "How can I help you with this prompt?"
-                        }
-                    }]
-                }
-            }
         elif method == "tools/call":
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
