@@ -74,6 +74,18 @@ def initialize_cache_manager():
         logger.warning("cachetools library not found. Falling back to functools.lru_cache (no TTL).")
         
         class DummyCacheManager:
+            """A dummy CacheManager used when cachetools is not installed."""
+            def __init__(self, default_maxsize: int = 128, default_ttl: int = 300):
+                self.default_maxsize = default_maxsize
+                self.default_ttl = default_ttl
+                logger.info(f"DummyCacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
+
+            def configure(self, config: Dict[str, Any]):
+                cache_config = config.get('cache', {})
+                self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
+                self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
+                logger.info(f"DummyCacheManager configured: maxsize={self.default_maxsize}, ttl={self.default_ttl}s")
+
             def get_ttl_cache_decorator(self, *args, **kwargs) -> Callable:
                 def decorator(func: Callable) -> Callable:
                     return func
