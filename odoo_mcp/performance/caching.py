@@ -62,10 +62,12 @@ class CacheManager:
     def __init__(self, default_maxsize: int = 128, default_ttl: int = 300):
         try:
             from cachetools import TTLCache, cached
+            from cachetools.keys import hashkey
             self.default_maxsize = default_maxsize
             self.default_ttl = default_ttl
             self.TTLCache = TTLCache
             self.cached = cached
+            self.hashkey = hashkey
             self.odoo_read_cache = TTLCache(maxsize=default_maxsize, ttl=default_ttl)
             logger.info(f"CacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
         except ImportError as e:
@@ -96,28 +98,13 @@ class CacheManager:
         def decorator(func: Callable) -> Callable:
             is_async = asyncio.iscoroutinefunction(func)
 
-            def key_func(*args, **kwargs):
-                # Convert args to a tuple of hashable items
-                key_parts = []
-                for arg in args:
-                    if isinstance(arg, (list, dict)):
-                        key_parts.append(str(arg))
-                    else:
-                        key_parts.append(arg)
-                
-                # Sort kwargs items to ensure consistent key generation
-                sorted_kwargs = tuple(sorted((k, str(v) if isinstance(v, (list, dict)) else v) 
-                                        for k, v in kwargs.items()))
-                
-                return (tuple(key_parts), sorted_kwargs)
-
-            @self.cached(cache=_cache, key=key_func)
+            @self.cached(cache=_cache, key=self.hashkey)
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
                 result = await func(*args, **kwargs)
                 return result
 
-            @self.cached(cache=_cache, key=key_func)
+            @self.cached(cache=_cache, key=self.hashkey)
             @functools.wraps(func)
             def sync_wrapper(*args, **kwargs):
                 return func(*args, **kwargs)
@@ -133,6 +120,7 @@ def initialize_cache_manager(config: Optional[Dict[str, Any]] = None) -> bool:
         logger.info("Attempting to import cachetools...")
         logger.info(f"Python path: {sys.path}")
         from cachetools import TTLCache, cached
+        from cachetools.keys import hashkey
         logger.info("Successfully imported cachetools")
         logger.info(f"cachetools version: {TTLCache.__module__}")
 
@@ -216,146 +204,6 @@ def lru_cache_with_stats(maxsize=128, typed=False) -> Callable:
 
     return decorator
 
-
-# Option 2: Using cachetools (requires installation: pip install cachetools)
-# Pros: More features like TTL (Time-To-Live) expiration, works well with async.
-# Cons: External dependency.
-
-# Example using cachetools.TTLCache (if cachetools is available)
-try:
-    logger.info("Attempting to import cachetools...")
-    logger.info(f"Python path: {sys.path}")
-    from cachetools import TTLCache, cached, hashkey # Import hashkey directly
-    logger.info("Successfully imported cachetools")
-    logger.info(f"cachetools version: {TTLCache.__module__}")
-
-    class CacheManager:
-        """
-        Manages cache instances, primarily using cachetools if available.
-
-        Provides decorators for applying TTL caching to functions and methods.
-        """
-        def __init__(self, default_maxsize: int = 128, default_ttl: int = 300):
-            """
-            Initialize the CacheManager.
-
-            Args:
-                default_maxsize: Default maximum size for created caches.
-                default_ttl: Default time-to-live in seconds for created caches.
-            """
-            self.default_maxsize = default_maxsize
-            self.default_ttl = default_ttl
-            # Initialize the main cache instance with default values
-            self.odoo_read_cache = TTLCache(maxsize=default_maxsize, ttl=default_ttl)
-            logger.info(f"CacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
-
-        def configure(self, config: Dict[str, Any]):
-            """
-            Configure the cache manager settings from the loaded application config.
-
-            Args:
-                config: The main application configuration dictionary.
-            """
-            cache_config = config.get('cache', {}) # Look for a 'cache' section
-            self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
-            self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
-
-            # Recreate the main cache instance with configured settings
-            self.odoo_read_cache = TTLCache(maxsize=self.default_maxsize, ttl=self.default_ttl)
-
-            logger.info(f"CacheManager configured: default_maxsize={self.default_maxsize}, default_ttl={self.default_ttl}s")
-            logger.info(f"Recreated 'odoo_read_cache' with maxsize={self.odoo_read_cache.maxsize}, ttl={self.odoo_read_cache.ttl}s")
-            # Configure other specific caches here if they exist
-
-        def get_ttl_cache_decorator(self, cache_instance: Optional[TTLCache] = None, maxsize: Optional[int] = None, ttl: Optional[int] = None) -> Callable:
-            """
-            Get a decorator for applying TTL caching using cachetools.
-
-            This decorator works for both synchronous and asynchronous functions.
-
-            Args:
-                cache_instance: An existing TTLCache instance to use. If None, a new
-                                one is created based on maxsize/ttl.
-                maxsize: Maximum size for the cache (if creating a new one).
-                         Defaults to CacheManager's default_maxsize.
-                ttl: Time-to-live in seconds for cache entries (if creating a new one).
-                     Defaults to CacheManager's default_ttl.
-
-            Returns:
-                A decorator function that applies caching.
-            """
-            if cache_instance:
-                 _cache = cache_instance
-                 logger.debug(f"Using provided cache instance: {type(_cache).__name__} (maxsize={_cache.maxsize}, ttl={getattr(_cache, 'ttl', 'N/A')})")
-            else:
-                 _maxsize = maxsize if maxsize is not None else self.default_maxsize
-                 _ttl = ttl if ttl is not None else self.default_ttl
-                 _cache = TTLCache(maxsize=_maxsize, ttl=_ttl)
-                 logger.debug(f"Created new TTLCache instance for decorator: maxsize={_maxsize}, ttl={_ttl}s")
-
-
-            def decorator(func: Callable) -> Callable:
-                """The actual decorator applying cachetools.cached."""
-                # Ensure the function is awaitable if it needs to be
-                is_async = asyncio.iscoroutinefunction(func)
-
-                @cached(cache=_cache, key=hashkey)
-                @functools.wraps(func)
-                async def async_wrapper(*args, **kwargs):
-                    logger.debug(f"Calling cached async function {func.__name__} with TTL cache.")
-                    result = await func(*args, **kwargs)
-                    info = _cache.currsize
-                    logger.debug(f"Cache status for {func.__name__}: Size={info}/{_cache.maxsize}")
-                    return result
-
-                @cached(cache=_cache, key=hashkey)
-                @functools.wraps(func)
-                def sync_wrapper(*args, **kwargs):
-                    logger.debug(f"Calling cached sync function {func.__name__} with TTL cache.")
-                    result = func(*args, **kwargs)
-                    # Use getattr for currsize as it might not be present on all cache types
-                    size_info = getattr(_cache, 'currsize', 'N/A')
-                    logger.debug(f"Cache status for {func.__name__}: Size={size_info}/{_cache.maxsize}")
-                    return result
-
-                return async_wrapper if is_async else sync_wrapper
-            return decorator
-
-    # Instantiate a global cache manager (or pass it around via dependency injection)
-    # TODO: Read cache settings from config if available when CacheManager is instantiated globally
-    # config = ... # Assume config is loaded somehow if running standalone
-    # cache_manager = CacheManager(
-    #     default_maxsize=config.get('cache', {}).get('default_maxsize', 128),
-    #     default_ttl=config.get('cache', {}).get('default_ttl', 300)
-    # )
-    # Instantiate globally, but configuration will be applied later via configure()
-    cache_manager = CacheManager()
-    logger.info("cachetools library found. TTL caching enabled.")
-    CACHE_TYPE: str = 'cachetools'
-
-except ImportError as e:
-    logger.error(f"Failed to import cachetools: {str(e)}")
-    logger.error(f"Python path: {sys.path}")
-    logger.warning("cachetools library not found. Falling back to functools.lru_cache (no TTL).")
-    logger.warning("Install cachetools for TTL support: 'pip install cachetools' or 'pip install odoo-mcp-server[caching]'")
-    cache_manager = None # No cache manager if library is missing
-    CACHE_TYPE: str = 'functools'
-
-    # Define a dummy decorator if cachetools is not available but TTL decorator is used
-    class DummyCacheManager:
-         """A dummy CacheManager used when cachetools is not installed."""
-         def get_ttl_cache_decorator(self, cache_instance: Optional[Any] = None, maxsize: Optional[int] = None, ttl: Optional[int] = None) -> Callable:
-              """Returns a decorator that does nothing or applies basic LRU."""
-              logger.warning("cachetools not installed, TTL caching decorator has no effect.")
-              def decorator(func: Callable) -> Callable:
-                   """Dummy decorator returning the original function."""
-                   # Option: Apply basic lru_cache as fallback?
-                   # return lru_cache_with_stats(maxsize=maxsize or 128)(func)
-                   return func # Current: No caching if TTL requested but unavailable
-              return decorator
-    cache_manager = DummyCacheManager()
-
-
 # --- Example Usage ---
 
 # Example function to cache using functools.lru_cache
@@ -385,7 +233,6 @@ elif cache_manager: # Fallback if cachetools not installed but manager exists (D
         logger.info(f"Fetching data for {model} ID {record_id} from Odoo (No TTL Cache)...")
         await asyncio.sleep(0.2)
         return {"id": record_id, "name": f"{model}_{record_id}", "fetched_at": time.time()}
-
 
 async def _run_cache_tests():
     """Runs example tests for the caching mechanisms."""
