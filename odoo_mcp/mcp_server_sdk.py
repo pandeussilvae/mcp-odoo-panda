@@ -666,9 +666,9 @@ async def mcp_messages_endpoint(request: Request):
             logger.info(f"Sending resources/list response: {response}")
             return JSONResponse(response)
         elif method == 'tools/list':
-            # Ottieni i tools registrati
-            registered_tools = {
-                "odoo_login": {
+            # Ottieni i tools registrati come array
+            tools_list = [
+                {
                     "name": "odoo_login",
                     "description": odoo_login.__doc__ or "Login to Odoo server",
                     "parameters": {
@@ -681,7 +681,7 @@ async def mcp_messages_endpoint(request: Request):
                         }
                     }
                 },
-                "odoo_list_models": {
+                {
                     "name": "odoo_list_models",
                     "description": odoo_list_models.__doc__ or "List all available Odoo models",
                     "parameters": {
@@ -689,7 +689,7 @@ async def mcp_messages_endpoint(request: Request):
                         "properties": {}
                     }
                 },
-                "odoo_search_read": {
+                {
                     "name": "odoo_search_read",
                     "description": odoo_search_read.__doc__ or "Search and read records from an Odoo model",
                     "parameters": {
@@ -705,7 +705,7 @@ async def mcp_messages_endpoint(request: Request):
                         "required": ["model", "domain", "fields"]
                     }
                 },
-                "odoo_read": {
+                {
                     "name": "odoo_read",
                     "description": odoo_read.__doc__ or "Read specific records from an Odoo model",
                     "parameters": {
@@ -718,14 +718,69 @@ async def mcp_messages_endpoint(request: Request):
                         },
                         "required": ["model", "ids", "fields"]
                     }
+                },
+                {
+                    "name": "odoo_create",
+                    "description": odoo_create.__doc__ or "Create a new record in an Odoo model",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "values": {"type": "object", "description": "Values for the new record"},
+                            "context": {"type": "object", "description": "Additional context"}
+                        },
+                        "required": ["model", "values"]
+                    }
+                },
+                {
+                    "name": "odoo_write",
+                    "description": odoo_write.__doc__ or "Update existing records in an Odoo model",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "ids": {"type": "array", "description": "Record IDs to update"},
+                            "values": {"type": "object", "description": "Values to update"},
+                            "context": {"type": "object", "description": "Additional context"}
+                        },
+                        "required": ["model", "ids", "values"]
+                    }
+                },
+                {
+                    "name": "odoo_unlink",
+                    "description": odoo_unlink.__doc__ or "Delete records from an Odoo model",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "ids": {"type": "array", "description": "Record IDs to delete"},
+                            "context": {"type": "object", "description": "Additional context"}
+                        },
+                        "required": ["model", "ids"]
+                    }
+                },
+                {
+                    "name": "odoo_call_method",
+                    "description": odoo_call_method.__doc__ or "Call a custom method on an Odoo model",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "method": {"type": "string", "description": "Method name to call"},
+                            "args": {"type": "array", "description": "Positional arguments"},
+                            "kwargs": {"type": "object", "description": "Keyword arguments"},
+                            "context": {"type": "object", "description": "Additional context"}
+                        },
+                        "required": ["model", "method"]
+                    }
                 }
-            }
+            ]
             
             response = {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "tools": registered_tools
+                    "tools": tools_list
                 }
             }
             logger.info(f"Sending tools/list response: {response}")
