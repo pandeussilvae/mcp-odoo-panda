@@ -24,6 +24,7 @@ class DummyCacheManager:
         logger.info(f"DummyCacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
 
     def configure(self, config: Dict[str, Any]):
+        """Configure the dummy cache manager settings."""
         cache_config = config.get('cache', {})
         self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
         self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
@@ -92,9 +93,10 @@ def initialize_cache_manager():
     try:
         logger.info("Attempting to import cachetools...")
         logger.info(f"Python path: {sys.path}")
-        import cachetools
+        from cachetools import TTLCache, cached
+        from cachetools.keys import hashkey  # Import hashkey from the correct location
         logger.info("Successfully imported cachetools")
-        logger.info(f"cachetools version: {cachetools.__version__}")
+        logger.info(f"cachetools version: {TTLCache.__module__}")
 
         # Create the cache manager instance
         cache_manager = CacheManager()
