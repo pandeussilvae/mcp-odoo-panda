@@ -21,6 +21,7 @@ from odoo_mcp.resources.resource_manager import OdooResourceManager
 from odoo_mcp.tools.tool_manager import OdooToolManager
 from functools import wraps
 import argparse
+from typing import Dict, Any
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)
@@ -512,12 +513,45 @@ async def sse_endpoint(request: Request):
         while True:
             if queue:
                 msg = queue.popleft()
-                yield {"data": json.dumps(msg) + "\n\n"}
+                # Formatta il messaggio nello stesso formato JSON-RPC
+                formatted_msg = {
+                    "jsonrpc": "2.0",
+                    "id": msg.get("id"),
+                    "result": msg.get("result", {}),
+                    "error": msg.get("error")
+                }
+                yield {"data": json.dumps(formatted_msg) + "\n\n"}
             else:
+                # Invia un ping formattato come messaggio JSON-RPC
+                ping_msg = {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "result": {"type": "ping"}
+                }
                 await asyncio.sleep(10)
-                yield {"data": ": ping\n\n"}
+                yield {"data": json.dumps(ping_msg) + "\n\n"}
+    
+    # Invia il messaggio di inizializzazione
+    init_msg = _handle_stdio_request({
+        "jsonrpc": "2.0",
+        "id": str(uuid.uuid4()),
+        "method": "initialize",
+        "params": {}
+    })
+    sse_queues[session_id].append(init_msg)
     
     return EventSourceResponse(event_generator())
+
+async def send_sse_message(session_id: str, method: str, params: dict = None):
+    """Invia un messaggio SSE a una sessione specifica."""
+    if session_id in sse_queues:
+        msg = _handle_stdio_request({
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "method": method,
+            "params": params or {}
+        })
+        sse_queues[session_id].append(msg)
 
 # --- Funzioni di formattazione strumenti/risorse ---
 def format_tool(tool):
@@ -615,7 +649,7 @@ async def get_server_capabilities():
         "tools": tools_dict,
         "prompts": prompts_dict,
         "resources": resources_dict,
-        "transportTypes": ["stdio", "http", "streamable_http"],
+        "transportTypes": ["stdio", "http", "streamable_http", "sse"],
         "sampling": {},
         "roots": {
             "listChanged": True
@@ -639,9 +673,33 @@ async def mcp_messages_endpoint(request: Request):
     try:
         method = data.get("method")
         req_id = data.get("id")
+        params = data.get("params", {})
         
+        # Usa la stessa logica di gestione delle richieste di stdio
+        response = _handle_stdio_request(data)
+        return JSONResponse(response)
+        
+    except Exception as e:
+        logger.error(f"Errore nella gestione della richiesta: {e}")
+        response = {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {
+                "code": -32000,
+                "message": str(e)
+            }
+        }
+        return JSONResponse(response)
+
+def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle incoming stdio requests with the same format as http_streamable."""
+    try:
+        method = request.get("method")
+        req_id = request.get("id")
+        params = request.get("params", {})
+
         if method == "initialize":
-            capabilities = await get_server_capabilities()
+            capabilities = get_server_capabilities()
             response = {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -654,469 +712,19 @@ async def mcp_messages_endpoint(request: Request):
                     }
                 }
             }
-            logger.info(f"Sending initialize response: {response}")
-            return JSONResponse(response)
-        elif method == "invokeFunction":
-            function_name = data["params"].get("name")
-            function_params = data["params"].get("parameters", {})
-            result = await mcp.invoke_function(function_name, function_params)
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": result
-            }
-            return JSONResponse(response)
-        elif method == 'resources/list':
-            # For resources/list, return the resource templates in the correct format
-            resources = [
-                {
-                    "name": "odoo-record",  # Nome univoco della risorsa
-                    "uri": "odoo://{model}/{id}",
-                    "type": "record",
-                    "data": None,
-                    "mimeType": "application/json",
-                    "description": "Represents a single record in an Odoo model"
-                },
-                {
-                    "name": "odoo-record-list",  # Nome univoco della risorsa
-                    "uri": "odoo://{model}/list",
-                    "type": "list",
-                    "data": None,
-                    "mimeType": "application/json",
-                    "description": "Represents a list of records in an Odoo model"
-                },
-                {
-                    "name": "odoo-binary-field",  # Nome univoco della risorsa
-                    "uri": "odoo://{model}/binary/{field}/{id}",
-                    "type": "binary",
-                    "data": None,
-                    "mimeType": "application/octet-stream",
-                    "description": "Represents a binary field value from an Odoo record"
-                }
-            ]
-            
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "resources": resources
-                }
-            }
-            logger.info(f"Sending resources/list response: {response}")
-            return JSONResponse(response)
-        elif method == 'tools/list':
-            # Ottieni i tools registrati come array
-            tools_list = [
-                {
-                    "name": "odoo_login",
-                    "description": odoo_login.__doc__ or "Login to Odoo server",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "username": {"type": "string", "description": "Odoo username"},
-                            "password": {"type": "string", "description": "Odoo password"},
-                            "database": {"type": "string", "description": "Odoo database name"},
-                            "odoo_url": {"type": "string", "description": "Odoo server URL"}
-                        }
-                    }
-                },
-                {
-                    "name": "odoo_list_models",
-                    "description": odoo_list_models.__doc__ or "List all available Odoo models",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {}
-                    }
-                },
-                {
-                    "name": "odoo_search_read",
-                    "description": odoo_search_read.__doc__ or "Search and read records from an Odoo model",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "domain": {"type": "array", "description": "Search domain"},
-                            "fields": {"type": "array", "description": "Fields to read"},
-                            "limit": {"type": "integer", "description": "Maximum number of records"},
-                            "offset": {"type": "integer", "description": "Number of records to skip"},
-                            "context": {"type": "object", "description": "Additional context"}
-                        },
-                        "required": ["model", "domain", "fields"]
-                    }
-                },
-                {
-                    "name": "odoo_read",
-                    "description": odoo_read.__doc__ or "Read specific records from an Odoo model",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "ids": {"type": "array", "description": "Record IDs to read"},
-                            "fields": {"type": "array", "description": "Fields to read"},
-                            "context": {"type": "object", "description": "Additional context"}
-                        },
-                        "required": ["model", "ids", "fields"]
-                    }
-                },
-                {
-                    "name": "odoo_create",
-                    "description": odoo_create.__doc__ or "Create a new record in an Odoo model",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "values": {"type": "object", "description": "Values for the new record"},
-                            "context": {"type": "object", "description": "Additional context"}
-                        },
-                        "required": ["model", "values"]
-                    }
-                },
-                {
-                    "name": "odoo_write",
-                    "description": odoo_write.__doc__ or "Update existing records in an Odoo model",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "ids": {"type": "array", "description": "Record IDs to update"},
-                            "values": {"type": "object", "description": "Values to update"},
-                            "context": {"type": "object", "description": "Additional context"}
-                        },
-                        "required": ["model", "ids", "values"]
-                    }
-                },
-                {
-                    "name": "odoo_unlink",
-                    "description": odoo_unlink.__doc__ or "Delete records from an Odoo model",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "ids": {"type": "array", "description": "Record IDs to delete"},
-                            "context": {"type": "object", "description": "Additional context"}
-                        },
-                        "required": ["model", "ids"]
-                    }
-                },
-                {
-                    "name": "odoo_call_method",
-                    "description": odoo_call_method.__doc__ or "Call a custom method on an Odoo model",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "method": {"type": "string", "description": "Method name to call"},
-                            "args": {"type": "array", "description": "Positional arguments"},
-                            "kwargs": {"type": "object", "description": "Keyword arguments"},
-                            "context": {"type": "object", "description": "Additional context"}
-                        },
-                        "required": ["model", "method"]
-                    }
-                }
-            ]
-            
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "tools": tools_list
-                }
-            }
-            logger.info(f"Sending tools/list response: {response}")
-            return JSONResponse(response)
-        elif method == 'tools/call':
-            tool_name = data["params"].get("name")
-            arguments = data["params"].get("arguments", {})
-            progress_token = data["params"].get("_meta", {}).get("progressToken")
-            
-            if not tool_name:
-                return JSONResponse({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {
-                        "code": -32602,
-                        "message": "Invalid params: missing tool name"
-                    }
-                })
-            
-            try:
-                logger.info(f"Calling tool {tool_name} with arguments: {arguments}")
-                
-                # Mappa dei tools disponibili
-                tools_map = {
-                    "odoo_login": odoo_login,
-                    "odoo_list_models": odoo_list_models,
-                    "odoo_search_read": odoo_search_read,
-                    "odoo_read": odoo_read,
-                    "odoo_create": odoo_create,
-                    "odoo_write": odoo_write,
-                    "odoo_unlink": odoo_unlink,
-                    "odoo_call_method": odoo_call_method
-                }
-                
-                if tool_name not in tools_map:
-                    return JSONResponse({
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "error": {
-                            "code": -32601,
-                            "message": f"Tool not found: {tool_name}"
-                        }
-                    })
-                
-                # Esegui il tool
-                tool_func = tools_map[tool_name]
-                result = await tool_func(**arguments)
-                
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "value": result,
-                        "_meta": {
-                            "progressToken": progress_token
-                        }
-                    }
-                }
-                
-                logger.info(f"Tool {tool_name} execution result: {response}")
-                return JSONResponse(response)
-                
-            except Exception as e:
-                logger.error(f"Error executing tool {tool_name}: {e}")
-                return JSONResponse({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {
-                        "code": -32000,
-                        "message": f"Error executing tool: {str(e)}"
-                    }
-                })
-        elif method == 'resources/read':
-            uri = data["params"].get("uri")
-            if not uri:
-                return JSONResponse({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {
-                        "code": -32602,
-                        "message": "Invalid params: missing uri"
-                    }
-                })
-            
-            try:
-                # Estrai le informazioni dall'URI
-                if "{model}" in uri or "{id}" in uri:
-                    # Se l'URI contiene placeholder, restituisci un template vuoto
-                    response = {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "result": {
-                            "resource": {
-                                "name": "odoo-record",
-                                "uri": uri,
-                                "type": "record",
-                                "data": None,
-                                "mimeType": "application/json",
-                                "description": "Template for Odoo record"
-                            },
-                            "contents": []  # Array vuoto per template
-                        }
-                    }
-                else:
-                    # Estrai model e id dall'URI
-                    # Formato atteso: odoo://model/id
-                    parts = uri.replace("odoo://", "").split("/")
-                    if len(parts) != 2:
-                        raise ValueError(f"Invalid URI format: {uri}")
-                    
-                    model = parts[0]
-                    record_id = int(parts[1])
-                    
-                    # Leggi il record da Odoo
-                    record = await odoo.execute_kw(
-                        model=model,
-                        method="read",
-                        args=[[record_id]],
-                        kwargs={}
-                    )
-                    
-                    if not record:
-                        raise ValueError(f"Record not found: {uri}")
-                    
-                    # Crea il contenuto come array di stringhe
-                    contents = []
-                    for field, value in record[0].items():
-                        contents.append(f"{field}: {value}")
-                    
-                    response = {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "result": {
-                            "resource": {
-                                "name": "odoo-record",
-                                "uri": uri,
-                                "type": "record",
-                                "data": record[0],
-                                "mimeType": "application/json",
-                                "description": f"Odoo record from {model}"
-                            },
-                            "contents": contents  # Array di stringhe con i contenuti del record
-                        }
-                    }
-                
-                logger.info(f"Sending resources/read response: {response}")
-                return JSONResponse(response)
-                
-            except Exception as e:
-                logger.error(f"Error reading resource: {e}")
-                return JSONResponse({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {
-                        "code": -32000,
-                        "message": f"Error reading resource: {str(e)}"
-                    }
-                })
-        elif method == 'resources/templates/list':
-            # For resources/templates/list, return our defined templates
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "resourceTemplates": RESOURCE_TEMPLATES
-                }
-            }
-            logger.info(f"Sending resources/templates/list response: {response}")
-            return JSONResponse(response)
-        elif method == 'prompts/list':
-            # Lista dei prompt disponibili
-            prompts_list = [
-                {
-                    "name": "analyze_record",
-                    "description": "Analyze an Odoo record and provide insights",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "id": {"type": "integer", "description": "Record ID"}
-                        },
-                        "required": ["model", "id"]
-                    }
-                },
-                {
-                    "name": "create_record",
-                    "description": "Generate a prompt to create a new Odoo record",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "values": {"type": "object", "description": "Values for the new record"}
-                        },
-                        "required": ["model", "values"]
-                    }
-                },
-                {
-                    "name": "update_record",
-                    "description": "Generate a prompt to update an existing Odoo record",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "id": {"type": "integer", "description": "Record ID"},
-                            "values": {"type": "object", "description": "Values to update"}
-                        },
-                        "required": ["model", "id", "values"]
-                    }
-                }
-            ]
-            
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "prompts": prompts_list
-                }
-            }
-            logger.info(f"Sending prompts/list response: {response}")
-            return JSONResponse(response)
-        elif method == 'prompts/call':
-            prompt_name = data["params"].get("name")
-            arguments = data["params"].get("arguments", {})
-            progress_token = data["params"].get("_meta", {}).get("progressToken")
-            
+            return response
+        elif method == "prompts/get":
+            prompt_name = params.get("name")
             if not prompt_name:
-                return JSONResponse({
+                return {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "error": {
                         "code": -32602,
                         "message": "Invalid params: missing prompt name"
                     }
-                })
-            
-            try:
-                logger.info(f"Calling prompt {prompt_name} with arguments: {arguments}")
-                
-                # Mappa dei prompt disponibili
-                prompts_map = {
-                    "analyze_record": analyze_record,
-                    "create_record": create_record,
-                    "update_record": update_record
                 }
-                
-                if prompt_name not in prompts_map:
-                    return JSONResponse({
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "error": {
-                            "code": -32601,
-                            "message": f"Prompt not found: {prompt_name}"
-                        }
-                    })
-                
-                # Esegui il prompt
-                prompt_func = prompts_map[prompt_name]
-                result = await prompt_func(**arguments)
-                
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "value": result,
-                        "_meta": {
-                            "progressToken": progress_token
-                        }
-                    }
-                }
-                
-                logger.info(f"Prompt {prompt_name} execution result: {response}")
-                return JSONResponse(response)
-                
-            except Exception as e:
-                logger.error(f"Error executing prompt {prompt_name}: {e}")
-                return JSONResponse({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {
-                        "code": -32000,
-                        "message": f"Error executing prompt: {str(e)}"
-                    }
-                })
-        elif method == 'prompts/get':
-            prompt_name = data["params"].get("name")
             
-            if not prompt_name:
-                return JSONResponse({
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {
-                        "code": -32602,
-                        "message": "Invalid params: missing prompt name"
-                    }
-                })
-            
-            # Definizione dei prompt disponibili
             prompts = {
                 "analyze_record": {
                     "name": "analyze_record",
@@ -1158,14 +766,14 @@ async def mcp_messages_endpoint(request: Request):
             }
             
             if prompt_name not in prompts:
-                return JSONResponse({
+                return {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "error": {
                         "code": -32601,
                         "message": f"Prompt not found: {prompt_name}"
                     }
-                })
+                }
             
             response = {
                 "jsonrpc": "2.0",
@@ -1181,18 +789,72 @@ async def mcp_messages_endpoint(request: Request):
                     }]
                 }
             }
+            return response
+        elif method == "tools/call":
+            tool_name = params.get("name")
+            arguments = params.get("arguments", {})
+            progress_token = params.get("_meta", {}).get("progressToken")
             
-            logger.info(f"Sending prompts/get response for {prompt_name}: {response}")
-            return JSONResponse(response)
-        elif method == 'ping':
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {}  # Il client si aspetta un oggetto vuoto come risposta
-            }
-            return JSONResponse(response)
+            if not tool_name:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: missing tool name"
+                    }
+                }
+            
+            try:
+                # Mappa dei tools disponibili
+                tools_map = {
+                    "odoo_login": odoo_login,
+                    "odoo_list_models": odoo_list_models,
+                    "odoo_search_read": odoo_search_read,
+                    "odoo_read": odoo_read,
+                    "odoo_create": odoo_create,
+                    "odoo_write": odoo_write,
+                    "odoo_unlink": odoo_unlink,
+                    "odoo_call_method": odoo_call_method
+                }
+                
+                if tool_name not in tools_map:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"Tool not found: {tool_name}"
+                        }
+                    }
+                
+                # Esegui il tool
+                tool_func = tools_map[tool_name]
+                result = tool_func(**arguments)
+                
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "value": result,
+                        "_meta": {
+                            "progressToken": progress_token
+                        }
+                    }
+                }
+                return response
+                
+            except Exception as e:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32000,
+                        "message": f"Error executing tool: {str(e)}"
+                    }
+                }
         else:
-            response = {
+            return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "error": {
@@ -1200,10 +862,8 @@ async def mcp_messages_endpoint(request: Request):
                     "message": f"Method {method} not found"
                 }
             }
-            return JSONResponse(response)
     except Exception as e:
-        logger.error(f"Errore nella gestione della richiesta: {e}")
-        response = {
+        return {
             "jsonrpc": "2.0",
             "id": req_id,
             "error": {
@@ -1211,7 +871,6 @@ async def mcp_messages_endpoint(request: Request):
                 "message": str(e)
             }
         }
-        return JSONResponse(response)
 
 # Definisci le routes
 routes = [
@@ -1313,4 +972,6 @@ if __name__ == "__main__":
     else:
         # Modalità stdio (default)
         logger.info("Avvio server MCP in modalità stdio...")
+        mcp = FastMCP("odoo-mcp-server", transport_types=["stdio"])
+        mcp.handle_request = _handle_stdio_request
         mcp.run() 
