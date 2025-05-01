@@ -546,7 +546,11 @@ async def mcp_messages_endpoint(request: Request):
     data = await request.json()
     session_id = request.query_params.get("session_id")
     
-    if not session_id:
+    # Per streamable HTTP, generiamo un session_id se non presente
+    if not session_id and request.url.path == "/streamable":
+        session_id = str(uuid.uuid4())
+        logger.info(f"Generato nuovo session_id per streamable HTTP: {session_id}")
+    elif not session_id:
         return JSONResponse({"error": "Missing session_id"}, status_code=400)
     
     logger.info(f"Ricevuta richiesta MCP: {data} (session_id={session_id})")
