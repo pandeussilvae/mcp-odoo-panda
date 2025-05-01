@@ -73,10 +73,10 @@ def load_odoo_config(path="odoo_mcp/config/config.yaml"):
     # 2. Override con config.yaml se esiste
     if os.path.exists(path):
         logger.info(f"Caricamento configurazione da {path}")
-    with open(path, "r") as f:
+        with open(path, "r") as f:
             file_config = yaml.safe_load(f)
-            config.update(file_config)
-    else:
+            if file_config:
+                config.update(file_config)
         logger.warning(f"File {path} non trovato. Uso configurazione di base.")
     
     # 3. Override con variabili d'ambiente
@@ -471,12 +471,12 @@ async def odoo_create(model: str, values: dict, *, context: dict = {}):
     """Crea un nuovo record in un modello Odoo."""
     try:
         record_id = await odoo.execute_kw(
-        model=model,
-        method="create",
-        args=[values],
+            model=model,
+            method="create",
+            args=[values],
             kwargs={"context": context}
-    )
-    return {"id": record_id}
+        )
+        return {"id": record_id}
     except Exception as e:
         logger.error(f"Errore in create: {e}")
         raise
@@ -486,12 +486,12 @@ async def odoo_write(model: str, ids: list, values: dict, *, context: dict = {})
     """Aggiorna record esistenti in un modello Odoo."""
     try:
         result = await odoo.execute_kw(
-        model=model,
-        method="write",
-        args=[ids, values],
+            model=model,
+            method="write",
+            args=[ids, values],
             kwargs={"context": context}
-    )
-    return {"success": result}
+        )
+        return {"success": result}
     except Exception as e:
         logger.error(f"Errore in write: {e}")
         raise
@@ -501,12 +501,12 @@ async def odoo_unlink(model: str, ids: list, *, context: dict = {}):
     """Elimina record da un modello Odoo."""
     try:
         result = await odoo.execute_kw(
-        model=model,
-        method="unlink",
-        args=[ids],
+            model=model,
+            method="unlink",
+            args=[ids],
             kwargs={"context": context}
-    )
-    return {"success": result}
+        )
+        return {"success": result}
     except Exception as e:
         logger.error(f"Errore in unlink: {e}")
         raise
@@ -516,12 +516,12 @@ async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs
     """Chiama un metodo personalizzato su un modello Odoo."""
     try:
         result = await odoo.execute_kw(
-        model=model,
-        method=method,
-        args=args or [],
+            model=model,
+            method=method,
+            args=args or [],
             kwargs={**(kwargs or {}), "context": context}
-    )
-    return {"result": result}
+        )
+        return {"result": result}
     except Exception as e:
         logger.error(f"Errore in call_method: {e}")
         raise
@@ -1054,9 +1054,17 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                 # Execute the tool
                 if asyncio.iscoroutinefunction(tool_func):
                     result = await tool_func(**filtered_args)
-            else:
-                    result = tool_func(**filtered_args)
-                
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "value": result,
+                            "_meta": {
+                                "progressToken": progress_token
+                            }
+                        }
+                    }
+                result = tool_func(**filtered_args)
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
