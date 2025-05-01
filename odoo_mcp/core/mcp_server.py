@@ -34,6 +34,11 @@ from mcp_local_backup import (
     ResourceType, StdioProtocol, SSEProtocol
 )
 
+# Constants
+SERVER_NAME = "odoo-mcp-server"
+SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
+PROTOCOL_VERSION = "2024-01-01"  # Protocol version in YYYY-MM-DD format
+
 logger = logging.getLogger(__name__)
 
 class OdooMCPServer(Server):
@@ -47,7 +52,7 @@ class OdooMCPServer(Server):
         Args:
             config: The loaded server configuration dictionary.
         """
-        super().__init__("odoo-mcp-server", "1.0.0")
+        super().__init__(SERVER_NAME, SERVER_VERSION)
         self.config = config
         self.protocol_type = config.get('protocol', 'xmlrpc').lower()
         self.connection_type = config.get('connection_type', 'stdio').lower()
@@ -729,7 +734,7 @@ class OdooMCPServer(Server):
                 response = {
                     'jsonrpc': '2.0',
                     'result': {
-                        'protocolVersion': '2024-11-05',
+                        'protocolVersion': PROTOCOL_VERSION,
                         'serverInfo': {
                             'name': server_info.name,
                             'version': server_info.version
