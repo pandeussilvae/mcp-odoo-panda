@@ -334,6 +334,36 @@ def create_mcp_instance(transport_types):
         }
     )
 
+def parse_odoo_uri(uri: str) -> tuple:
+    """Parse an Odoo URI into its components."""
+    if not uri.startswith("odoo://"):
+        raise ValueError("Invalid URI scheme - must start with odoo://")
+    
+    # Remove the scheme
+    path = uri[7:]  # len("odoo://") == 7
+    parts = path.split("/")
+    
+    if len(parts) < 2:
+        raise ValueError("Invalid URI format - must contain at least model")
+    
+    model = parts[0]
+    
+    if len(parts) == 2:
+        if parts[1] == "list":
+            return model, "list", None
+        try:
+            id = int(parts[1])
+            return model, "record", id
+        except ValueError:
+            if parts[1] == "list":
+                return model, "list", None
+            raise ValueError("Invalid record ID")
+    
+    if len(parts) == 4 and parts[1] == "binary":
+        return model, "binary", {"field": parts[2], "id": int(parts[3])}
+    
+    raise ValueError("Invalid URI format")
+
 # Initialize MCP instance based on transport type
 def initialize_mcp(transport_type):
     """Initialize MCP with appropriate transport types."""
@@ -354,7 +384,34 @@ def initialize_mcp(transport_type):
             req_id = request.get("id")
             params = request.get("params", {})
 
-            if method == "tools/call":
+            if method == "initialize":
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "protocolVersion": "2024-01-01",
+                        "capabilities": {
+                            "tools": {
+                                "listChanged": True,
+                                "tools": TOOLS
+                            },
+                            "prompts": {
+                                "listChanged": True,
+                                "prompts": PROMPTS
+                            },
+                            "resources": {
+                                "listChanged": True,
+                                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES}
+                            }
+                        },
+                        "serverInfo": {
+                            "name": "odoo-mcp-server",
+                            "version": "1.6.0"
+                        }
+                    }
+                }
+
+            elif method == "tools/call":
                 tool_name = params.get("name")
                 arguments = params.get("arguments", {})
                 progress_token = params.get("_meta", {}).get("progressToken")
@@ -370,9 +427,17 @@ def initialize_mcp(transport_type):
                     }
 
                 try:
-                    # Get the tool function from the global namespace
-                    tool_func = globals()[tool_name]
-                    result = await tool_func(**arguments) if asyncio.iscoroutinefunction(tool_func) else tool_func(**arguments)
+                    if tool_name == "odoo_list_models":
+                        result = await odoo.execute_kw(
+                            model="ir.model",
+                            method="search_read",
+                            args=[[], ["model", "name"]],
+                            kwargs={}
+                        )
+                    else:
+                        # Get the tool function from the global namespace
+                        tool_func = globals()[tool_name]
+                        result = await tool_func(**arguments) if asyncio.iscoroutinefunction(tool_func) else tool_func(**arguments)
                     
                     return {
                         "jsonrpc": "2.0",
@@ -403,7 +468,12 @@ def initialize_mcp(transport_type):
                     if uri_template == "odoo://{model}/{id}" or uri_template == "odoo://{model}/list":
                         if argument["name"] == "model":
                             try:
-                                models = await tool_manager.list_models()
+                                models = await odoo.execute_kw(
+                                    model="ir.model",
+                                    method="search_read",
+                                    args=[[], ["model", "name"]],
+                                    kwargs={}
+                                )
                                 completions = set()
                                 for model in models:
                                     if len(completions) >= 100:
@@ -454,6 +524,73 @@ def initialize_mcp(transport_type):
                     }
                 }
 
+            elif method == "resources/read":
+                uri = params.get("uri")
+                if not uri:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32602,
+                            "message": "Missing uri parameter"
+                        }
+                    }
+
+                try:
+                    model, type, id_or_info = parse_odoo_uri(uri)
+                    
+                    if type == "list":
+                        result = await odoo.execute_kw(
+                            model=model,
+                            method="search_read",
+                            args=[[], ["name", "id"]],
+                            kwargs={"limit": 50}
+                        )
+                    elif type == "record":
+                        result = await odoo.execute_kw(
+                            model=model,
+                            method="read",
+                            args=[[id_or_info]],
+                            kwargs={}
+                        )
+                        result = result[0] if result else None
+                    else:  # binary
+                        result = await odoo.execute_kw(
+                            model=model,
+                            method="read",
+                            args=[[id_or_info["id"]], [id_or_info["field"]]],
+                            kwargs={}
+                        )
+                        result = result[0][id_or_info["field"]] if result else None
+
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "resource": {
+                                "uri": uri,
+                                "type": type,
+                                "mimeType": "application/json"
+                            },
+                            "contents": [
+                                {
+                                    "uri": uri,
+                                    "type": "text",
+                                    "text": json.dumps(result, indent=2)
+                                }
+                            ]
+                        }
+                    }
+                except Exception as e:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32000,
+                            "message": f"Error reading resource: {str(e)}"
+                        }
+                    }
+
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -479,12 +616,31 @@ def initialize_mcp(transport_type):
     @mcp.tool()
     async def odoo_login(*, username: str = None, password: str = None, database: str = None, odoo_url: str = None) -> dict:
         """Login to Odoo server."""
-        return await tool_manager.login(username=username, password=password, database=database, odoo_url=odoo_url)
+        try:
+            u = get_credential("username", username, config, "ODOO_USERNAME")
+            p = get_credential("password", password, config, "ODOO_PASSWORD")
+            db = get_credential("database", database, config, "ODOO_DATABASE")
+            url = get_credential("odoo_url", odoo_url, config, "ODOO_URL")
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+
+        try:
+            uid = await odoo.authenticate(db, u, p)
+            if not uid:
+                return {"success": False, "error": "Invalid credentials"}
+            return {"success": True, "uid": uid}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     @mcp.tool()
     async def odoo_list_models() -> list:
         """List all available Odoo models."""
-        return await tool_manager.list_models()
+        return await odoo.execute_kw(
+            model="ir.model",
+            method="search_read",
+            args=[[], ["model", "name"]],
+            kwargs={}
+        )
 
     @mcp.tool()
     def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = {}) -> list:
