@@ -692,7 +692,8 @@ async def mcp_messages_endpoint(request: Request):
                                 "data": None,
                                 "mimeType": "application/json",
                                 "description": "Template for Odoo record"
-                            }
+                            },
+                            "contents": []  # Array vuoto per template
                         }
                     }
                 else:
@@ -716,6 +717,11 @@ async def mcp_messages_endpoint(request: Request):
                     if not record:
                         raise ValueError(f"Record not found: {uri}")
                     
+                    # Crea il contenuto come array di stringhe
+                    contents = []
+                    for field, value in record[0].items():
+                        contents.append(f"{field}: {value}")
+                    
                     response = {
                         "jsonrpc": "2.0",
                         "id": req_id,
@@ -727,7 +733,8 @@ async def mcp_messages_endpoint(request: Request):
                                 "data": record[0],
                                 "mimeType": "application/json",
                                 "description": f"Odoo record from {model}"
-                            }
+                            },
+                            "contents": contents  # Array di stringhe con i contenuti del record
                         }
                     }
                 
