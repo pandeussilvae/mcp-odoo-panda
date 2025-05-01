@@ -316,44 +316,53 @@ PROMPTS = {
 SERVER_NAME = "odoo-mcp-server"
 SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
 
+class OdooMCPServer(FastMCP):
+    """Custom MCP Server implementation that ensures proper version and capabilities."""
+    
+    def __init__(self, transport_types):
+        # Define base capabilities
+        base_capabilities = {
+            "tools": {
+                "listChanged": True,
+                "tools": TOOLS
+            },
+            "prompts": {
+                "listChanged": True,
+                "prompts": PROMPTS
+            },
+            "resources": {
+                "listChanged": True,
+                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
+                "subscribe": False
+            },
+            "experimental": {}
+        }
+        
+        # Initialize parent with our specific configuration
+        super().__init__(
+            name=SERVER_NAME,
+            version=SERVER_VERSION,
+            transport_types=transport_types,
+            capabilities=base_capabilities
+        )
+        
+        # Store capabilities
+        self._capabilities = base_capabilities
+        
+        # Log initialization
+        print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
+        print(f"[DEBUG] - name: {SERVER_NAME}", file=sys.stderr)
+        print(f"[DEBUG] - version: {SERVER_VERSION}", file=sys.stderr)
+        print(f"[DEBUG] - capabilities: {json.dumps(base_capabilities, indent=2)}", file=sys.stderr)
+    
+    @property
+    def capabilities(self):
+        """Override capabilities property to ensure our values are used."""
+        return self._capabilities
+
 def create_mcp_instance(transport_types):
     """Create a FastMCP instance with all capabilities."""
-    # Define base capabilities
-    base_capabilities = {
-        "tools": {
-            "listChanged": True,
-            "tools": TOOLS
-        },
-        "prompts": {
-            "listChanged": True,
-            "prompts": PROMPTS
-        },
-        "resources": {
-            "listChanged": True,
-            "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
-            "subscribe": False
-        },
-        "experimental": {}
-    }
-    
-    # Create FastMCP instance with proper name, version and capabilities
-    mcp = FastMCP(
-        name=SERVER_NAME,
-        version=SERVER_VERSION,  # Explicitly set version
-        transport_types=transport_types,
-        capabilities=base_capabilities
-    )
-
-    # Store capabilities in the instance
-    mcp.base_capabilities = base_capabilities
-    
-    # Log initialization for debugging
-    print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
-    print(f"[DEBUG] - name: {SERVER_NAME}", file=sys.stderr)
-    print(f"[DEBUG] - version: {SERVER_VERSION}", file=sys.stderr)
-    print(f"[DEBUG] - capabilities: {json.dumps(base_capabilities, indent=2)}", file=sys.stderr)
-    
-    return mcp
+    return OdooMCPServer(transport_types)
 
 def parse_odoo_uri(uri: str) -> tuple:
     """Parse an Odoo URI into its components."""
