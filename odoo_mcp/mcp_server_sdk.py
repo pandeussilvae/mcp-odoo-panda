@@ -431,10 +431,40 @@ def initialize_mcp(transport_type):
 
     return mcp
 
-# Definisci le routes
+# HTTP endpoint handler
+async def mcp_messages_endpoint(request: Request):
+    """Handle MCP messages for HTTP/Streamable endpoints."""
+    try:
+        data = await request.json()
+        session_id = request.query_params.get("session_id")
+        
+        # For streamable HTTP, generate a session_id if not present
+        if not session_id and request.url.path == "/streamable":
+            session_id = str(uuid.uuid4())
+            logger.info(f"Generated new session_id for streamable HTTP: {session_id}")
+        elif not session_id:
+            return JSONResponse({"error": "Missing session_id"}, status_code=400)
+        
+        logger.info(f"Received MCP request: {data} (session_id={session_id})")
+        
+        # Handle the request using the MCP instance
+        response = await mcp.handle_request(data)
+        return JSONResponse(response)
+    except Exception as e:
+        logger.error(f"Error handling request: {e}")
+        return JSONResponse({
+            "jsonrpc": "2.0",
+            "id": data.get("id"),
+            "error": {
+                "code": -32000,
+                "message": str(e)
+            }
+        })
+
+# Define routes
 routes = [
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
-    Route("/streamable", mcp_messages_endpoint, methods=["POST"]),  # Endpoint per Streamable HTTP
+    Route("/streamable", mcp_messages_endpoint, methods=["POST"]),  # Endpoint for Streamable HTTP
 ]
 
 app = Starlette(debug=True, routes=routes)
