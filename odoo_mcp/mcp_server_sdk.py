@@ -852,6 +852,41 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
             }
         }
 
+async def mcp_messages_endpoint(request: Request):
+    """Endpoint per la gestione dei messaggi MCP."""
+    data = await request.json()
+    session_id = request.query_params.get("session_id")
+    
+    # Per streamable HTTP, generiamo un session_id se non presente
+    if not session_id and request.url.path == "/streamable":
+        session_id = str(uuid.uuid4())
+        logger.info(f"Generato nuovo session_id per streamable HTTP: {session_id}")
+    elif not session_id:
+        return JSONResponse({"error": "Missing session_id"}, status_code=400)
+    
+    logger.info(f"Ricevuta richiesta MCP: {data} (session_id={session_id})")
+    
+    try:
+        method = data.get("method")
+        req_id = data.get("id")
+        params = data.get("params", {})
+        
+        # Usa la stessa logica di gestione delle richieste di stdio
+        response = _handle_stdio_request(data)
+        return JSONResponse(response)
+        
+    except Exception as e:
+        logger.error(f"Errore nella gestione della richiesta: {e}")
+        response = {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {
+                "code": -32000,
+                "message": str(e)
+            }
+        }
+        return JSONResponse(response)
+
 # Definisci le routes
 routes = [
     Route("/sse", endpoint=sse_endpoint),
