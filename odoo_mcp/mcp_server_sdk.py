@@ -562,21 +562,22 @@ def get_server_capabilities():
         }
     }
     
-    # Converti i resource templates in un oggetto con uriTemplate come chiavi
-    resources_dict = {}
+    # Converti i resource templates in un oggetto con uri come chiavi
+    resources_list = []
     for template in RESOURCE_TEMPLATES:
         uri = template["uriTemplate"]
-        resources_dict[uri] = {
+        resources_list.append({
+            "uri": uri,
             "name": template["name"],
             "description": template["description"],
             "type": template["type"],
             "mimeType": template["mimeType"]
-        }
+        })
     
     return {
         "tools": tools_dict,
         "prompts": prompts_dict,
-        "resources": resources_dict,
+        "resources": resources_list,
         "transportTypes": ["stdio", "http", "streamable_http", "sse"],
         "sampling": {},
         "roots": {
@@ -698,7 +699,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                     }
                 }
         elif method == "resources/list":
-            resources = list(get_server_capabilities()["resources"].values())
+            resources = list(get_server_capabilities()["resources"])
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -763,33 +764,37 @@ async def sse_endpoint(request: Request):
     session_id = request.query_params.get("session_id", str(uuid.uuid4()))
     logger.info(f"Nuova connessione SSE con session_id: {session_id}")
     
+    # Inizializza la coda per questa sessione
+    if session_id not in sse_queues:
+        sse_queues[session_id] = deque()
+    
     async def event_generator():
         queue = sse_queues[session_id]
+        
+        # Invia il messaggio di inizializzazione
+        init_request = {
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "method": "initialize",
+            "params": {}
+        }
+        init_response = handle_request(init_request, "sse")
+        yield {"data": json.dumps(init_response) + "\n\n"}
+        
         while True:
             if queue:
                 msg = queue.popleft()
-                # Processa il messaggio usando lo stesso handler
                 response = handle_request(msg, "sse")
                 yield {"data": json.dumps(response) + "\n\n"}
             else:
                 # Invia un ping formattato come messaggio JSON-RPC
                 ping_msg = {
                     "jsonrpc": "2.0",
-                    "id": None,
+                    "id": str(uuid.uuid4()),
                     "result": {"type": "ping"}
                 }
                 await asyncio.sleep(10)
                 yield {"data": json.dumps(ping_msg) + "\n\n"}
-    
-    # Invia il messaggio di inizializzazione
-    init_request = {
-        "jsonrpc": "2.0",
-        "id": str(uuid.uuid4()),
-        "method": "initialize",
-        "params": {}
-    }
-    init_response = handle_request(init_request, "sse")
-    sse_queues[session_id].append(init_response)
     
     return EventSourceResponse(event_generator())
 
