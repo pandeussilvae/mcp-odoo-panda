@@ -1103,6 +1103,80 @@ async def mcp_messages_endpoint(request: Request):
                         "message": f"Error executing prompt: {str(e)}"
                     }
                 })
+        elif method == 'prompts/get':
+            prompt_name = data["params"].get("name")
+            
+            if not prompt_name:
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: missing prompt name"
+                    }
+                })
+            
+            # Definizione dei prompt disponibili
+            prompts = {
+                "analyze_record": {
+                    "name": "analyze_record",
+                    "description": "Analyze an Odoo record and provide insights",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "id": {"type": "integer", "description": "Record ID"}
+                        },
+                        "required": ["model", "id"]
+                    }
+                },
+                "create_record": {
+                    "name": "create_record",
+                    "description": "Generate a prompt to create a new Odoo record",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "values": {"type": "object", "description": "Values for the new record"}
+                        },
+                        "required": ["model", "values"]
+                    }
+                },
+                "update_record": {
+                    "name": "update_record",
+                    "description": "Generate a prompt to update an existing Odoo record",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "id": {"type": "integer", "description": "Record ID"},
+                            "values": {"type": "object", "description": "Values to update"}
+                        },
+                        "required": ["model", "id", "values"]
+                    }
+                }
+            }
+            
+            if prompt_name not in prompts:
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32601,
+                        "message": f"Prompt not found: {prompt_name}"
+                    }
+                })
+            
+            response = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "prompt": prompts[prompt_name]
+                }
+            }
+            
+            logger.info(f"Sending prompts/get response for {prompt_name}: {response}")
+            return JSONResponse(response)
         elif method == 'ping':
             response = {
                 "jsonrpc": "2.0",
