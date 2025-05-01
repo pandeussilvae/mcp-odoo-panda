@@ -411,7 +411,36 @@ def initialize_mcp(transport_type):
                     }
                 }
 
-            elif method == "tools/call":
+            # Get authentication info
+            try:
+                uid = odoo.global_uid
+                password = odoo.global_password
+                if not uid or not password:
+                    # Try to authenticate with default credentials
+                    username = get_credential("username", None, config, "ODOO_USERNAME")
+                    password = get_credential("password", None, config, "ODOO_PASSWORD")
+                    database = get_credential("database", None, config, "ODOO_DATABASE")
+                    uid = await odoo.authenticate(database, username, password)
+                    if not uid:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "error": {
+                                "code": -32000,
+                                "message": "Authentication required. Please call odoo_login first."
+                            }
+                        }
+            except Exception as e:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32000,
+                        "message": f"Authentication error: {str(e)}"
+                    }
+                }
+
+            if method == "tools/call":
                 tool_name = params.get("name")
                 arguments = params.get("arguments", {})
                 progress_token = params.get("_meta", {}).get("progressToken")
@@ -432,7 +461,9 @@ def initialize_mcp(transport_type):
                             model="ir.model",
                             method="search_read",
                             args=[[], ["model", "name"]],
-                            kwargs={}
+                            kwargs={},
+                            uid=uid,
+                            password=password
                         )
                     else:
                         # Get the tool function from the global namespace
@@ -472,7 +503,9 @@ def initialize_mcp(transport_type):
                                     model="ir.model",
                                     method="search_read",
                                     args=[[], ["model", "name"]],
-                                    kwargs={}
+                                    kwargs={},
+                                    uid=uid,
+                                    password=password
                                 )
                                 completions = set()
                                 for model in models:
@@ -544,14 +577,18 @@ def initialize_mcp(transport_type):
                             model=model,
                             method="search_read",
                             args=[[], ["name", "id"]],
-                            kwargs={"limit": 50}
+                            kwargs={"limit": 50},
+                            uid=uid,
+                            password=password
                         )
                     elif type == "record":
                         result = await odoo.execute_kw(
                             model=model,
                             method="read",
                             args=[[id_or_info]],
-                            kwargs={}
+                            kwargs={},
+                            uid=uid,
+                            password=password
                         )
                         result = result[0] if result else None
                     else:  # binary
@@ -559,7 +596,9 @@ def initialize_mcp(transport_type):
                             model=model,
                             method="read",
                             args=[[id_or_info["id"]], [id_or_info["field"]]],
-                            kwargs={}
+                            kwargs={},
+                            uid=uid,
+                            password=password
                         )
                         result = result[0][id_or_info["field"]] if result else None
 
@@ -628,6 +667,8 @@ def initialize_mcp(transport_type):
             uid = await odoo.authenticate(db, u, p)
             if not uid:
                 return {"success": False, "error": "Invalid credentials"}
+            odoo.global_uid = uid
+            odoo.global_password = p
             return {"success": True, "uid": uid}
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -635,11 +676,16 @@ def initialize_mcp(transport_type):
     @mcp.tool()
     async def odoo_list_models() -> list:
         """List all available Odoo models."""
+        if not hasattr(odoo, 'global_uid') or not hasattr(odoo, 'global_password'):
+            raise Exception("Authentication required. Please call odoo_login first.")
+        
         return await odoo.execute_kw(
             model="ir.model",
             method="search_read",
             args=[[], ["model", "name"]],
-            kwargs={}
+            kwargs={},
+            uid=odoo.global_uid,
+            password=odoo.global_password
         )
 
     @mcp.tool()
