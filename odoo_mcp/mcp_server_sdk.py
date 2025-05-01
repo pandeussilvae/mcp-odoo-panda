@@ -20,6 +20,7 @@ from odoo_mcp.prompts.prompt_manager import OdooPromptManager
 from odoo_mcp.resources.resource_manager import OdooResourceManager
 from odoo_mcp.tools.tool_manager import OdooToolManager
 from functools import wraps
+import argparse
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)
@@ -57,27 +58,42 @@ def get_credential(key, runtime_value=None, config=None, env_var=None):
 # Carica la configurazione Odoo
 def load_odoo_config(path="odoo_mcp/config/config.yaml"):
     """Carica la configurazione dal file YAML."""
-    if not os.path.exists(path):
-        # Se il file config.yaml non esiste, prova a usare config.example.yaml
-        example_path = "odoo_mcp/config/config.example.yaml"
-        if os.path.exists(example_path):
-            logger.warning(f"File {path} non trovato. Uso {example_path} come template.")
-            with open(example_path, "r") as f:
-                config = yaml.safe_load(f)
-        else:
-            raise FileNotFoundError(f"Nessun file di configurazione trovato in {path} o {example_path}")
-    else:
-        with open(path, "r") as f:
+    config = {}
+    
+    # 1. Carica config.example.yaml come base
+    example_path = "odoo_mcp/config/config.example.yaml"
+    if os.path.exists(example_path):
+        logger.info(f"Caricamento configurazione base da {example_path}")
+        with open(example_path, "r") as f:
             config = yaml.safe_load(f)
-
-    # Override con variabili di ambiente
-    config["odoo_url"] = os.environ.get("ODOO_URL", config.get("odoo_url"))
-    config["database"] = os.environ.get("ODOO_DATABASE", config.get("database"))
-    config["username"] = os.environ.get("ODOO_USERNAME", config.get("username"))
-    config["api_key"] = os.environ.get("ODOO_PASSWORD", config.get("api_key"))
-    config["connection_type"] = os.environ.get("MCP_CONNECTION_TYPE", config.get("connection_type", "stdio"))
-    config["transport_type"] = os.environ.get("MCP_TRANSPORT_TYPE", config.get("transport_type", "stdio"))
-
+    else:
+        logger.warning(f"File {example_path} non trovato. Uso configurazione di default.")
+    
+    # 2. Override con config.yaml se esiste
+    if os.path.exists(path):
+        logger.info(f"Caricamento configurazione da {path}")
+        with open(path, "r") as f:
+            file_config = yaml.safe_load(f)
+            config.update(file_config)
+    else:
+        logger.warning(f"File {path} non trovato. Uso configurazione di base.")
+    
+    # 3. Override con variabili d'ambiente
+    env_config = {
+        "odoo_url": os.environ.get("ODOO_URL"),
+        "database": os.environ.get("ODOO_DATABASE"),
+        "username": os.environ.get("ODOO_USERNAME"),
+        "api_key": os.environ.get("ODOO_PASSWORD"),
+        "connection_type": os.environ.get("MCP_CONNECTION_TYPE"),
+        "transport_type": os.environ.get("MCP_TRANSPORT_TYPE")
+    }
+    
+    # Aggiorna solo i valori presenti nelle variabili d'ambiente
+    for key, value in env_config.items():
+        if value is not None:
+            logger.info(f"Override configurazione da variabile d'ambiente: {key}")
+            config[key] = value
+    
     # Configura il logging
     if "logging" in config:
         log_config = config["logging"]
@@ -85,7 +101,7 @@ def load_odoo_config(path="odoo_mcp/config/config.yaml"):
             level=getattr(logging, log_config.get("level", "INFO")),
             format=log_config.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )
-
+    
     return config
 
 def create_odoo_handler(config):
@@ -681,9 +697,28 @@ def register_tool(name: str, description: str, parameters: dict):
 
 if __name__ == "__main__":
     # Determina la modalità di esecuzione
-    is_sse = connection_type == "sse" and transport_type == "sse"
+    parser = argparse.ArgumentParser(description='MCP Server for Odoo')
+    parser.add_argument('mode', nargs='?', default='stdio',
+                      choices=['stdio', 'http', 'streamable_http', 'sse'],
+                      help='Server mode (stdio, http, streamable_http, or sse)')
+    args = parser.parse_args()
     
-    if is_sse:
+    # Carica la configurazione
+    config = load_odoo_config()
+    
+    # 4. Override con argomenti da linea di comando (massima priorità)
+    if args.mode != 'stdio':
+        logger.info(f"Override configurazione da argomento da linea di comando: transport_type={args.mode}")
+        config['transport_type'] = args.mode
+        if args.mode == 'sse':
+            config['connection_type'] = 'sse'
+    
+    connection_type = config.get("connection_type", "stdio")
+    transport_type = config.get("transport_type", "stdio")
+    
+    logger.info(f"Configurazione finale: connection_type={connection_type}, transport_type={transport_type}")
+    
+    if connection_type == "sse" and transport_type == "sse":
         # Modalità SSE
         import uvicorn
         logger.info("Avvio server MCP in modalità SSE...")
