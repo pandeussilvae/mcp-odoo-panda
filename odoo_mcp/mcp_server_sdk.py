@@ -954,10 +954,7 @@ async def mcp_messages_endpoint(request: Request):
             response = {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "result": {
-                    "pong": True,
-                    "serverTime": int(time.time() * 1000)  # Timestamp in millisecondi
-                }
+                "result": {}  # Il client si aspetta un oggetto vuoto come risposta
             }
             return JSONResponse(response)
         else:
