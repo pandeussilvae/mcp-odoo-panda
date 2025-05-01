@@ -706,7 +706,7 @@ def parse_odoo_uri(uri: str) -> tuple:
     
     raise ValueError("Invalid URI format")
 
-def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str, Any]:
+async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str, Any]:
     """Gestore centralizzato delle richieste per tutti i protocolli."""
     try:
         method = request.get("method")
@@ -877,7 +877,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                 
                 if type == "list":
                     # Return list of records
-                    result = asyncio.run(odoo_search_read(model, [], ["name", "id"]))
+                    result = await odoo_search_read(model=model, domain=[], fields=["name", "id"])
                     return {
                         "jsonrpc": "2.0",
                         "id": req_id,
@@ -898,7 +898,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                     }
                 elif type == "record":
                     # Return single record
-                    result = asyncio.run(odoo_read(model, [id_or_info], ["name", "id"]))
+                    result = await odoo_read(model=model, ids=[id_or_info], fields=["name", "id"])
                     if not result:
                         return {
                             "jsonrpc": "2.0",
@@ -931,7 +931,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                     # Handle binary field
                     field = id_or_info["field"]
                     record_id = id_or_info["id"]
-                    result = asyncio.run(odoo_read(model, [record_id], [field]))
+                    result = await odoo_read(model=model, ids=[record_id], fields=[field])
                     if not result:
                         return {
                             "jsonrpc": "2.0",
@@ -1015,7 +1015,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                 
                 # Execute the tool
                 if asyncio.iscoroutinefunction(tool_func):
-                    result = asyncio.run(tool_func(**filtered_args))
+                    result = await tool_func(**filtered_args)
                 else:
                     result = tool_func(**filtered_args)
                 
@@ -1048,7 +1048,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                     if argument["name"] == "model":
                         # Get list of models for completion
                         try:
-                            models = asyncio.run(odoo_list_models())
+                            models = await odoo_list_models()
                             completions = [
                                 {"label": model["model"], "detail": model["name"]}
                                 for model in models
@@ -1057,9 +1057,46 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                                 "jsonrpc": "2.0",
                                 "id": req_id,
                                 "result": {
-                                    "items": completions
+                                    "items": completions,
+                                    "completion": {
+                                        "items": completions
+                                    }
                                 }
                             }
+                        except Exception as e:
+                            return {
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "error": {
+                                    "code": -32000,
+                                    "message": f"Error getting completions: {str(e)}"
+                                }
+                            }
+                    elif argument["name"] == "id":
+                        # Get list of records for completion
+                        try:
+                            model = ref.get("model")
+                            if model:
+                                records = await odoo_search_read(
+                                    model=model,
+                                    domain=[],
+                                    fields=["name"],
+                                    limit=10
+                                )
+                                completions = [
+                                    {"label": str(record["id"]), "detail": record.get("name", "")}
+                                    for record in records
+                                ]
+                                return {
+                                    "jsonrpc": "2.0",
+                                    "id": req_id,
+                                    "result": {
+                                        "items": completions,
+                                        "completion": {
+                                            "items": completions
+                                        }
+                                    }
+                                }
                         except Exception as e:
                             return {
                                 "jsonrpc": "2.0",
@@ -1074,7 +1111,10 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "items": []
+                    "items": [],
+                    "completion": {
+                        "items": []
+                    }
                 }
             }
         else:
@@ -1096,10 +1136,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
             }
         }
 
-def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
-    """Handler per richieste stdio."""
-    return handle_request(request, "stdio")
-
+# Update the HTTP endpoint to use async
 async def mcp_messages_endpoint(request: Request):
     """Endpoint per la gestione dei messaggi MCP HTTP/Streamable."""
     data = await request.json()
@@ -1115,7 +1152,7 @@ async def mcp_messages_endpoint(request: Request):
     logger.info(f"Ricevuta richiesta MCP: {data} (session_id={session_id})")
     
     try:
-        response = handle_request(data, "http_streamable")
+        response = await handle_request(data, "http_streamable")
         return JSONResponse(response)
     except Exception as e:
         logger.error(f"Errore nella gestione della richiesta: {e}")
@@ -1128,6 +1165,16 @@ async def mcp_messages_endpoint(request: Request):
             }
         }
         return JSONResponse(response)
+
+# Update the stdio handler to use async properly
+def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
+    """Handler per richieste stdio."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(handle_request(request, "stdio"))
+    finally:
+        loop.close()
 
 # Definisci le routes
 routes = [
