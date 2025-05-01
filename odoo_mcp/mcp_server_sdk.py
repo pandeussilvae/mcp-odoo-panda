@@ -73,7 +73,7 @@ def load_odoo_config(path="odoo_mcp/config/config.yaml"):
     # 2. Override con config.yaml se esiste
     if os.path.exists(path):
         logger.info(f"Caricamento configurazione da {path}")
-        with open(path, "r") as f:
+    with open(path, "r") as f:
             file_config = yaml.safe_load(f)
             config.update(file_config)
     else:
@@ -327,7 +327,7 @@ class AsyncOdooTools:
                     model="ir.model",
                     method="search_read",
                     args=[[], ["model", "name"]],
-                    kwargs={},
+        kwargs={},
                     uid=self.uid,
                     password=self.password
                 )
@@ -356,8 +356,8 @@ class AsyncOdooTools:
                 )
             else:
                 return await self.odoo.execute_kw(
-                    model=model,
-                    method="search_read",
+        model=model,
+        method="search_read",
                     args=[domain, fields],
                     kwargs={"limit": limit, "offset": offset, "context": context or {}},
                     uid=self.uid,
@@ -420,8 +420,8 @@ class AsyncOdooTools:
                 )
             else:
                 return await self.odoo.execute_kw(
-                    model=model,
-                    method="read",
+        model=model,
+        method="read",
                     args=[ids, read_fields],
                     kwargs={"context": context or {}},
                     uid=self.uid,
@@ -471,12 +471,12 @@ async def odoo_create(model: str, values: dict, *, context: dict = {}):
     """Crea un nuovo record in un modello Odoo."""
     try:
         record_id = await odoo.execute_kw(
-            model=model,
-            method="create",
-            args=[values],
+        model=model,
+        method="create",
+        args=[values],
             kwargs={"context": context}
-        )
-        return {"id": record_id}
+    )
+    return {"id": record_id}
     except Exception as e:
         logger.error(f"Errore in create: {e}")
         raise
@@ -486,12 +486,12 @@ async def odoo_write(model: str, ids: list, values: dict, *, context: dict = {})
     """Aggiorna record esistenti in un modello Odoo."""
     try:
         result = await odoo.execute_kw(
-            model=model,
-            method="write",
-            args=[ids, values],
+        model=model,
+        method="write",
+        args=[ids, values],
             kwargs={"context": context}
-        )
-        return {"success": result}
+    )
+    return {"success": result}
     except Exception as e:
         logger.error(f"Errore in write: {e}")
         raise
@@ -501,12 +501,12 @@ async def odoo_unlink(model: str, ids: list, *, context: dict = {}):
     """Elimina record da un modello Odoo."""
     try:
         result = await odoo.execute_kw(
-            model=model,
-            method="unlink",
-            args=[ids],
+        model=model,
+        method="unlink",
+        args=[ids],
             kwargs={"context": context}
-        )
-        return {"success": result}
+    )
+    return {"success": result}
     except Exception as e:
         logger.error(f"Errore in unlink: {e}")
         raise
@@ -516,12 +516,12 @@ async def odoo_call_method(model: str, method: str, *, args: list = None, kwargs
     """Chiama un metodo personalizzato su un modello Odoo."""
     try:
         result = await odoo.execute_kw(
-            model=model,
-            method=method,
-            args=args or [],
+        model=model,
+        method=method,
+        args=args or [],
             kwargs={**(kwargs or {}), "context": context}
-        )
-        return {"result": result}
+    )
+    return {"result": result}
     except Exception as e:
         logger.error(f"Errore in call_method: {e}")
         raise
@@ -904,51 +904,18 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                 }
             
             try:
-                # Se è un template URI, restituisci il template
-                if uri in get_server_capabilities()["resources"]["resources"]:
-                    resource = get_server_capabilities()["resources"]["resources"][uri]
-                    return {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "result": {
-                            "resource": resource,
-                            "contents": [
-                                {
-                                    "uri": uri,
-                                    "type": "text",
-                                    "text": f"Template for {resource['name']}: {resource['description']}"
-                                }
-                            ]
-                        }
-                    }
-                
                 # Parse the URI
                 model, type, id_or_info = parse_odoo_uri(uri)
                 
-                if type == "list":
-                    # Return list of records
-                    result = await odoo_search_read(model=model, domain=[], fields=["name", "id"])
-                    return {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "result": {
-                            "resource": {
-                                "uri": uri,
-                                "type": "list",
-                                "mimeType": "application/json"
-                            },
-                            "contents": [
-                                {
-                                    "uri": uri,
-                                    "type": "text",
-                                    "text": json.dumps(result, indent=2)
-                                }
-                            ]
-                        }
-                    }
-                elif type == "record":
-                    # Return single record
-                    result = await odoo_read(model=model, ids=[id_or_info], fields=["name", "id"])
+                if type == "record":
+                    # Return single record with timeout
+                    async with asyncio.timeout(5):  # 5 second timeout
+                        result = await odoo_read(
+                            model=model,
+                            ids=[id_or_info],
+                            fields=["name", "id"]
+                        )
+                    
                     if not result:
                         return {
                             "jsonrpc": "2.0",
@@ -973,6 +940,27 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                                     "uri": uri,
                                     "type": "text",
                                     "text": json.dumps(result[0], indent=2)
+                                }
+                            ]
+                        }
+                    }
+                elif type == "list":
+                    # Return list of records
+                    result = await odoo_search_read(model=model, domain=[], fields=["name", "id"])
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "resource": {
+                                "uri": uri,
+                                "type": "list",
+                                "mimeType": "application/json"
+                            },
+                            "contents": [
+                                {
+                                    "uri": uri,
+                                    "type": "text",
+                                    "text": json.dumps(result, indent=2)
                                 }
                             ]
                         }
@@ -1066,7 +1054,7 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                 # Execute the tool
                 if asyncio.iscoroutinefunction(tool_func):
                     result = await tool_func(**filtered_args)
-                else:
+            else:
                     result = tool_func(**filtered_args)
                 
                 return {
@@ -1136,26 +1124,41 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                         # Get list of records for completion
                         try:
                             model = ref.get("model")
-                            if model:
+                            if not model:
+                                # If no model provided, return empty completion
+                                return {
+                                    "jsonrpc": "2.0",
+                                    "id": req_id,
+                                    "result": {
+                                        "completion": {
+                                            "values": [],
+                                            "isComplete": True
+                                        }
+                                    }
+                                }
+                            
+                            # Get records with a timeout
+                            async with asyncio.timeout(5):  # 5 second timeout
                                 records = await odoo_search_read(
                                     model=model,
                                     domain=[],
                                     fields=["name", "id"],
                                     limit=50  # Limit to 50 records
                                 )
-                                # Use a set to ensure unique values
-                                completions = set()
-                                # Add records until we reach the limit
-                                for record in records:
-                                    if len(completions) >= 100:
-                                        break
-                                    record_id = str(record["id"])
-                                    record_name = str(record.get("name", ""))
-                                    # Only add if we haven't reached the limit
-                                    if len(completions) < 98:  # Leave room for both values
-                                        completions.add(record_id)
-                                        if record_name:
-                                            completions.add(record_name)
+                            
+                            # Use a set to ensure unique values
+                            completions = set()
+                            # Add records until we reach the limit
+                            for record in records:
+                                if len(completions) >= 100:
+                                    break
+                                record_id = str(record["id"])
+                                record_name = str(record.get("name", ""))
+                                # Only add if we haven't reached the limit
+                                if len(completions) < 98:  # Leave room for both values
+                                    completions.add(record_id)
+                                    if record_name:
+                                        completions.add(record_name)
                         
                             return {
                                 "jsonrpc": "2.0",
@@ -1165,6 +1168,16 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                                         "values": list(completions),
                                         "isComplete": True
                                     }
+                                }
+                            }
+                        except asyncio.TimeoutError:
+                            logger.error(f"Timeout getting record completions for model {model}")
+                            return {
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "error": {
+                                    "code": -32000,
+                                    "message": "Request timed out while getting record completions"
                                 }
                             }
                         except Exception as e:
