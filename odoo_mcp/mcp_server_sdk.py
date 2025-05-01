@@ -950,6 +950,16 @@ async def mcp_messages_endpoint(request: Request):
             }
             logger.info(f"Sending resources/templates/list response: {response}")
             return JSONResponse(response)
+        elif method == 'ping':
+            response = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "pong": True,
+                    "serverTime": int(time.time() * 1000)  # Timestamp in millisecondi
+                }
+            }
+            return JSONResponse(response)
         else:
             response = {
                 "jsonrpc": "2.0",
