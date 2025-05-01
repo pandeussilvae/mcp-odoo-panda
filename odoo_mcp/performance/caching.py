@@ -12,9 +12,20 @@ cache_manager = None
 CACHE_TYPE = 'functools'
 
 def make_key(*args, **kwargs):
-    """Simple key function that creates a cache key from arguments."""
-    key = (args, tuple(sorted(kwargs.items())))
-    return hash(key)
+    """Create a cache key from arguments."""
+    # Convert args to a tuple of hashable items
+    key_parts = []
+    for arg in args:
+        if isinstance(arg, (list, dict)):
+            key_parts.append(str(arg))
+        else:
+            key_parts.append(arg)
+    
+    # Sort kwargs items to ensure consistent key generation
+    sorted_kwargs = tuple(sorted((k, str(v) if isinstance(v, (list, dict)) else v) 
+                               for k, v in kwargs.items()))
+    
+    return hash((tuple(key_parts), sorted_kwargs))
 
 class DummyCacheManager:
     """A dummy CacheManager used when cachetools is not installed."""
@@ -55,6 +66,7 @@ class CacheManager:
             raise
 
     def configure(self, config: Dict[str, Any]):
+        """Configure the cache manager settings."""
         cache_config = config.get('cache', {})
         self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
         self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
@@ -94,7 +106,6 @@ def initialize_cache_manager():
         logger.info("Attempting to import cachetools...")
         logger.info(f"Python path: {sys.path}")
         from cachetools import TTLCache, cached
-        from cachetools.keys import hashkey  # Import hashkey from the correct location
         logger.info("Successfully imported cachetools")
         logger.info(f"cachetools version: {TTLCache.__module__}")
 
