@@ -664,13 +664,22 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
         params = request.get("params", {})
 
         if method == "initialize":
-            # Esegui get_server_capabilities in modo sincrono
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # Esegui get_server_capabilities usando il loop esistente
             try:
-                capabilities = loop.run_until_complete(get_server_capabilities())
-            finally:
-                loop.close()
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Se il loop è già in esecuzione, esegui in modo sincrono
+                    capabilities = get_server_capabilities()
+                else:
+                    capabilities = loop.run_until_complete(get_server_capabilities())
+            except RuntimeError:
+                # Fallback se non c'è un loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    capabilities = loop.run_until_complete(get_server_capabilities())
+                finally:
+                    loop.close()
             
             response = {
                 "jsonrpc": "2.0",
@@ -800,15 +809,26 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                         }
                     }
                 
-                # Esegui il tool in modo sincrono se è una coroutine
+                # Esegui il tool usando il loop esistente
                 tool_func = tools_map[tool_name]
                 if asyncio.iscoroutinefunction(tool_func):
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
                     try:
-                        result = loop.run_until_complete(tool_func(**arguments))
-                    finally:
-                        loop.close()
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Se il loop è già in esecuzione, crea una task
+                            result = asyncio.create_task(tool_func(**arguments))
+                            # Attendi il risultato
+                            result = asyncio.get_event_loop().run_until_complete(result)
+                        else:
+                            result = loop.run_until_complete(tool_func(**arguments))
+                    except RuntimeError:
+                        # Fallback se non c'è un loop
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            result = loop.run_until_complete(tool_func(**arguments))
+                        finally:
+                            loop.close()
                 else:
                     result = tool_func(**arguments)
                 
@@ -867,10 +887,6 @@ async def mcp_messages_endpoint(request: Request):
     logger.info(f"Ricevuta richiesta MCP: {data} (session_id={session_id})")
     
     try:
-        method = data.get("method")
-        req_id = data.get("id")
-        params = data.get("params", {})
-        
         # Usa la stessa logica di gestione delle richieste di stdio
         response = _handle_stdio_request(data)
         return JSONResponse(response)
@@ -879,7 +895,7 @@ async def mcp_messages_endpoint(request: Request):
         logger.error(f"Errore nella gestione della richiesta: {e}")
         response = {
             "jsonrpc": "2.0",
-            "id": req_id,
+            "id": data.get("id"),
             "error": {
                 "code": -32000,
                 "message": str(e)
