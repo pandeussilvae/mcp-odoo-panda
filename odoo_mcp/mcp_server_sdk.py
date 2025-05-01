@@ -373,8 +373,30 @@ def initialize_mcp(transport_type):
         transport_types.append("streamable_http")
     elif transport_type == "http":
         transport_types.append("http")
+
+    # Create capabilities object
+    capabilities = {
+        "tools": {
+            "listChanged": True,
+            "tools": TOOLS
+        },
+        "prompts": {
+            "listChanged": True,
+            "prompts": PROMPTS
+        },
+        "resources": {
+            "listChanged": True,
+            "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
+            "subscribe": False
+        },
+        "experimental": {}
+    }
     
-    mcp = create_mcp_instance(transport_types)
+    mcp = FastMCP(
+        "odoo-mcp-server",
+        transport_types=transport_types,
+        capabilities=capabilities
+    )
 
     # Register request handler
     async def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -390,20 +412,7 @@ def initialize_mcp(transport_type):
                     "id": req_id,
                     "result": {
                         "protocolVersion": "2024-01-01",
-                        "capabilities": {
-                            "tools": {
-                                "listChanged": True,
-                                "tools": TOOLS
-                            },
-                            "prompts": {
-                                "listChanged": True,
-                                "prompts": PROMPTS
-                            },
-                            "resources": {
-                                "listChanged": True,
-                                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES}
-                            }
-                        },
+                        "capabilities": capabilities,
                         "serverInfo": {
                             "name": "odoo-mcp-server",
                             "version": "1.6.0"
@@ -413,8 +422,8 @@ def initialize_mcp(transport_type):
 
             # Get authentication info
             try:
-                uid = odoo.global_uid
-                password = odoo.global_password
+                uid = getattr(odoo, 'global_uid', None)
+                password = getattr(odoo, 'global_password', None)
                 if not uid or not password:
                     # Try to authenticate with default credentials
                     username = get_credential("username", None, config, "ODOO_USERNAME")
@@ -430,6 +439,8 @@ def initialize_mcp(transport_type):
                                 "message": "Authentication required. Please call odoo_login first."
                             }
                         }
+                    odoo.global_uid = uid
+                    odoo.global_password = password
             except Exception as e:
                 return {
                     "jsonrpc": "2.0",
@@ -490,60 +501,31 @@ def initialize_mcp(transport_type):
                         }
                     }
 
-            elif method == "completion/complete":
-                argument = params.get("argument", {})
-                ref = params.get("ref", {})
-                
-                if ref.get("type") == "ref/resource":
-                    uri_template = ref.get("uri")
-                    if uri_template == "odoo://{model}/{id}" or uri_template == "odoo://{model}/list":
-                        if argument["name"] == "model":
-                            try:
-                                models = await odoo.execute_kw(
-                                    model="ir.model",
-                                    method="search_read",
-                                    args=[[], ["model", "name"]],
-                                    kwargs={},
-                                    uid=uid,
-                                    password=password
-                                )
-                                completions = set()
-                                for model in models:
-                                    if len(completions) >= 100:
-                                        break
-                                    model_name = str(model["model"])
-                                    display_name = str(model["name"])
-                                    if len(completions) < 98:
-                                        completions.add(model_name)
-                                        completions.add(display_name)
-                                
-                                return {
-                                    "jsonrpc": "2.0",
-                                    "id": req_id,
-                                    "result": {
-                                        "completion": {
-                                            "values": list(completions),
-                                            "isComplete": True
-                                        }
-                                    }
-                                }
-                            except Exception as e:
-                                logger.error(f"Error getting model completions: {e}")
-                                return {
-                                    "jsonrpc": "2.0",
-                                    "id": req_id,
-                                    "error": {
-                                        "code": -32000,
-                                        "message": f"Error getting model completions: {str(e)}"
-                                    }
-                                }
-
             elif method == "resources/list":
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {
                         "resources": [
+                            {
+                                "uri": template["uriTemplate"],
+                                "uriTemplate": template["uriTemplate"],
+                                "name": template["name"],
+                                "description": template["description"],
+                                "type": template["type"],
+                                "mimeType": template["mimeType"]
+                            }
+                            for template in RESOURCE_TEMPLATES
+                        ]
+                    }
+                }
+
+            elif method == "resources/templates/list":
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "resourceTemplates": [
                             {
                                 "uri": template["uriTemplate"],
                                 "uriTemplate": template["uriTemplate"],
