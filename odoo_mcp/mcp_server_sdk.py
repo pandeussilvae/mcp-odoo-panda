@@ -616,6 +616,22 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                     }
                 }
             }
+        elif method == "tools/list":
+            tools = get_server_capabilities()["tools"]["tools"]
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": name,
+                            "description": tool["description"],
+                            "inputSchema": tool["inputSchema"]
+                        }
+                        for name, tool in tools.items()
+                    ]
+                }
+            }
         elif method == "prompts/list":
             prompts = get_server_capabilities()["prompts"]["prompts"]
             return {
@@ -665,7 +681,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                         "description": prompt["description"],
                         "inputSchema": prompt["inputSchema"]
                     },
-                    "contents": [
+                    "messages": [
                         {
                             "role": "assistant",
                             "content": {
@@ -728,18 +744,26 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
             
             # Estrai model e id dall'URI
             try:
+                # Se è un template URI, restituisci il template
+                if uri in get_server_capabilities()["resources"]["resources"]:
+                    resource = get_server_capabilities()["resources"]["resources"][uri]
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "resource": resource,
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": f"Template for {resource['name']}: {resource['description']}"
+                                }
+                            ]
+                        }
+                    }
+                
                 # Esempio: odoo://res.partner/1
                 parts = uri.split("/")
                 if len(parts) != 3:
-                    # Se è un template URI, restituisci il template
-                    if uri in get_server_capabilities()["resources"]["resources"]:
-                        return {
-                            "jsonrpc": "2.0",
-                            "id": req_id,
-                            "result": {
-                                "resource": get_server_capabilities()["resources"]["resources"][uri]
-                            }
-                        }
                     raise ValueError("Invalid URI format")
                 
                 model = parts[1]
@@ -764,7 +788,13 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                         "resource": {
                             "uri": uri,
                             "content": result[0]
-                        }
+                        },
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(result[0], indent=2)
+                            }
+                        ]
                     }
                 }
             except ValueError as e:
