@@ -39,6 +39,171 @@ SERVER_NAME = "odoo-mcp-server"
 SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
 PROTOCOL_VERSION = "2024-01-01"  # Protocol version in YYYY-MM-DD format
 
+# Resource Templates
+RESOURCE_TEMPLATES = [
+    {
+        "uriTemplate": "odoo://{model}/{id}",
+        "name": "Odoo Record",
+        "description": "Represents a single record in an Odoo model",
+        "type": "record",
+        "mimeType": "application/json"
+    },
+    {
+        "uriTemplate": "odoo://{model}/list",
+        "name": "Odoo Record List",
+        "description": "Represents a list of records in an Odoo model",
+        "type": "list",
+        "mimeType": "application/json"
+    },
+    {
+        "uriTemplate": "odoo://{model}/binary/{field}/{id}",
+        "name": "Odoo Binary Field",
+        "description": "Represents a binary field value from an Odoo record",
+        "type": "binary",
+        "mimeType": "application/octet-stream"
+    }
+]
+
+# Tool Definitions
+TOOLS = {
+    "odoo_search_read": {
+        "description": "Search and read records from an Odoo model",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Odoo model name"},
+                "domain": {"type": "array", "description": "Search domain"},
+                "fields": {"type": "array", "description": "Fields to read"},
+                "limit": {"type": "integer", "description": "Limit number of records"},
+                "offset": {"type": "integer", "description": "Offset for pagination"},
+                "context": {"type": "object", "description": "Context dictionary"}
+            },
+            "required": ["model"]
+        }
+    },
+    "odoo_read": {
+        "description": "Read specific records from an Odoo model",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Odoo model name"},
+                "ids": {"type": "array", "description": "Record IDs to read"},
+                "fields": {"type": "array", "description": "Fields to read"},
+                "context": {"type": "object", "description": "Context dictionary"}
+            },
+            "required": ["model", "ids"]
+        }
+    },
+    "odoo_create": {
+        "description": "Create a new record in an Odoo model",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Odoo model name"},
+                "values": {"type": "object", "description": "Values for the new record"},
+                "context": {"type": "object", "description": "Context dictionary"}
+            },
+            "required": ["model", "values"]
+        }
+    },
+    "odoo_write": {
+        "description": "Update existing records in an Odoo model",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Odoo model name"},
+                "ids": {"type": "array", "description": "Record IDs to update"},
+                "values": {"type": "object", "description": "Values to update"},
+                "context": {"type": "object", "description": "Context dictionary"}
+            },
+            "required": ["model", "ids", "values"]
+        }
+    },
+    "odoo_unlink": {
+        "description": "Delete records from an Odoo model",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Odoo model name"},
+                "ids": {"type": "array", "description": "Record IDs to delete"},
+                "context": {"type": "object", "description": "Context dictionary"}
+            },
+            "required": ["model", "ids"]
+        }
+    },
+    "odoo_call_method": {
+        "description": "Call a custom method on an Odoo model",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Odoo model name"},
+                "method": {"type": "string", "description": "Method name"},
+                "args": {"type": "array", "description": "Method arguments"},
+                "kwargs": {"type": "object", "description": "Method keyword arguments"},
+                "context": {"type": "object", "description": "Context dictionary"}
+            },
+            "required": ["model", "method"]
+        }
+    }
+}
+
+# Prompt Definitions
+PROMPTS = {
+    "analyze-record": {
+        "description": "Analyze an Odoo record and provide insights",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "uri": {"type": "string", "description": "URI of the record to analyze"}
+            },
+            "required": ["uri"]
+        }
+    },
+    "create-record": {
+        "description": "Create a new record with guided field selection",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Odoo model name"},
+                "template": {"type": "object", "description": "Optional template to pre-fill fields"}
+            },
+            "required": ["model"]
+        }
+    },
+    "update-record": {
+        "description": "Update an existing record with guided field selection",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "uri": {"type": "string", "description": "URI of the record to update"}
+            },
+            "required": ["uri"]
+        }
+    },
+    "advanced-search": {
+        "description": "Perform an advanced search with domain builder",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model": {"type": "string", "description": "Odoo model name"},
+                "fields": {"type": "array", "description": "Fields to return in results"}
+            },
+            "required": ["model"]
+        }
+    },
+    "call-method": {
+        "description": "Call a method on records with guided parameter selection",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "uri": {"type": "string", "description": "URI of the record or model name"},
+                "method": {"type": "string", "description": "Name of the method to call"}
+            },
+            "required": ["uri", "method"]
+        }
+    }
+}
+
 logger = logging.getLogger(__name__)
 
 class OdooMCPServer(Server):
@@ -117,48 +282,16 @@ class OdooMCPServer(Server):
         return {
             "resources": {
                 "listChanged": True,
-                "templates": [
-                    {
-                        "uriTemplate": "odoo://{model}/{id}",
-                        "name": "Odoo Record",
-                        "description": "Represents a single record in an Odoo model.",
-                        "mimeType": "application/json"
-                    },
-                    {
-                        "uriTemplate": "odoo://{model}/list",
-                        "name": "Odoo Record List",
-                        "description": "Represents a list of records in an Odoo model.",
-                        "mimeType": "application/json"
-                    },
-                    {
-                        "uriTemplate": "odoo://{model}/binary/{field}/{id}",
-                        "name": "Odoo Binary Field",
-                        "description": "Represents a binary field value from an Odoo record.",
-                        "mimeType": "application/octet-stream"
-                    }
-                ],
+                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
                 "subscribe": False
             },
             "tools": {
                 "listChanged": True,
-                "tools": {
-                    "odoo_search_read": {},
-                    "odoo_read": {},
-                    "odoo_create": {},
-                    "odoo_write": {},
-                    "odoo_unlink": {},
-                    "odoo_call_method": {}
-                }
+                "tools": TOOLS
             },
             "prompts": {
                 "listChanged": True,
-                "prompts": {
-                    "analyze-record": {},
-                    "create-record": {},
-                    "update-record": {},
-                    "advanced-search": {},
-                    "call-method": {}
-                }
+                "prompts": PROMPTS
             },
             "experimental": {}
         }
