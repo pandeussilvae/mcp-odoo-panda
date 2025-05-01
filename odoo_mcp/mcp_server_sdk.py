@@ -398,12 +398,14 @@ def initialize_mcp(transport_type):
             params = request.get("params", {})
 
             if method == "initialize":
+                client_info = ClientInfo.from_dict(params)
+                server_info = run_async(mcp.initialize(client_info))
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {
                         "protocolVersion": "2024-01-01",
-                        "capabilities": mcp.base_capabilities,
+                        "capabilities": server_info.capabilities,
                         "serverInfo": {
                             "name": SERVER_NAME,
                             "version": SERVER_VERSION

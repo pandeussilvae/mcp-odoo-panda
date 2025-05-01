@@ -111,6 +111,7 @@ class OdooMCPServer(Server):
         """Get server capabilities."""
         return {
             "resources": {
+                "listChanged": True,
                 "templates": [
                     {
                         "uriTemplate": "odoo://{model}/{id}",
@@ -130,30 +131,38 @@ class OdooMCPServer(Server):
                         "description": "Represents a binary field value from an Odoo record.",
                         "mimeType": "application/octet-stream"
                     }
-                ]
+                ],
+                "subscribe": False
             },
             "tools": {
-                "odoo_search_read": {},
-                "odoo_read": {},
-                "odoo_create": {},
-                "odoo_write": {},
-                "odoo_unlink": {},
-                "odoo_call_method": {}
+                "listChanged": True,
+                "tools": {
+                    "odoo_search_read": {},
+                    "odoo_read": {},
+                    "odoo_create": {},
+                    "odoo_write": {},
+                    "odoo_unlink": {},
+                    "odoo_call_method": {}
+                }
             },
             "prompts": {
-                "analyze-record": {},
-                "create-record": {},
-                "update-record": {},
-                "advanced-search": {},
-                "call-method": {}
-            }
+                "listChanged": True,
+                "prompts": {
+                    "analyze-record": {},
+                    "create-record": {},
+                    "update-record": {},
+                    "advanced-search": {},
+                    "call-method": {}
+                }
+            },
+            "experimental": {}
         }
 
     async def initialize(self, client_info: ClientInfo) -> ServerInfo:
         """Handle initialization request."""
         return ServerInfo(
-            name="odoo-mcp-server",
-            version="1.0.0",
+            name=self.name,
+            version=self.version,
             capabilities=self.capabilities
         )
 
