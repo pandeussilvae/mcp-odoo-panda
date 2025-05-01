@@ -503,79 +503,7 @@ def call_method(model: str, method: str, *, args: list = None, kwargs: dict = No
 # --- Gestione code SSE per sessione ---
 sse_queues = defaultdict(deque)  # session_id -> queue di messaggi
 
-async def sse_endpoint(request: Request):
-    """Endpoint SSE per la comunicazione in tempo reale."""
-    session_id = request.query_params.get("session_id", str(uuid.uuid4()))
-    logger.info(f"Nuova connessione SSE con session_id: {session_id}")
-    
-    async def event_generator():
-        queue = sse_queues[session_id]
-        while True:
-            if queue:
-                msg = queue.popleft()
-                # Formatta il messaggio nello stesso formato JSON-RPC
-                formatted_msg = {
-                    "jsonrpc": "2.0",
-                    "id": msg.get("id"),
-                    "result": msg.get("result", {}),
-                    "error": msg.get("error")
-                }
-                yield {"data": json.dumps(formatted_msg) + "\n\n"}
-            else:
-                # Invia un ping formattato come messaggio JSON-RPC
-                ping_msg = {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "result": {"type": "ping"}
-                }
-                await asyncio.sleep(10)
-                yield {"data": json.dumps(ping_msg) + "\n\n"}
-    
-    # Invia il messaggio di inizializzazione
-    init_msg = _handle_stdio_request({
-        "jsonrpc": "2.0",
-        "id": str(uuid.uuid4()),
-        "method": "initialize",
-        "params": {}
-    })
-    sse_queues[session_id].append(init_msg)
-    
-    return EventSourceResponse(event_generator())
-
-async def send_sse_message(session_id: str, method: str, params: dict = None):
-    """Invia un messaggio SSE a una sessione specifica."""
-    if session_id in sse_queues:
-        msg = _handle_stdio_request({
-            "jsonrpc": "2.0",
-            "id": str(uuid.uuid4()),
-            "method": method,
-            "params": params or {}
-        })
-        sse_queues[session_id].append(msg)
-
-# --- Funzioni di formattazione strumenti/risorse ---
-def format_tool(tool):
-    return {
-        "name": tool.name if hasattr(tool, 'name') else str(tool),
-        "description": tool.description if hasattr(tool, 'description') else "",
-        "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
-    }
-
-def format_resource(resource):
-    if isinstance(resource, types.Resource):
-        return {
-            "uri": resource.uri,
-            "mimeType": resource.mimeType,
-            "description": getattr(resource, 'description', "")
-        }
-    return {
-        "uri": resource.get("uri", ""),
-        "mimeType": resource.get("mimeType", "application/json"),
-        "description": resource.get("description", "")
-    }
-
-# Aggiungi questa funzione per ottenere le capabilities del server
-async def get_server_capabilities():
+def get_server_capabilities():
     """Ottiene le capabilities del server MCP."""
     # Ottieni i tools registrati come array
     tools_dict = {}
@@ -656,32 +584,16 @@ async def get_server_capabilities():
         }
     }
 
-def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
-    """Handle incoming stdio requests with the same format as http_streamable."""
+def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str, Any]:
+    """Gestore centralizzato delle richieste per tutti i protocolli."""
     try:
         method = request.get("method")
         req_id = request.get("id")
         params = request.get("params", {})
 
         if method == "initialize":
-            # Esegui get_server_capabilities usando il loop esistente
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Se il loop è già in esecuzione, esegui in modo sincrono
-                    capabilities = get_server_capabilities()
-                else:
-                    capabilities = loop.run_until_complete(get_server_capabilities())
-            except RuntimeError:
-                # Fallback se non c'è un loop
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    capabilities = loop.run_until_complete(get_server_capabilities())
-                finally:
-                    loop.close()
-            
-            response = {
+            capabilities = get_server_capabilities()
+            return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
@@ -693,7 +605,6 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 }
             }
-            return response
         elif method == "prompts/get":
             prompt_name = params.get("name")
             if not prompt_name:
@@ -706,46 +617,7 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 }
             
-            prompts = {
-                "analyze_record": {
-                    "name": "analyze_record",
-                    "description": "Analyze an Odoo record and provide insights",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "id": {"type": "integer", "description": "Record ID"}
-                        },
-                        "required": ["model", "id"]
-                    }
-                },
-                "create_record": {
-                    "name": "create_record",
-                    "description": "Generate a prompt to create a new Odoo record",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "values": {"type": "object", "description": "Values for the new record"}
-                        },
-                        "required": ["model", "values"]
-                    }
-                },
-                "update_record": {
-                    "name": "update_record",
-                    "description": "Generate a prompt to update an existing Odoo record",
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Odoo model name"},
-                            "id": {"type": "integer", "description": "Record ID"},
-                            "values": {"type": "object", "description": "Values to update"}
-                        },
-                        "required": ["model", "id", "values"]
-                    }
-                }
-            }
-            
+            prompts = get_server_capabilities()["prompts"]
             if prompt_name not in prompts:
                 return {
                     "jsonrpc": "2.0",
@@ -756,7 +628,7 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 }
             
-            response = {
+            return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
@@ -770,7 +642,6 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     }]
                 }
             }
-            return response
         elif method == "tools/call":
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
@@ -787,18 +658,7 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                 }
             
             try:
-                # Mappa dei tools disponibili
-                tools_map = {
-                    "odoo_login": odoo_login,
-                    "odoo_list_models": odoo_list_models,
-                    "odoo_search_read": odoo_search_read,
-                    "odoo_read": odoo_read,
-                    "odoo_create": odoo_create,
-                    "odoo_write": odoo_write,
-                    "odoo_unlink": odoo_unlink,
-                    "odoo_call_method": odoo_call_method
-                }
-                
+                tools_map = get_server_capabilities()["tools"]
                 if tool_name not in tools_map:
                     return {
                         "jsonrpc": "2.0",
@@ -809,30 +669,15 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                         }
                     }
                 
-                # Esegui il tool usando il loop esistente
-                tool_func = tools_map[tool_name]
+                # Esegui il tool
+                tool_func = globals()[tool_name]
                 if asyncio.iscoroutinefunction(tool_func):
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            # Se il loop è già in esecuzione, crea una task
-                            result = asyncio.create_task(tool_func(**arguments))
-                            # Attendi il risultato
-                            result = asyncio.get_event_loop().run_until_complete(result)
-                        else:
-                            result = loop.run_until_complete(tool_func(**arguments))
-                    except RuntimeError:
-                        # Fallback se non c'è un loop
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            result = loop.run_until_complete(tool_func(**arguments))
-                        finally:
-                            loop.close()
+                    loop = asyncio.get_event_loop()
+                    result = loop.run_until_complete(tool_func(**arguments))
                 else:
                     result = tool_func(**arguments)
                 
-                response = {
+                return {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {
@@ -842,7 +687,6 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                         }
                     }
                 }
-                return response
                 
             except Exception as e:
                 return {
@@ -853,6 +697,15 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
                         "message": f"Error executing tool: {str(e)}"
                     }
                 }
+        elif method == "resources/list":
+            resources = list(get_server_capabilities()["resources"].values())
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "resources": resources
+                }
+            }
         else:
             return {
                 "jsonrpc": "2.0",
@@ -872,8 +725,12 @@ def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
             }
         }
 
+def _handle_stdio_request(request: Dict[str, Any]) -> Dict[str, Any]:
+    """Handler per richieste stdio."""
+    return handle_request(request, "stdio")
+
 async def mcp_messages_endpoint(request: Request):
-    """Endpoint per la gestione dei messaggi MCP."""
+    """Endpoint per la gestione dei messaggi MCP HTTP/Streamable."""
     data = await request.json()
     session_id = request.query_params.get("session_id")
     
@@ -887,10 +744,8 @@ async def mcp_messages_endpoint(request: Request):
     logger.info(f"Ricevuta richiesta MCP: {data} (session_id={session_id})")
     
     try:
-        # Usa la stessa logica di gestione delle richieste di stdio
-        response = _handle_stdio_request(data)
+        response = handle_request(data, "http_streamable")
         return JSONResponse(response)
-        
     except Exception as e:
         logger.error(f"Errore nella gestione della richiesta: {e}")
         response = {
@@ -902,6 +757,41 @@ async def mcp_messages_endpoint(request: Request):
             }
         }
         return JSONResponse(response)
+
+async def sse_endpoint(request: Request):
+    """Endpoint SSE per la comunicazione in tempo reale."""
+    session_id = request.query_params.get("session_id", str(uuid.uuid4()))
+    logger.info(f"Nuova connessione SSE con session_id: {session_id}")
+    
+    async def event_generator():
+        queue = sse_queues[session_id]
+        while True:
+            if queue:
+                msg = queue.popleft()
+                # Processa il messaggio usando lo stesso handler
+                response = handle_request(msg, "sse")
+                yield {"data": json.dumps(response) + "\n\n"}
+            else:
+                # Invia un ping formattato come messaggio JSON-RPC
+                ping_msg = {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "result": {"type": "ping"}
+                }
+                await asyncio.sleep(10)
+                yield {"data": json.dumps(ping_msg) + "\n\n"}
+    
+    # Invia il messaggio di inizializzazione
+    init_request = {
+        "jsonrpc": "2.0",
+        "id": str(uuid.uuid4()),
+        "method": "initialize",
+        "params": {}
+    }
+    init_response = handle_request(init_request, "sse")
+    sse_queues[session_id].append(init_response)
+    
+    return EventSourceResponse(event_generator())
 
 # Definisci le routes
 routes = [
