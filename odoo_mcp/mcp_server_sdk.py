@@ -544,12 +544,24 @@ def format_resource(resource):
 async def get_server_capabilities():
     """Ottiene le capabilities del server MCP."""
     tools = []
-    for tool_name in mcp._tools:
-        tool = mcp._tools[tool_name]
+    
+    # Ottieni i tools registrati usando gli attributi corretti di FastMCP
+    registered_tools = {
+        "odoo_login": odoo_login,
+        "odoo_list_models": odoo_list_models,
+        "odoo_search_read": odoo_search_read,
+        "odoo_read": odoo_read,
+        "odoo_create": odoo_create,
+        "odoo_write": odoo_write,
+        "odoo_unlink": odoo_unlink,
+        "odoo_call_method": odoo_call_method
+    }
+    
+    for tool_name, tool_func in registered_tools.items():
         tools.append({
             "name": tool_name,
-            "description": tool.__doc__ or "",
-            "parameters": getattr(tool, 'inputSchema', {})
+            "description": tool_func.__doc__ or "",
+            "parameters": getattr(tool_func, 'inputSchema', {})
         })
     
     return {
