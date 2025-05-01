@@ -521,7 +521,22 @@ def get_server_capabilities():
     for tool_name, tool_func in registered_tools.items():
         tools_dict[tool_name] = {
             "description": tool_func.__doc__ or "",
-            "inputSchema": getattr(tool_func, 'inputSchema', {})
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model name"},
+                    "id": {"type": "integer", "description": "Record ID"},
+                    "values": {"type": "object", "description": "Values for the record"},
+                    "domain": {"type": "array", "description": "Search domain"},
+                    "fields": {"type": "array", "description": "Fields to read"},
+                    "limit": {"type": "integer", "description": "Limit number of records"},
+                    "offset": {"type": "integer", "description": "Offset for pagination"},
+                    "context": {"type": "object", "description": "Context dictionary"},
+                    "method": {"type": "string", "description": "Method name"},
+                    "args": {"type": "array", "description": "Method arguments"},
+                    "kwargs": {"type": "object", "description": "Method keyword arguments"}
+                }
+            }
         }
     
     # Ottieni i prompt registrati
@@ -754,6 +769,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                             "resource": resource,
                             "contents": [
                                 {
+                                    "uri": uri,
                                     "type": "text",
                                     "text": f"Template for {resource['name']}: {resource['description']}"
                                 }
@@ -791,6 +807,7 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                         },
                         "contents": [
                             {
+                                "uri": uri,
                                 "type": "text",
                                 "text": json.dumps(result[0], indent=2)
                             }
