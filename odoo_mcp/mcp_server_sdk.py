@@ -345,17 +345,146 @@ def initialize_mcp(transport_type):
         transport_types.append("http")
     
     mcp = create_mcp_instance(transport_types)
+
+    # Register request handler
+    async def handle_request(request: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle MCP requests."""
+        try:
+            method = request.get("method")
+            req_id = request.get("id")
+            params = request.get("params", {})
+
+            if method == "tools/call":
+                tool_name = params.get("name")
+                arguments = params.get("arguments", {})
+                progress_token = params.get("_meta", {}).get("progressToken")
+
+                if tool_name not in TOOLS:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"Tool not found: {tool_name}"
+                        }
+                    }
+
+                try:
+                    # Get the tool function from the global namespace
+                    tool_func = globals()[tool_name]
+                    result = await tool_func(**arguments) if asyncio.iscoroutinefunction(tool_func) else tool_func(**arguments)
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "value": result,
+                            "_meta": {
+                                "progressToken": progress_token
+                            }
+                        }
+                    }
+                except Exception as e:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32000,
+                            "message": f"Error executing tool {tool_name}: {str(e)}"
+                        }
+                    }
+
+            elif method == "completion/complete":
+                argument = params.get("argument", {})
+                ref = params.get("ref", {})
+                
+                if ref.get("type") == "ref/resource":
+                    uri_template = ref.get("uri")
+                    if uri_template == "odoo://{model}/{id}" or uri_template == "odoo://{model}/list":
+                        if argument["name"] == "model":
+                            try:
+                                models = await tool_manager.list_models()
+                                completions = set()
+                                for model in models:
+                                    if len(completions) >= 100:
+                                        break
+                                    model_name = str(model["model"])
+                                    display_name = str(model["name"])
+                                    if len(completions) < 98:
+                                        completions.add(model_name)
+                                        completions.add(display_name)
+                                
+                                return {
+                                    "jsonrpc": "2.0",
+                                    "id": req_id,
+                                    "result": {
+                                        "completion": {
+                                            "values": list(completions),
+                                            "isComplete": True
+                                        }
+                                    }
+                                }
+                            except Exception as e:
+                                logger.error(f"Error getting model completions: {e}")
+                                return {
+                                    "jsonrpc": "2.0",
+                                    "id": req_id,
+                                    "error": {
+                                        "code": -32000,
+                                        "message": f"Error getting model completions: {str(e)}"
+                                    }
+                                }
+
+            elif method == "resources/list":
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "resources": [
+                            {
+                                "uri": template["uriTemplate"],
+                                "uriTemplate": template["uriTemplate"],
+                                "name": template["name"],
+                                "description": template["description"],
+                                "type": template["type"],
+                                "mimeType": template["mimeType"]
+                            }
+                            for template in RESOURCE_TEMPLATES
+                        ]
+                    }
+                }
+
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {
+                    "code": -32601,
+                    "message": f"Method {method} not found"
+                }
+            }
+
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {
+                    "code": -32000,
+                    "message": str(e)
+                }
+            }
+
+    mcp.handle_request = handle_request
     
     # Register all tools
     @mcp.tool()
-    def odoo_login(*, username: str = None, password: str = None, database: str = None, odoo_url: str = None) -> dict:
+    async def odoo_login(*, username: str = None, password: str = None, database: str = None, odoo_url: str = None) -> dict:
         """Login to Odoo server."""
-        return sync_async(odoo_login)(username=username, password=password, database=database, odoo_url=odoo_url)
+        return await tool_manager.login(username=username, password=password, database=database, odoo_url=odoo_url)
 
     @mcp.tool()
-    def odoo_list_models() -> list:
+    async def odoo_list_models() -> list:
         """List all available Odoo models."""
-        return sync_async(odoo_list_models)()
+        return await tool_manager.list_models()
 
     @mcp.tool()
     def odoo_search_read(model: str, domain: list, fields: list, *, limit: int = 80, offset: int = 0, context: dict = {}) -> list:
