@@ -321,7 +321,7 @@ class OdooMCPServer(FastMCP):
     
     def __init__(self, transport_types):
         # Define base capabilities
-        base_capabilities = {
+        self._base_capabilities = {
             "tools": {
                 "listChanged": True,
                 "tools": TOOLS
@@ -343,22 +343,60 @@ class OdooMCPServer(FastMCP):
             name=SERVER_NAME,
             version=SERVER_VERSION,
             transport_types=transport_types,
-            capabilities=base_capabilities
+            capabilities=self._base_capabilities
         )
-        
-        # Store capabilities
-        self._capabilities = base_capabilities
         
         # Log initialization
         print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
         print(f"[DEBUG] - name: {SERVER_NAME}", file=sys.stderr)
         print(f"[DEBUG] - version: {SERVER_VERSION}", file=sys.stderr)
-        print(f"[DEBUG] - capabilities: {json.dumps(base_capabilities, indent=2)}", file=sys.stderr)
+        print(f"[DEBUG] - capabilities: {json.dumps(self._base_capabilities, indent=2)}", file=sys.stderr)
     
     @property
     def capabilities(self):
         """Override capabilities property to ensure our values are used."""
-        return self._capabilities
+        return self._base_capabilities
+
+    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Override handle_request to ensure proper version and capabilities in responses."""
+        try:
+            if not isinstance(request, dict):
+                raise ValueError("Request must be a JSON object")
+
+            method = request.get('method')
+            params = request.get('params', {})
+            request_id = request.get('id')
+
+            # Handle initialization specially
+            if method == 'initialize':
+                print(f"[DEBUG] Handling initialize request", file=sys.stderr)
+                response = {
+                    'jsonrpc': '2.0',
+                    'result': {
+                        'protocolVersion': PROTOCOL_VERSION,
+                        'serverInfo': {
+                            'name': SERVER_NAME,
+                            'version': SERVER_VERSION
+                        },
+                        'capabilities': self._base_capabilities
+                    },
+                    'id': request_id
+                }
+                print(f"[DEBUG] Initialize response: {json.dumps(response, indent=2)}", file=sys.stderr)
+                return response
+
+            # For all other requests, use parent implementation
+            return await super().handle_request(request)
+        except Exception as e:
+            print(f"[ERROR] Error handling request: {e}", file=sys.stderr)
+            return {
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                },
+                'id': request_id
+            }
 
 def create_mcp_instance(transport_types):
     """Create a FastMCP instance with all capabilities."""
