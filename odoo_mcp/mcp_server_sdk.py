@@ -648,9 +648,11 @@ async def mcp_messages_endpoint(request: Request):
         }
         return JSONResponse(response)
 
+# Definisci le routes
 routes = [
     Route("/sse", endpoint=sse_endpoint),
     Route("/messages", mcp_messages_endpoint, methods=["POST"]),
+    Route("/streamable", mcp_messages_endpoint, methods=["POST"]),  # Endpoint per Streamable HTTP
 ]
 
 app = Starlette(debug=True, routes=routes)
@@ -733,10 +735,15 @@ if __name__ == "__main__":
         import uvicorn
         logger.info(f"Avvio server MCP in modalità {transport_type}...")
         http_config = config.get("http", {})
+        host = http_config.get("host", "0.0.0.0")
+        port = http_config.get("port", 8080)
+        logger.info(f"Server in ascolto su http://{host}:{port}")
+        if transport_type == "streamable_http":
+            logger.info("Streamable HTTP disponibile su http://{host}:{port}/streamable")
         uvicorn.run(
             app, 
-            host=http_config.get("host", "0.0.0.0"), 
-            port=http_config.get("port", 8080)
+            host=host,
+            port=port
         )
     else:
         # Modalità stdio (default)
