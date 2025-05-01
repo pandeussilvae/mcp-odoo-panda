@@ -32,16 +32,23 @@ class DummyCacheManager:
     def __init__(self, default_maxsize: int = 128, default_ttl: int = 300):
         self.default_maxsize = default_maxsize
         self.default_ttl = default_ttl
+        self.odoo_read_cache = None  # Initialize to None since we don't use it in dummy mode
         logger.info(f"DummyCacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
 
     def configure(self, config: Dict[str, Any]):
         """Configure the dummy cache manager settings."""
-        cache_config = config.get('cache', {})
-        self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
-        self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
-        logger.info(f"DummyCacheManager configured: maxsize={self.default_maxsize}, ttl={self.default_ttl}s")
+        try:
+            cache_config = config.get('cache', {})
+            self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
+            self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
+            logger.info(f"DummyCacheManager configured: maxsize={self.default_maxsize}, ttl={self.default_ttl}s")
+        except Exception as e:
+            logger.warning(f"Error configuring DummyCacheManager: {str(e)}")
+            # Keep default values if configuration fails
+            pass
 
     def get_ttl_cache_decorator(self, *args, **kwargs) -> Callable:
+        """Get a decorator that applies basic LRU caching."""
         def decorator(func: Callable) -> Callable:
             @functools.lru_cache(maxsize=self.default_maxsize)
             @functools.wraps(func)
@@ -67,11 +74,16 @@ class CacheManager:
 
     def configure(self, config: Dict[str, Any]):
         """Configure the cache manager settings."""
-        cache_config = config.get('cache', {})
-        self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
-        self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
-        self.odoo_read_cache = self.TTLCache(maxsize=self.default_maxsize, ttl=self.default_ttl)
-        logger.info(f"CacheManager configured: maxsize={self.default_maxsize}, ttl={self.default_ttl}s")
+        try:
+            cache_config = config.get('cache', {})
+            self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
+            self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
+            self.odoo_read_cache = self.TTLCache(maxsize=self.default_maxsize, ttl=self.default_ttl)
+            logger.info(f"CacheManager configured: maxsize={self.default_maxsize}, ttl={self.default_ttl}s")
+        except Exception as e:
+            logger.warning(f"Error configuring CacheManager: {str(e)}")
+            # Keep default values if configuration fails
+            pass
 
     def get_ttl_cache_decorator(self, cache_instance: Optional[Any] = None, maxsize: Optional[int] = None, ttl: Optional[int] = None) -> Callable:
         if cache_instance:
