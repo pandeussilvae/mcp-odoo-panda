@@ -386,15 +386,53 @@ class OdooMCPServer(FastMCP):
                     'result': {
                         'protocolVersion': PROTOCOL_VERSION,
                         'serverInfo': {
-                            'name': SERVER_NAME,
-                            'version': SERVER_VERSION
+                            'name': self._name,
+                            'version': self._version
                         },
-                        'capabilities': self._capabilities
+                        'capabilities': {
+                            "tools": {
+                                "listChanged": True,
+                                "tools": TOOLS
+                            },
+                            "prompts": {
+                                "listChanged": True,
+                                "prompts": {p.name: p.model_dump() for p in prompt_manager.list_prompts()}
+                            },
+                            "resources": {
+                                "listChanged": True,
+                                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
+                                "subscribe": True
+                            },
+                            "streaming": True,
+                            "sse": True,
+                            "websocket": True,
+                            "experimental": {}
+                        }
                     },
                     'id': request_id
                 }
                 print(f"[DEBUG] Initialize response: {json.dumps(response, indent=2)}", file=sys.stderr)
                 return response
+
+            # Handle resources/list
+            elif method == 'resources/list':
+                return {
+                    'jsonrpc': '2.0',
+                    'result': {
+                        'resources': [
+                            {
+                                'uri': template["uriTemplate"],
+                                'uriTemplate': template["uriTemplate"],
+                                'name': template["name"],
+                                'description': template["description"],
+                                'type': template["type"],
+                                'mimeType': template["mimeType"]
+                            }
+                            for template in RESOURCE_TEMPLATES
+                        ]
+                    },
+                    'id': request_id
+                }
 
             # For all other requests, use parent implementation
             return await super().handle_request(request)
