@@ -631,22 +631,28 @@ async def mcp_messages_endpoint(request: Request):
             # For resources/list, return the resource templates in the correct format
             resources = [
                 {
+                    "name": "odoo-record",  # Nome univoco della risorsa
                     "uri": "odoo://{model}/{id}",
                     "type": "record",
                     "data": None,
-                    "mime_type": "application/json"
+                    "mimeType": "application/json",
+                    "description": "Represents a single record in an Odoo model"
                 },
                 {
+                    "name": "odoo-record-list",  # Nome univoco della risorsa
                     "uri": "odoo://{model}/list",
                     "type": "list",
                     "data": None,
-                    "mime_type": "application/json"
+                    "mimeType": "application/json",
+                    "description": "Represents a list of records in an Odoo model"
                 },
                 {
+                    "name": "odoo-binary-field",  # Nome univoco della risorsa
                     "uri": "odoo://{model}/binary/{field}/{id}",
                     "type": "binary",
                     "data": None,
-                    "mime_type": "application/octet-stream"
+                    "mimeType": "application/octet-stream",
+                    "description": "Represents a binary field value from an Odoo record"
                 }
             ]
             
