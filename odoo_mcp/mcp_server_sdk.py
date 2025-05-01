@@ -665,6 +665,71 @@ async def mcp_messages_endpoint(request: Request):
             }
             logger.info(f"Sending resources/list response: {response}")
             return JSONResponse(response)
+        elif method == 'tools/list':
+            # Ottieni i tools registrati
+            registered_tools = {
+                "odoo_login": {
+                    "name": "odoo_login",
+                    "description": odoo_login.__doc__ or "Login to Odoo server",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "username": {"type": "string", "description": "Odoo username"},
+                            "password": {"type": "string", "description": "Odoo password"},
+                            "database": {"type": "string", "description": "Odoo database name"},
+                            "odoo_url": {"type": "string", "description": "Odoo server URL"}
+                        }
+                    }
+                },
+                "odoo_list_models": {
+                    "name": "odoo_list_models",
+                    "description": odoo_list_models.__doc__ or "List all available Odoo models",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                "odoo_search_read": {
+                    "name": "odoo_search_read",
+                    "description": odoo_search_read.__doc__ or "Search and read records from an Odoo model",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "domain": {"type": "array", "description": "Search domain"},
+                            "fields": {"type": "array", "description": "Fields to read"},
+                            "limit": {"type": "integer", "description": "Maximum number of records"},
+                            "offset": {"type": "integer", "description": "Number of records to skip"},
+                            "context": {"type": "object", "description": "Additional context"}
+                        },
+                        "required": ["model", "domain", "fields"]
+                    }
+                },
+                "odoo_read": {
+                    "name": "odoo_read",
+                    "description": odoo_read.__doc__ or "Read specific records from an Odoo model",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Odoo model name"},
+                            "ids": {"type": "array", "description": "Record IDs to read"},
+                            "fields": {"type": "array", "description": "Fields to read"},
+                            "context": {"type": "object", "description": "Additional context"}
+                        },
+                        "required": ["model", "ids", "fields"]
+                    }
+                }
+            }
+            
+            response = {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "tools": registered_tools
+                }
+            }
+            logger.info(f"Sending tools/list response: {response}")
+            return JSONResponse(response)
         elif method == 'resources/read':
             uri = data["params"].get("uri")
             if not uri:
