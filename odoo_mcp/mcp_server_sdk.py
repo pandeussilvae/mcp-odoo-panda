@@ -543,7 +543,7 @@ def format_resource(resource):
 # Aggiungi questa funzione per ottenere le capabilities del server
 async def get_server_capabilities():
     """Ottiene le capabilities del server MCP."""
-    # Converti i tools in un oggetto con i nomi come chiavi
+    # Ottieni i tools registrati come array
     tools_dict = {}
     registered_tools = {
         "odoo_login": odoo_login,
@@ -562,6 +562,44 @@ async def get_server_capabilities():
             "inputSchema": getattr(tool_func, 'inputSchema', {})
         }
     
+    # Ottieni i prompt registrati
+    prompts_dict = {
+        "analyze_record": {
+            "description": "Analyze an Odoo record and provide insights",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model name"},
+                    "id": {"type": "integer", "description": "Record ID"}
+                },
+                "required": ["model", "id"]
+            }
+        },
+        "create_record": {
+            "description": "Generate a prompt to create a new Odoo record",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model name"},
+                    "values": {"type": "object", "description": "Values for the new record"}
+                },
+                "required": ["model", "values"]
+            }
+        },
+        "update_record": {
+            "description": "Generate a prompt to update an existing Odoo record",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model name"},
+                    "id": {"type": "integer", "description": "Record ID"},
+                    "values": {"type": "object", "description": "Values to update"}
+                },
+                "required": ["model", "id", "values"]
+            }
+        }
+    }
+    
     # Converti i resource templates in un oggetto con uriTemplate come chiavi
     resources_dict = {}
     for template in RESOURCE_TEMPLATES:
@@ -575,6 +613,7 @@ async def get_server_capabilities():
     
     return {
         "tools": tools_dict,
+        "prompts": prompts_dict,
         "resources": resources_dict,
         "transportTypes": ["stdio", "http", "streamable_http"],
         "sampling": {},
