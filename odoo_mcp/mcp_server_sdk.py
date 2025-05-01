@@ -785,6 +785,74 @@ async def mcp_messages_endpoint(request: Request):
             }
             logger.info(f"Sending tools/list response: {response}")
             return JSONResponse(response)
+        elif method == 'tools/call':
+            tool_name = data["params"].get("name")
+            arguments = data["params"].get("arguments", {})
+            progress_token = data["params"].get("_meta", {}).get("progressToken")
+            
+            if not tool_name:
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: missing tool name"
+                    }
+                })
+            
+            try:
+                logger.info(f"Calling tool {tool_name} with arguments: {arguments}")
+                
+                # Mappa dei tools disponibili
+                tools_map = {
+                    "odoo_login": odoo_login,
+                    "odoo_list_models": odoo_list_models,
+                    "odoo_search_read": odoo_search_read,
+                    "odoo_read": odoo_read,
+                    "odoo_create": odoo_create,
+                    "odoo_write": odoo_write,
+                    "odoo_unlink": odoo_unlink,
+                    "odoo_call_method": odoo_call_method
+                }
+                
+                if tool_name not in tools_map:
+                    return JSONResponse({
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"Tool not found: {tool_name}"
+                        }
+                    })
+                
+                # Esegui il tool
+                tool_func = tools_map[tool_name]
+                result = await tool_func(**arguments)
+                
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "value": result,
+                        "_meta": {
+                            "progressToken": progress_token
+                        }
+                    }
+                }
+                
+                logger.info(f"Tool {tool_name} execution result: {response}")
+                return JSONResponse(response)
+                
+            except Exception as e:
+                logger.error(f"Error executing tool {tool_name}: {e}")
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32000,
+                        "message": f"Error executing tool: {str(e)}"
+                    }
+                })
         elif method == 'resources/read':
             uri = data["params"].get("uri")
             if not uri:
