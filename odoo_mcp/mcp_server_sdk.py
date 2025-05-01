@@ -617,27 +617,37 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                 }
             }
         elif method == "prompts/list":
+            prompts = get_server_capabilities()["prompts"]["prompts"]
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "prompts": list(get_server_capabilities()["prompts"]["prompts"].keys())
+                    "prompts": [
+                        {
+                            "name": name,
+                            "description": prompt["description"],
+                            "inputSchema": prompt["inputSchema"]
+                        }
+                        for name, prompt in prompts.items()
+                    ]
                 }
             }
         elif method == "resources/list":
+            resources = get_server_capabilities()["resources"]["resources"]
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "resources": list(get_server_capabilities()["resources"]["resources"].values())
+                    "resources": list(resources.values())
                 }
             }
         elif method == "resources/templates/list":
+            resources = get_server_capabilities()["resources"]["resources"]
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "resourceTemplates": list(get_server_capabilities()["resources"]["resources"].values())
+                    "resourceTemplates": list(resources.values())
                 }
             }
         elif method == "resources/read":
@@ -657,6 +667,15 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                 # Esempio: odoo://res.partner/1
                 parts = uri.split("/")
                 if len(parts) != 3:
+                    # Se è un template URI, restituisci il template
+                    if uri in get_server_capabilities()["resources"]["resources"]:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "result": {
+                                "resource": get_server_capabilities()["resources"]["resources"][uri]
+                            }
+                        }
                     raise ValueError("Invalid URI format")
                 
                 model = parts[1]
@@ -682,6 +701,15 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                             "uri": uri,
                             "content": result[0]
                         }
+                    }
+                }
+            except ValueError as e:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32603,
+                        "message": f"Error reading resource: {str(e)}"
                     }
                 }
             except Exception as e:
