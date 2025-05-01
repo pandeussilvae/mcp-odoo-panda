@@ -1,7 +1,7 @@
 import functools
 import time
 import logging
-import asyncio  # Added missing import
+import asyncio
 from typing import Callable, Any, Optional, Union, Dict, List
 import sys
 
@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 cache_manager = None
 CACHE_TYPE = 'functools'
 
+def make_key(*args, **kwargs):
+    """Simple key function that creates a cache key from arguments."""
+    key = (args, tuple(sorted(kwargs.items())))
+    return hash(key)
+
 def initialize_cache_manager():
     """Initialize the cache manager with proper error handling."""
     global cache_manager, CACHE_TYPE
@@ -19,7 +24,6 @@ def initialize_cache_manager():
         logger.info("Attempting to import cachetools...")
         logger.info(f"Python path: {sys.path}")
         from cachetools import TTLCache, cached
-        from cachetools.keys import hashkey
         logger.info("Successfully imported cachetools")
         logger.info(f"cachetools version: {TTLCache.__module__}")
 
@@ -49,13 +53,13 @@ def initialize_cache_manager():
                 def decorator(func: Callable) -> Callable:
                     is_async = asyncio.iscoroutinefunction(func)
 
-                    @cached(cache=_cache, key=hashkey)
+                    @cached(cache=_cache, key=make_key)
                     @functools.wraps(func)
                     async def async_wrapper(*args, **kwargs):
                         result = await func(*args, **kwargs)
                         return result
 
-                    @cached(cache=_cache, key=hashkey)
+                    @cached(cache=_cache, key=make_key)
                     @functools.wraps(func)
                     def sync_wrapper(*args, **kwargs):
                         return func(*args, **kwargs)
