@@ -312,10 +312,14 @@ PROMPTS = {
     }
 }
 
-# Crea l'istanza FastMCP con le capabilities
+# Constants
+SERVER_NAME = "odoo-mcp-server"
+SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
+
 def create_mcp_instance(transport_types):
     """Create a FastMCP instance with all capabilities."""
-    capabilities = {
+    # Define base capabilities
+    base_capabilities = {
         "tools": {
             "listChanged": True,
             "tools": TOOLS
@@ -332,14 +336,15 @@ def create_mcp_instance(transport_types):
         "experimental": {}
     }
     
+    # Create FastMCP instance
     mcp = FastMCP(
-        "odoo-mcp-server",
+        SERVER_NAME,
         transport_types=transport_types,
-        capabilities=capabilities
+        capabilities=base_capabilities
     )
 
-    # Override capabilities property to ensure our capabilities are used
-    mcp._capabilities = capabilities
+    # Store capabilities in the instance
+    mcp.base_capabilities = base_capabilities
     return mcp
 
 def parse_odoo_uri(uri: str) -> tuple:
@@ -398,10 +403,10 @@ def initialize_mcp(transport_type):
                     "id": req_id,
                     "result": {
                         "protocolVersion": "2024-01-01",
-                        "capabilities": mcp._capabilities,  # Use our capabilities directly
+                        "capabilities": mcp.base_capabilities,
                         "serverInfo": {
-                            "name": "odoo-mcp-server",
-                            "version": "1.6.0"
+                            "name": SERVER_NAME,
+                            "version": SERVER_VERSION
                         }
                     }
                 }
