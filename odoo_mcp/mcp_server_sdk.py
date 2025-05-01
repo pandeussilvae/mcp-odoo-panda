@@ -506,38 +506,106 @@ sse_queues = defaultdict(deque)  # session_id -> queue di messaggi
 def get_server_capabilities():
     """Ottiene le capabilities del server MCP."""
     # Ottieni i tools registrati come array
-    tools_dict = {}
-    registered_tools = {
-        "odoo_login": odoo_login,
-        "odoo_list_models": odoo_list_models,
-        "odoo_search_read": odoo_search_read,
-        "odoo_read": odoo_read,
-        "odoo_create": odoo_create,
-        "odoo_write": odoo_write,
-        "odoo_unlink": odoo_unlink,
-        "odoo_call_method": odoo_call_method
-    }
-    
-    for tool_name, tool_func in registered_tools.items():
-        tools_dict[tool_name] = {
-            "description": tool_func.__doc__ or "",
+    tools_dict = {
+        "odoo_login": {
+            "description": "Login to Odoo server",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "username": {"type": "string", "description": "Username"},
+                    "password": {"type": "string", "description": "Password"},
+                    "database": {"type": "string", "description": "Database name"},
+                    "odoo_url": {"type": "string", "description": "Odoo server URL"}
+                }
+            }
+        },
+        "odoo_list_models": {
+            "description": "Elenca tutti i modelli Odoo disponibili (model e name).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        "odoo_search_read": {
+            "description": "Cerca e legge record in un modello Odoo.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "model": {"type": "string", "description": "Odoo model name"},
-                    "id": {"type": "integer", "description": "Record ID"},
-                    "values": {"type": "object", "description": "Values for the record"},
                     "domain": {"type": "array", "description": "Search domain"},
                     "fields": {"type": "array", "description": "Fields to read"},
                     "limit": {"type": "integer", "description": "Limit number of records"},
                     "offset": {"type": "integer", "description": "Offset for pagination"},
-                    "context": {"type": "object", "description": "Context dictionary"},
+                    "context": {"type": "object", "description": "Context dictionary"}
+                },
+                "required": ["model"]
+            }
+        },
+        "odoo_read": {
+            "description": "Legge record specifici da un modello Odoo.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model name"},
+                    "ids": {"type": "array", "description": "Record IDs to read"},
+                    "fields": {"type": "array", "description": "Fields to read"},
+                    "context": {"type": "object", "description": "Context dictionary"}
+                },
+                "required": ["model", "ids"]
+            }
+        },
+        "odoo_create": {
+            "description": "Crea un nuovo record in un modello Odoo.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model name"},
+                    "values": {"type": "object", "description": "Values for the new record"},
+                    "context": {"type": "object", "description": "Context dictionary"}
+                },
+                "required": ["model", "values"]
+            }
+        },
+        "odoo_write": {
+            "description": "Aggiorna record esistenti in un modello Odoo.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model name"},
+                    "ids": {"type": "array", "description": "Record IDs to update"},
+                    "values": {"type": "object", "description": "Values to update"},
+                    "context": {"type": "object", "description": "Context dictionary"}
+                },
+                "required": ["model", "ids", "values"]
+            }
+        },
+        "odoo_unlink": {
+            "description": "Elimina record da un modello Odoo.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model name"},
+                    "ids": {"type": "array", "description": "Record IDs to delete"},
+                    "context": {"type": "object", "description": "Context dictionary"}
+                },
+                "required": ["model", "ids"]
+            }
+        },
+        "odoo_call_method": {
+            "description": "Chiama un metodo personalizzato su un modello Odoo.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model name"},
                     "method": {"type": "string", "description": "Method name"},
                     "args": {"type": "array", "description": "Method arguments"},
-                    "kwargs": {"type": "object", "description": "Method keyword arguments"}
-                }
+                    "kwargs": {"type": "object", "description": "Method keyword arguments"},
+                    "context": {"type": "object", "description": "Context dictionary"}
+                },
+                "required": ["model", "method"]
             }
         }
+    }
     
     # Ottieni i prompt registrati
     prompts_dict = {
@@ -940,11 +1008,16 @@ def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Dict[str
                 # Get the actual function
                 tool_func = globals()[tool_name]
                 
+                # Remove any unexpected arguments
+                tool_schema = tools[tool_name]["inputSchema"]
+                valid_args = tool_schema.get("properties", {}).keys()
+                filtered_args = {k: v for k, v in arguments.items() if k in valid_args}
+                
                 # Execute the tool
                 if asyncio.iscoroutinefunction(tool_func):
-                    result = asyncio.run(tool_func(**arguments))
+                    result = asyncio.run(tool_func(**filtered_args))
                 else:
-                    result = tool_func(**arguments)
+                    result = tool_func(**filtered_args)
                 
                 return {
                     "jsonrpc": "2.0",
