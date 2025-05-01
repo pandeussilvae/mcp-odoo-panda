@@ -332,11 +332,15 @@ def create_mcp_instance(transport_types):
         "experimental": {}
     }
     
-    return FastMCP(
+    mcp = FastMCP(
         "odoo-mcp-server",
         transport_types=transport_types,
         capabilities=capabilities
     )
+
+    # Override capabilities property to ensure our capabilities are used
+    mcp._capabilities = capabilities
+    return mcp
 
 def parse_odoo_uri(uri: str) -> tuple:
     """Parse an Odoo URI into its components."""
@@ -394,7 +398,7 @@ def initialize_mcp(transport_type):
                     "id": req_id,
                     "result": {
                         "protocolVersion": "2024-01-01",
-                        "capabilities": mcp.capabilities,
+                        "capabilities": mcp._capabilities,  # Use our capabilities directly
                         "serverInfo": {
                             "name": "odoo-mcp-server",
                             "version": "1.6.0"
