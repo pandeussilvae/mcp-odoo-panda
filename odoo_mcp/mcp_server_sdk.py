@@ -371,6 +371,39 @@ class AsyncOdooTools:
         """Legge record specifici da un modello Odoo."""
         try:
             await self.authenticate()
+            
+            # Get field definitions to identify computed fields
+            if isinstance(self.odoo, JSONRPCHandler):
+                field_defs = await self.odoo.call(
+                    service="object",
+                    method="execute_kw",
+                    args=[
+                        self.odoo.database,
+                        self.uid,
+                        self.password,
+                        model,
+                        "fields_get",
+                        [fields],
+                        {"attributes": ["type", "store", "compute"]}
+                    ]
+                )
+            else:
+                field_defs = await self.odoo.execute_kw(
+                    model=model,
+                    method="fields_get",
+                    args=[fields],
+                    kwargs={"attributes": ["type", "store", "compute"]},
+                    uid=self.uid,
+                    password=self.password
+                )
+            
+            # Identify computed fields that need preloading
+            computed_fields = [f for f, defs in field_defs.items() 
+                             if defs.get('compute') and not defs.get('store')]
+            
+            # Add computed fields to the read request
+            read_fields = list(set(fields + computed_fields))
+            
             if isinstance(self.odoo, JSONRPCHandler):
                 return await self.odoo.call(
                     service="object",
@@ -381,7 +414,7 @@ class AsyncOdooTools:
                         self.password,
                         model,
                         "read",
-                        [ids, fields],
+                        [ids, read_fields],
                         {"context": context or {}}
                     ]
                 )
@@ -389,7 +422,7 @@ class AsyncOdooTools:
                 return await self.odoo.execute_kw(
                     model=model,
                     method="read",
-                    args=[ids, fields],
+                    args=[ids, read_fields],
                     kwargs={"context": context or {}},
                     uid=self.uid,
                     password=self.password
@@ -1072,9 +1105,9 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                                 display_name = model["name"]
                                 # Add both technical name and user-friendly name
                                 completions.append({
-                                    "label": model_name,
-                                    "detail": display_name,
-                                    "value": model_name
+                                    "label": str(model_name),
+                                    "detail": str(display_name),
+                                    "value": str(model_name)
                                 })
                             
                             return {
@@ -1111,7 +1144,7 @@ async def handle_request(request: Dict[str, Any], protocol: str = "stdio") -> Di
                                 completions = [
                                     {
                                         "label": str(record["id"]),
-                                        "detail": record.get("name", ""),
+                                        "detail": str(record.get("name", "")),
                                         "value": str(record["id"])
                                     }
                                     for record in records
