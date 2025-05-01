@@ -62,10 +62,12 @@ class CacheManager:
     def __init__(self, default_maxsize: int = 128, default_ttl: int = 300):
         try:
             from cachetools import TTLCache, cached
+            from cachetools.keys import hashkey
             self.default_maxsize = default_maxsize
             self.default_ttl = default_ttl
             self.TTLCache = TTLCache
             self.cached = cached
+            self.hashkey = hashkey
             self.odoo_read_cache = TTLCache(maxsize=default_maxsize, ttl=default_ttl)
             logger.info(f"CacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
         except ImportError as e:
@@ -96,13 +98,13 @@ class CacheManager:
         def decorator(func: Callable) -> Callable:
             is_async = asyncio.iscoroutinefunction(func)
 
-            @self.cached(cache=_cache, key=make_key)
+            @self.cached(cache=_cache, key=self.hashkey)
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
                 result = await func(*args, **kwargs)
                 return result
 
-            @self.cached(cache=_cache, key=make_key)
+            @self.cached(cache=_cache, key=self.hashkey)
             @functools.wraps(func)
             def sync_wrapper(*args, **kwargs):
                 return func(*args, **kwargs)
@@ -118,6 +120,7 @@ def initialize_cache_manager(config: Optional[Dict[str, Any]] = None) -> bool:
         logger.info("Attempting to import cachetools...")
         logger.info(f"Python path: {sys.path}")
         from cachetools import TTLCache, cached
+        from cachetools.keys import hashkey
         logger.info("Successfully imported cachetools")
         logger.info(f"cachetools version: {TTLCache.__module__}")
 
