@@ -22,6 +22,7 @@ from odoo_mcp.tools.tool_manager import OdooToolManager
 from functools import wraps
 import argparse
 from typing import Dict, Any
+from odoo_mcp.performance.caching import initialize_cache_manager
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)
@@ -122,6 +123,11 @@ odoo = create_odoo_handler(config)
 prompt_manager = OdooPromptManager()
 resource_manager = OdooResourceManager(odoo)
 tool_manager = OdooToolManager(odoo)
+
+# Initialize cache manager with config
+initialize_cache_manager()
+if cache_manager:
+    cache_manager.configure(config)
 
 # Definisci i template delle risorse come costanti
 RESOURCE_TEMPLATES = [
@@ -329,7 +335,7 @@ class OdooMCPServer(FastMCP):
             },
             "prompts": {
                 "listChanged": True,
-                "prompts": prompt_manager.get_prompts()
+                "prompts": {p.name: p for p in prompt_manager.list_prompts()}
             },
             "resources": {
                 "listChanged": True,

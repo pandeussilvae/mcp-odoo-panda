@@ -3,8 +3,87 @@ import time
 import logging
 import asyncio  # Added missing import
 from typing import Callable, Any, Optional, Union, Dict, List
+import sys
 
 logger = logging.getLogger(__name__)
+
+# Global variables
+cache_manager = None
+CACHE_TYPE = 'functools'
+
+def initialize_cache_manager():
+    """Initialize the cache manager with proper error handling."""
+    global cache_manager, CACHE_TYPE
+    
+    try:
+        logger.info("Attempting to import cachetools...")
+        logger.info(f"Python path: {sys.path}")
+        from cachetools import TTLCache, cached, hashkey
+        logger.info("Successfully imported cachetools")
+        logger.info(f"cachetools version: {TTLCache.__module__}")
+
+        class CacheManager:
+            """Manages cache instances, primarily using cachetools if available."""
+            def __init__(self, default_maxsize: int = 128, default_ttl: int = 300):
+                self.default_maxsize = default_maxsize
+                self.default_ttl = default_ttl
+                self.odoo_read_cache = TTLCache(maxsize=default_maxsize, ttl=default_ttl)
+                logger.info(f"CacheManager initialized with defaults: maxsize={default_maxsize}, ttl={default_ttl}s")
+
+            def configure(self, config: Dict[str, Any]):
+                cache_config = config.get('cache', {})
+                self.default_maxsize = cache_config.get('default_maxsize', self.default_maxsize)
+                self.default_ttl = cache_config.get('default_ttl', self.default_ttl)
+                self.odoo_read_cache = TTLCache(maxsize=self.default_maxsize, ttl=self.default_ttl)
+                logger.info(f"CacheManager configured: maxsize={self.default_maxsize}, ttl={self.default_ttl}s")
+
+            def get_ttl_cache_decorator(self, cache_instance: Optional[TTLCache] = None, maxsize: Optional[int] = None, ttl: Optional[int] = None) -> Callable:
+                if cache_instance:
+                    _cache = cache_instance
+                else:
+                    _maxsize = maxsize if maxsize is not None else self.default_maxsize
+                    _ttl = ttl if ttl is not None else self.default_ttl
+                    _cache = TTLCache(maxsize=_maxsize, ttl=_ttl)
+
+                def decorator(func: Callable) -> Callable:
+                    is_async = asyncio.iscoroutinefunction(func)
+
+                    @cached(cache=_cache, key=hashkey)
+                    @functools.wraps(func)
+                    async def async_wrapper(*args, **kwargs):
+                        result = await func(*args, **kwargs)
+                        return result
+
+                    @cached(cache=_cache, key=hashkey)
+                    @functools.wraps(func)
+                    def sync_wrapper(*args, **kwargs):
+                        return func(*args, **kwargs)
+
+                    return async_wrapper if is_async else sync_wrapper
+                return decorator
+
+        cache_manager = CacheManager()
+        CACHE_TYPE = 'cachetools'
+        logger.info("CacheManager initialized successfully with cachetools")
+        return True
+
+    except ImportError as e:
+        logger.error(f"Failed to import cachetools: {str(e)}")
+        logger.error(f"Python path: {sys.path}")
+        logger.warning("cachetools library not found. Falling back to functools.lru_cache (no TTL).")
+        
+        class DummyCacheManager:
+            def get_ttl_cache_decorator(self, *args, **kwargs) -> Callable:
+                def decorator(func: Callable) -> Callable:
+                    return func
+                return decorator
+        
+        cache_manager = DummyCacheManager()
+        CACHE_TYPE = 'functools'
+        return False
+
+# Initialize the cache manager
+initialize_cache_manager()
 
 # --- LRU Cache Implementation ---
 
@@ -62,7 +141,11 @@ def lru_cache_with_stats(maxsize=128, typed=False) -> Callable:
 
 # Example using cachetools.TTLCache (if cachetools is available)
 try:
+    logger.info("Attempting to import cachetools...")
+    logger.info(f"Python path: {sys.path}")
     from cachetools import TTLCache, cached, hashkey # Import hashkey directly
+    logger.info("Successfully imported cachetools")
+    logger.info(f"cachetools version: {TTLCache.__module__}")
 
     class CacheManager:
         """
@@ -168,7 +251,9 @@ try:
     logger.info("cachetools library found. TTL caching enabled.")
     CACHE_TYPE: str = 'cachetools'
 
-except ImportError:
+except ImportError as e:
+    logger.error(f"Failed to import cachetools: {str(e)}")
+    logger.error(f"Python path: {sys.path}")
     logger.warning("cachetools library not found. Falling back to functools.lru_cache (no TTL).")
     logger.warning("Install cachetools for TTL support: 'pip install cachetools' or 'pip install odoo-mcp-server[caching]'")
     cache_manager = None # No cache manager if library is missing
