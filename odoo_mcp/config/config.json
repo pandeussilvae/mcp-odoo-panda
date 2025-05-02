@@ -17,7 +17,6 @@
     "api_key": "admin",
     "protocol": "xmlrpc",
     "connection_type": "stdio",
-    "transport_type": "stdio",
     "requests_per_minute": 120,
     "rate_limit_max_wait_seconds": 5,
     "pool_size": 5,
