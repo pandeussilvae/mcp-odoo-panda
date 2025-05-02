@@ -1,171 +1,272 @@
 """
-MCP Capabilities Manager implementation.
-This module provides centralized capabilities management for the MCP server.
+Capabilities Manager implementation for Odoo MCP Server.
+This module provides capability management and feature flag handling.
 """
 
 import logging
-from typing import Dict, Any, List, Optional, Set
-from dataclasses import dataclass, field
+from typing import Dict, Any, Optional, List, Union
+from dataclasses import dataclass
+from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+class ResourceType(str, Enum):
+    """Resource types supported by the server."""
+    MODEL = "model"
+    BINARY = "binary"
+    LIST = "list"
+    RECORD = "record"
 
 @dataclass
 class ResourceTemplate:
     """Resource template definition."""
-    uri_template: str
     name: str
+    type: ResourceType
     description: str
-    type: str
-    mime_type: str
+    operations: List[str]
+    parameters: Optional[Dict[str, Any]] = None
 
 @dataclass
 class Tool:
     """Tool definition."""
     name: str
     description: str
-    parameters: Dict[str, Any]
-    returns: Dict[str, Any]
+    operations: List[str]
+    parameters: Optional[Dict[str, Any]] = None
 
 @dataclass
 class Prompt:
     """Prompt definition."""
     name: str
     description: str
-    parameters: Dict[str, Any]
-    returns: Dict[str, Any]
+    template: str
+    parameters: Optional[Dict[str, Any]] = None
 
 class CapabilitiesManager:
-    """
-    Manages server capabilities and feature flags.
-    Provides centralized access to server capabilities and handles capability updates.
-    """
+    """Manages server capabilities and feature flags."""
 
-    def __init__(self):
-        """Initialize the capabilities manager."""
-        self._resource_templates: List[ResourceTemplate] = []
-        self._tools: List[Tool] = []
-        self._prompts: List[Prompt] = []
-        self._feature_flags: Set[str] = {
-            "prompts.listChanged",
-            "resources.subscribelistChanged",
-            "tools.listChanged",
-            "logging",
-            "completion"
+    def __init__(self, config: Dict[str, Any]):
+        """
+        Initialize capabilities manager.
+
+        Args:
+            config: Configuration dictionary
+        """
+        self.config = config
+        self.resources: Dict[str, ResourceTemplate] = {}
+        self.tools: Dict[str, Tool] = {}
+        self.prompts: Dict[str, Prompt] = {}
+        self.feature_flags: Dict[str, bool] = {
+            'prompts.listChanged': True,
+            'resources.subscribelistChanged': True,
+            'tools.listChanged': True,
+            'logging': True,
+            'completion': True
         }
-        self._experimental_features: Dict[str, Any] = {}
+        
+        # Register default capabilities
+        self._register_default_capabilities()
 
-    def add_resource_template(self, template: ResourceTemplate) -> None:
-        """
-        Add a resource template.
+    def _register_default_capabilities(self) -> None:
+        """Register default server capabilities."""
+        # Register default resources
+        self.register_resource(ResourceTemplate(
+            name="res.partner",
+            type=ResourceType.MODEL,
+            description="Odoo Partner/Contact resource",
+            operations=["create", "read", "update", "delete", "search"]
+        ))
+        
+        self.register_resource(ResourceTemplate(
+            name="res.users",
+            type=ResourceType.MODEL,
+            description="Odoo User resource",
+            operations=["create", "read", "update", "delete", "search"]
+        ))
+        
+        # Register default tools
+        self.register_tool(Tool(
+            name="data_export",
+            description="Export Odoo data to various formats",
+            operations=["csv", "excel", "json", "xml"]
+        ))
+        
+        self.register_tool(Tool(
+            name="data_import",
+            description="Import data into Odoo",
+            operations=["csv", "excel", "json", "xml"]
+        ))
+        
+        # Register default prompts
+        self.register_prompt(Prompt(
+            name="analyze_record",
+            description="Analyze an Odoo record",
+            template="Analyze the following Odoo record: {record}"
+        ))
+        
+        self.register_prompt(Prompt(
+            name="create_record",
+            description="Create a new Odoo record",
+            template="Create a new {model} record with the following data: {data}"
+        ))
 
-        Args:
-            template: The resource template to add
+    def register_resource(self, resource: ResourceTemplate) -> None:
         """
-        self._resource_templates.append(template)
-        self._notify_capability_change("resources.subscribelistChanged")
-
-    def add_tool(self, tool: Tool) -> None:
-        """
-        Add a tool.
-
-        Args:
-            tool: The tool to add
-        """
-        self._tools.append(tool)
-        self._notify_capability_change("tools.listChanged")
-
-    def add_prompt(self, prompt: Prompt) -> None:
-        """
-        Add a prompt.
-
-        Args:
-            prompt: The prompt to add
-        """
-        self._prompts.append(prompt)
-        self._notify_capability_change("prompts.listChanged")
-
-    def enable_feature_flag(self, flag: str) -> None:
-        """
-        Enable a feature flag.
-
-        Args:
-            flag: The feature flag to enable
-        """
-        self._feature_flags.add(flag)
-        self._notify_capability_change(flag)
-
-    def disable_feature_flag(self, flag: str) -> None:
-        """
-        Disable a feature flag.
-
-        Args:
-            flag: The feature flag to disable
-        """
-        self._feature_flags.discard(flag)
-        self._notify_capability_change(flag)
-
-    def add_experimental_feature(self, name: str, feature: Any) -> None:
-        """
-        Add an experimental feature.
+        Register a resource template.
 
         Args:
-            name: The name of the experimental feature
-            feature: The feature definition
+            resource: Resource template to register
         """
-        self._experimental_features[name] = feature
+        self.resources[resource.name] = resource
+        logger.info(f"Registered resource: {resource.name}")
+
+    def register_tool(self, tool: Tool) -> None:
+        """
+        Register a tool.
+
+        Args:
+            tool: Tool to register
+        """
+        self.tools[tool.name] = tool
+        logger.info(f"Registered tool: {tool.name}")
+
+    def register_prompt(self, prompt: Prompt) -> None:
+        """
+        Register a prompt.
+
+        Args:
+            prompt: Prompt to register
+        """
+        self.prompts[prompt.name] = prompt
+        logger.info(f"Registered prompt: {prompt.name}")
+
+    def get_resource(self, name: str) -> Optional[ResourceTemplate]:
+        """
+        Get a resource template by name.
+
+        Args:
+            name: Name of the resource
+
+        Returns:
+            Optional[ResourceTemplate]: Resource template if found, None otherwise
+        """
+        return self.resources.get(name)
+
+    def get_tool(self, name: str) -> Optional[Tool]:
+        """
+        Get a tool by name.
+
+        Args:
+            name: Name of the tool
+
+        Returns:
+            Optional[Tool]: Tool if found, None otherwise
+        """
+        return self.tools.get(name)
+
+    def get_prompt(self, name: str) -> Optional[Prompt]:
+        """
+        Get a prompt by name.
+
+        Args:
+            name: Name of the prompt
+
+        Returns:
+            Optional[Prompt]: Prompt if found, None otherwise
+        """
+        return self.prompts.get(name)
+
+    def list_resources(self) -> List[str]:
+        """
+        List all registered resources.
+
+        Returns:
+            List[str]: List of resource names
+        """
+        return list(self.resources.keys())
+
+    def list_tools(self) -> List[str]:
+        """
+        List all registered tools.
+
+        Returns:
+            List[str]: List of tool names
+        """
+        return list(self.tools.keys())
+
+    def list_prompts(self) -> List[str]:
+        """
+        List all registered prompts.
+
+        Returns:
+            List[str]: List of prompt names
+        """
+        return list(self.prompts.keys())
+
+    def is_feature_enabled(self, feature: str) -> bool:
+        """
+        Check if a feature is enabled.
+
+        Args:
+            feature: Feature name
+
+        Returns:
+            bool: True if feature is enabled, False otherwise
+        """
+        return self.feature_flags.get(feature, False)
+
+    def enable_feature(self, feature: str) -> None:
+        """
+        Enable a feature.
+
+        Args:
+            feature: Feature name
+        """
+        self.feature_flags[feature] = True
+        logger.info(f"Enabled feature: {feature}")
+
+    def disable_feature(self, feature: str) -> None:
+        """
+        Disable a feature.
+
+        Args:
+            feature: Feature name
+        """
+        self.feature_flags[feature] = False
+        logger.info(f"Disabled feature: {feature}")
 
     def get_capabilities(self) -> Dict[str, Any]:
         """
-        Get the current server capabilities.
+        Get server capabilities.
 
         Returns:
-            Dict[str, Any]: The current capabilities
+            Dict[str, Any]: Server capabilities
         """
         return {
-            "resources": {
-                "listChanged": "resources.subscribelistChanged" in self._feature_flags,
-                "resources": {
-                    template.uri_template: {
-                        "name": template.name,
-                        "description": template.description,
-                        "type": template.type,
-                        "mimeType": template.mime_type
-                    }
-                    for template in self._resource_templates
-                },
-                "subscribe": "resources.subscribelistChanged" in self._feature_flags
-            },
-            "tools": {
-                "listChanged": "tools.listChanged" in self._feature_flags,
-                "tools": {
-                    tool.name: {
-                        "description": tool.description,
-                        "parameters": tool.parameters,
-                        "returns": tool.returns
-                    }
-                    for tool in self._tools
+            'resources': {
+                name: {
+                    'type': resource.type.value,
+                    'description': resource.description,
+                    'operations': resource.operations,
+                    'parameters': resource.parameters
                 }
+                for name, resource in self.resources.items()
             },
-            "prompts": {
-                "listChanged": "prompts.listChanged" in self._feature_flags,
-                "prompts": {
-                    prompt.name: {
-                        "description": prompt.description,
-                        "parameters": prompt.parameters,
-                        "returns": prompt.returns
-                    }
-                    for prompt in self._prompts
+            'tools': {
+                name: {
+                    'description': tool.description,
+                    'operations': tool.operations,
+                    'parameters': tool.parameters
                 }
+                for name, tool in self.tools.items()
             },
-            "experimental": self._experimental_features
-        }
-
-    def _notify_capability_change(self, flag: str) -> None:
-        """
-        Notify about a capability change.
-
-        Args:
-            flag: The feature flag that changed
-        """
-        logger.info(f"Capability change: {flag}")
-        # TODO: Implement notification mechanism for capability changes 
+            'prompts': {
+                name: {
+                    'description': prompt.description,
+                    'template': prompt.template,
+                    'parameters': prompt.parameters
+                }
+                for name, prompt in self.prompts.items()
+            },
+            'features': self.feature_flags
+        } 

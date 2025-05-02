@@ -58,7 +58,7 @@ class OdooMCPServer(Server):
         self.config = config
         self.protocol_type = config.get('protocol', 'xmlrpc').lower()
         self.connection_type = config.get('connection_type', 'stdio').lower()
-
+        
         # Initialize core components
         self.protocol_handler = ProtocolHandler(PROTOCOL_VERSION)
         self.capabilities_manager = CapabilitiesManager()
@@ -553,7 +553,7 @@ class OdooMCPServer(Server):
             method="fields_get",
             args=[],
             kwargs={}
-        )
+            )
 
         return {
             "analysis": {
@@ -589,7 +589,7 @@ class OdooMCPServer(Server):
         if missing_fields:
             raise ProtocolError(f"Missing required fields: {', '.join(missing_fields)}")
 
-        return {
+                return {
             "prompt": {
                 "model": model,
                 "values": values,
@@ -645,7 +645,7 @@ class OdooMCPServer(Server):
             kwargs={}
         )
 
-        return {
+            return {
             "prompt": {
                 "model": model,
                 "domain": domain,
@@ -780,7 +780,7 @@ class OdooMCPServer(Server):
         return self.protocol_handler.create_response(
             request.id,
             result=prompt
-        )
+            )
 
 def run_async(coro):
     try:

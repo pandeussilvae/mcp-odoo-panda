@@ -1,3 +1,8 @@
+"""
+Security utilities for Odoo MCP Server.
+This module provides security-related utilities like rate limiting and data masking.
+"""
+
 import time
 import asyncio
 import logging
@@ -24,137 +29,55 @@ except ImportError:
 # --- Rate Limiting ---
 
 class RateLimiter:
-    """
-    A simple asynchronous token bucket rate limiter.
+    """Rate limiter implementation."""
 
-    Allows limiting the rate of operations (e.g., requests per minute).
-    Refills tokens continuously based on the specified rate.
-    Includes an optional maximum wait time to acquire a token.
-    """
-    def __init__(self, requests_per_minute: int, max_wait_seconds: Optional[float] = None):
+    def __init__(self, max_requests: int = 120, window: int = 60):
         """
-        Initialize the RateLimiter.
+        Initialize rate limiter.
 
         Args:
-            requests_per_minute: The maximum number of requests allowed per minute.
-                                 If <= 0, rate limiting is disabled.
-            max_wait_seconds: Optional maximum time in seconds to wait for a token.
-                              If None or <= 0, waits indefinitely (or until cancelled).
+            max_requests: Maximum number of requests allowed in the time window
+            window: Time window in seconds
         """
-        if requests_per_minute <= 0:
-            # Rate limiting disabled or invalid config
-            self.rate = float('inf')
-            self.capacity = float('inf')
-            self.tokens = float('inf')
-            self.last_update = time.monotonic()
-            self.enabled = False
-            logger.info("Rate limiting disabled (requests_per_minute <= 0).")
-        else:
-            # Rate is tokens per second
-            self.rate = requests_per_minute / 60.0
-            # Capacity allows bursting up to the per-minute limit initially
-            self.capacity = float(requests_per_minute)
-            self.tokens = self.capacity # Start full
-            self.last_update = time.monotonic()
-            self.enabled = True
-            self._lock = asyncio.Lock()
-            self.max_wait_seconds = max_wait_seconds if max_wait_seconds and max_wait_seconds > 0 else None
-            wait_info = f"Max Wait: {self.max_wait_seconds}s" if self.max_wait_seconds else "Max Wait: Indefinite"
-            logger.info(f"Rate limiter enabled: {requests_per_minute} requests/minute ({self.rate:.2f} tokens/sec). {wait_info}")
+        self.max_requests = max_requests
+        self.window = window
+        self.requests: Dict[str, List[float]] = {}
 
-    async def acquire(self) -> bool:
+    def _cleanup_old_requests(self, key: str) -> None:
         """
-        Acquire a token from the bucket, waiting up to `max_wait_seconds` if necessary.
+        Remove requests outside the time window.
 
-        If no token is available, this method waits asynchronously until one
-        can be acquired.
+        Args:
+            key: Client identifier
+        """
+        current_time = time.time()
+        self.requests[key] = [t for t in self.requests.get(key, []) 
+                            if current_time - t < self.window]
+
+    def check_rate_limit(self, key: str) -> bool:
+        """
+        Check if a request is allowed under the rate limit.
+
+        Args:
+            key: Client identifier
 
         Returns:
-            True if a token was acquired.
-            False if rate limiting is disabled or if the wait timed out.
-
-        Raises:
-            asyncio.CancelledError: If the task is cancelled while waiting.
-            # Consider raising a specific RateLimitTimeoutError instead of returning False on timeout?
-            # For now, returning False on timeout is simpler for the caller.
+            bool: True if request is allowed, False otherwise
         """
-        if not self.enabled:
-            return True # Treat disabled as always successful acquisition
+        self._cleanup_old_requests(key)
+        return len(self.requests.get(key, [])) < self.max_requests
 
-        start_time = time.monotonic()
-        # Loop until a token can be acquired or timeout occurs
-        while True:
-            # Check for timeout before acquiring lock
-            if self.max_wait_seconds is not None:
-                elapsed_wait = time.monotonic() - start_time
-                if elapsed_wait > self.max_wait_seconds:
-                    logger.warning(f"Rate limiter acquire timed out after {elapsed_wait:.2f}s (max wait: {self.max_wait_seconds}s).")
-                    return False # Indicate timeout
+    def record_request(self, key: str) -> None:
+        """
+        Record a request.
 
-            # --- Start Critical Section ---
-            async with self._lock:
-                # Calculate time elapsed since last update
-                now = time.monotonic()
-                elapsed = now - self.last_update
-
-                # Add newly generated tokens (up to capacity)
-                # Important: Update tokens *before* checking availability
-                current_tokens = self.tokens + elapsed * self.rate
-                self.tokens = min(self.capacity, current_tokens)
-                self.last_update = now # Update last_update timestamp regardless of acquisition
-
-                logger.debug(f"Tokens updated: {self.tokens:.3f} (added {elapsed * self.rate:.3f})")
-
-                # Check if a token is available
-                if self.tokens >= 1.0:
-                    # Consume a token and return success
-                    self.tokens -= 1.0
-                    logger.debug(f"Rate limit token acquired. Tokens remaining: {self.tokens:.3f}")
-                    return True
-                else:
-                    # Not enough tokens, calculate required wait time
-                    needed = 1.0 - self.tokens
-                    # Avoid division by zero if rate is somehow zero
-                    wait_time = max(0, needed / self.rate) if self.rate > 0 else float('inf')
-                    # Add a small epsilon to prevent potential zero sleep and ensure yield
-                    wait_time += 1e-9
-                    logger.warning(f"Rate limit exceeded. Tokens: {self.tokens:.3f}. Need {needed:.3f}. Waiting for {wait_time:.4f}s")
-
-            # --- End Critical Section (Lock Released) ---
-
-            # Check for impossible wait (e.g., zero rate)
-            if wait_time == float('inf'):
-                logger.error("Rate limiter has zero rate but tokens are below 1. Cannot acquire.")
-                return False # Or raise an error
-
-            # Wait outside the lock
-            try:
-                # Calculate remaining wait time allowed by timeout
-                remaining_timeout = None
-                if self.max_wait_seconds is not None:
-                    elapsed_wait = time.monotonic() - start_time
-                    remaining_timeout = max(0, self.max_wait_seconds - elapsed_wait)
-                    # If the calculated wait_time is already longer than the remaining timeout, timeout immediately
-                    if wait_time > remaining_timeout:
-                         logger.warning(f"Rate limiter required wait ({wait_time:.4f}s) exceeds remaining timeout ({remaining_timeout:.4f}s). Timing out.")
-                         return False
-
-                # Wait for the calculated time, respecting the overall timeout
-                if remaining_timeout is not None:
-                    await asyncio.wait_for(asyncio.sleep(wait_time), timeout=remaining_timeout)
-                else:
-                    await asyncio.sleep(wait_time) # Wait indefinitely if no max_wait
-
-            except asyncio.TimeoutError:
-                 # This catches the timeout from asyncio.wait_for
-                 logger.warning(f"Rate limiter acquire timed out while sleeping (max wait: {self.max_wait_seconds}s).")
-                 return False # Indicate timeout
-            except asyncio.CancelledError:
-                logger.info("Rate limiter acquire wait cancelled.")
-                raise # Propagate cancellation
-
-            # After sleeping, the loop continues, re-acquires the lock,
-            # and re-evaluates the token situation with updated elapsed time.
+        Args:
+            key: Client identifier
+        """
+        if key not in self.requests:
+            self.requests[key] = []
+        self.requests[key].append(time.time())
+        self._cleanup_old_requests(key)
 
 # --- Input Validation Schemas (using Pydantic) ---
 
@@ -329,55 +252,44 @@ MASK_PATTERN = re.compile(
 )
 MASK_REPLACEMENT = r'\1"***MASKED***"'
 
-def mask_sensitive_data(data: Union[str, Dict, list, tuple, set]) -> Union[str, Dict, list, tuple, set]:
+def mask_sensitive_data(data: Any, patterns: Optional[List[str]] = None) -> Any:
     """
-    Recursively masks sensitive data in strings, dicts, lists, tuples, or sets.
-
-    Identifies sensitive keys based on DEFAULT_SENSITIVE_KEYS and replaces their
-    values with "***MASKED***". Also attempts to mask key-value pairs within
-    string representations using regex.
+    Mask sensitive data in the given object.
 
     Args:
-        data: The data structure (str, dict, list, tuple, set) to mask.
+        data: Data to mask
+        patterns: List of regex patterns to match sensitive fields
 
     Returns:
-        A new data structure with sensitive information masked.
+        Any: Masked data
     """
-    if isinstance(data, str):
-        # Attempt to mask key-value pairs in a string format
-        masked_string = MASK_PATTERN.sub(MASK_REPLACEMENT, data)
-        return masked_string
-    elif isinstance(data, dict):
-        masked_dict = {}
-        for key, value in data.items():
-            # Mask based on key name
-            key_str = str(key) # Ensure key is string for comparison
-            if any(sensitive_key in key_str.lower() for sensitive_key in DEFAULT_SENSITIVE_KEYS):
-                masked_dict[key] = "***MASKED***"
-            else:
-                # Recurse for nested structures
-                masked_dict[key] = mask_sensitive_data(value)
-        return masked_dict
+    if patterns is None:
+        patterns = [
+            r'password',
+            r'api_key',
+            r'token',
+            r'secret',
+            r'credential',
+            r'auth',
+            r'key'
+        ]
+
+    if isinstance(data, dict):
+        return {k: mask_sensitive_data(v, patterns) if any(re.search(p, k, re.I) for p in patterns)
+                else mask_sensitive_data(v, patterns) for k, v in data.items()}
     elif isinstance(data, list):
-        # Recurse for items in list
-        return [mask_sensitive_data(item) for item in data]
-    elif isinstance(data, tuple):
-         # Recurse for items in tuple, return new tuple
-         return tuple(mask_sensitive_data(item) for item in data)
-    elif isinstance(data, set):
-         # Recurse for items in set, return new set
-         return {mask_sensitive_data(item) for item in data}
-    else:
-        # Return other types (int, float, bool, None, etc.) unchanged
-        return data
+        return [mask_sensitive_data(item, patterns) for item in data]
+    elif isinstance(data, str) and any(re.search(p, data, re.I) for p in patterns):
+        return '********'
+    return data
 
 
 # Example Usage
 if __name__ == "__main__":
     # Rate Limiter Example
     async def rate_limit_test():
-        limiter = RateLimiter(requests_per_minute=10) # 10 requests/min
-        print("Testing rate limiter (10 req/min)...")
+        limiter = RateLimiter(max_requests=120, window=60) # 120 requests/min
+        print("Testing rate limiter (120 req/min)...")
         for i in range(15):
             start_req = time.monotonic()
             print(f"Request {i+1}: Acquiring token...")

@@ -18,6 +18,7 @@ from odoo_mcp.performance.caching import CacheManager, initialize_cache_manager
 from odoo_mcp.prompts.prompt_manager import PromptManager, initialize_prompt_manager
 from odoo_mcp.resources.resource_manager import ResourceManager, initialize_resource_manager
 from odoo_mcp.tools.tool_manager import ToolManager, initialize_tool_manager
+from odoo_mcp.core.capabilities_manager import CapabilitiesManager, ResourceTemplate, Tool, Prompt
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ class OdooMCPServer:
             # Process request
             result = await self._process_request(request, session)
             return MCPResponse.success(result)
-            
+
         except Exception as e:
             logger.error(f"Error handling default request: {str(e)}")
             return MCPResponse.error(str(e))
@@ -278,7 +279,7 @@ class OdooMCPServer:
             finally:
                 # Release connection
                 await connection_pool.release_connection(connection)
-                
+
         except Exception as e:
             logger.error(f"Error processing JSON-RPC request: {str(e)}")
             return JsonRpcResponse(
