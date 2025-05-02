@@ -406,17 +406,19 @@ async def run_server(config: Dict[str, Any]) -> None:
         await server.start()
         
         # Keep the server running until interrupted
-        if hasattr(server, '_started_mcp_server_instance') and server._started_mcp_server_instance is not None:
-            logger.info("Server is running. Press Ctrl+C to stop.")
+        if server.mcp_protocol == 'streamable_http':
+            if not hasattr(server, '_started_mcp_server_instance') or server._started_mcp_server_instance is None:
+                raise RuntimeError("HTTP server instance not found after start")
+            
+            logger.info(f"Server is running on port {server.config.get('http', {}).get('port', 8080)}. Press Ctrl+C to stop.")
             try:
-                # Wait for the server to be stopped
+                # Wait for the HTTP server to be stopped
                 await server._started_mcp_server_instance.wait_closed()
             except asyncio.CancelledError:
                 logger.info("Server shutdown requested")
             except KeyboardInterrupt:
                 logger.info("Server stopped by user")
-        else:
-            # For stdio protocol, keep running until interrupted
+        else:  # stdio protocol
             logger.info("Server is running in stdio mode. Press Ctrl+C to stop.")
             try:
                 while True:
