@@ -343,8 +343,9 @@ class OdooMCPServer:
         try:
             # Get host and port from http config if using streamable_http
             if self.mcp_protocol == 'streamable_http':
-                host = self.config.get('http', {}).get('host', '0.0.0.0')
-                port = self.config.get('http', {}).get('port', 8080)
+                http_config = self.config.get('http', {})
+                host = http_config.get('host', '0.0.0.0')
+                port = http_config.get('port', 8080)
             else:
                 host = self.config.get('host', 'localhost')
                 port = self.config.get('port', 8000)
@@ -353,12 +354,6 @@ class OdooMCPServer:
             
             # Start the server
             if self.mcp_protocol == 'streamable_http':
-                # Configure streamable HTTP
-                self.app.config['http'] = self.app.config.get('http', {})
-                self.app.config['http']['streamable'] = True
-                self.app.config['http']['host'] = host
-                self.app.config['http']['port'] = port
-                
                 # Start the server and store the server instance
                 self.server = await self.app.start(host=host, port=port)
                 logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
