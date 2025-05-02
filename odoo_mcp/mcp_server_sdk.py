@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, List, Union
 from fastmcp import FastMCP, MCPRequest, MCPResponse
 from fastmcp.decorators import mcp_handler, mcp_resource, mcp_tool
 from aiohttp import web
+import json
 
 from odoo_mcp.core.protocol_handler import JsonRpcRequest, JsonRpcResponse
 from odoo_mcp.core.connection_pool import ConnectionPool, initialize_connection_pool, get_connection_pool
@@ -461,14 +462,32 @@ class OdooMCPServer:
             capabilities = self.capabilities_manager.get_capabilities()
             
             # Create response with correct protocol version and server info
-            return MCPResponse.success({
-                'protocolVersion': PROTOCOL_VERSION,  # Use the constant
+            # Following exact MCP 2025-03-26 specification structure
+            response_data = {
+                'protocolVersion': PROTOCOL_VERSION,
                 'serverInfo': {
-                    'name': SERVER_NAME,  # Use the constant
-                    'version': SERVER_VERSION  # Use the constant
+                    'name': SERVER_NAME,
+                    'version': SERVER_VERSION
                 },
                 'capabilities': capabilities
-            })
+            }
+            
+            # Log the complete response structure for debugging
+            logger.info(f"Initialize response data structure: {json.dumps(response_data, indent=2)}")
+            
+            # Create MCPResponse with the data
+            response = MCPResponse.success(response_data)
+            
+            # Log the complete JSON-RPC response that will be sent
+            json_rpc_response = {
+                'jsonrpc': '2.0',
+                'id': request.id,
+                'result': response_data
+            }
+            logger.info(f"Complete JSON-RPC initialize response: {json.dumps(json_rpc_response, indent=2)}")
+            
+            return response
+            
         except Exception as e:
             logger.error(f"Error handling initialize request: {str(e)}")
             return MCPResponse.error(str(e))
