@@ -1092,10 +1092,7 @@ if __name__ == "__main__":
     import sys
     import os
     
-    # Configure logging first, before any other operations
-    setup_logging(config.get('log_level', 'INFO'), config.get('connection_type', 'stdio'))
-    
-    # Parse command line arguments
+    # Parse command line arguments first
     mcp_protocol = None
     default_config_path = os.path.join('odoo_mcp', 'config', 'config.json')
     config_path = default_config_path
@@ -1108,7 +1105,7 @@ if __name__ == "__main__":
         else:
             config_path = sys.argv[1]
     
-    # Load configuration
+    # Load configuration first, using print to stderr for any errors
     try:
         with open(config_path, 'r') as f:
             config = json.load(f)
@@ -1133,8 +1130,12 @@ if __name__ == "__main__":
     if mcp_protocol:
         config['connection_type'] = mcp_protocol
     
-    # Configure logging with the correct protocol
+    # Now that we have the config, import and setup logging
+    from odoo_mcp.core.logging_config import setup_logging
     setup_logging(config.get('log_level', 'INFO'), config.get('connection_type', 'stdio'))
+    
+    # Now we can use logger for the rest of the operations
+    logger = logging.getLogger(__name__)
     
     try:
         # Run server
