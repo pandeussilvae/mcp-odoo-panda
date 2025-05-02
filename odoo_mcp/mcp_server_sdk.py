@@ -357,25 +357,60 @@ class OdooMCPServer:
                 id=data.get('id')
             )
             
+            # List of methods that don't require authentication
+            no_auth_methods = {
+                'initialize',
+                'list_resources',
+                'list_tools',
+                'list_prompts',
+                'get_prompt'
+            }
+            
             # Route the request to the appropriate handler based on the request type
-            if mcp_request.resource:
-                response = await self.handle_resource(mcp_request)
-            elif mcp_request.tool:
-                response = await self.handle_tool(mcp_request)
+            if mcp_request.method in no_auth_methods:
+                # Handle methods that don't require authentication
+                if mcp_request.method == 'initialize':
+                    response = await self._handle_initialize(mcp_request)
+                elif mcp_request.method == 'list_resources':
+                    response = await self._handle_list_resources(mcp_request)
+                elif mcp_request.method == 'list_tools':
+                    response = await self._handle_list_tools(mcp_request)
+                elif mcp_request.method == 'list_prompts':
+                    response = await self._handle_list_prompts(mcp_request)
+                elif mcp_request.method == 'get_prompt':
+                    response = await self._handle_get_prompt(mcp_request)
             else:
-                response = await self.handle_default(mcp_request)
+                # For all other methods, validate session first
+                session = await self._validate_session(mcp_request)
+                if not session:
+                    return web.json_response({
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32001,
+                            'message': 'Invalid session'
+                        },
+                        'id': mcp_request.id
+                    }, status=401)
+                
+                # Route to appropriate handler based on request type
+                if mcp_request.resource:
+                    response = await self.handle_resource(mcp_request)
+                elif mcp_request.tool:
+                    response = await self.handle_tool(mcp_request)
+                else:
+                    response = await self.handle_default(mcp_request)
             
             # Convert MCPResponse to JSON-RPC response
             response_dict = {
                 'jsonrpc': '2.0',
-                'id': mcp_request.id  # Use the request ID since MCPResponse doesn't have one
+                'id': mcp_request.id
             }
             
             if response.success:
                 response_dict['result'] = response.data
             else:
                 response_dict['error'] = {
-                    'code': -32000,  # General error code
+                    'code': -32000,
                     'message': response.error
                 }
             
@@ -392,6 +427,67 @@ class OdooMCPServer:
                 },
                 'id': None
             }, status=500)
+
+    async def _handle_initialize(self, request: MCPRequest) -> MCPResponse:
+        """Handle initialize request."""
+        try:
+            # Get server capabilities
+            capabilities = self.capabilities_manager.get_capabilities()
+            
+            # Create response
+            return MCPResponse.success({
+                'protocolVersion': '1.0',
+                'serverInfo': {
+                    'name': 'Odoo MCP Server',
+                    'version': '1.0.0'
+                },
+                'capabilities': capabilities
+            })
+        except Exception as e:
+            logger.error(f"Error handling initialize request: {str(e)}")
+            return MCPResponse.error(str(e))
+
+    async def _handle_list_resources(self, request: MCPRequest) -> MCPResponse:
+        """Handle list_resources request."""
+        try:
+            resources = self.capabilities_manager.list_resources()
+            return MCPResponse.success({'resources': resources})
+        except Exception as e:
+            logger.error(f"Error handling list_resources request: {str(e)}")
+            return MCPResponse.error(str(e))
+
+    async def _handle_list_tools(self, request: MCPRequest) -> MCPResponse:
+        """Handle list_tools request."""
+        try:
+            tools = self.capabilities_manager.list_tools()
+            return MCPResponse.success({'tools': tools})
+        except Exception as e:
+            logger.error(f"Error handling list_tools request: {str(e)}")
+            return MCPResponse.error(str(e))
+
+    async def _handle_list_prompts(self, request: MCPRequest) -> MCPResponse:
+        """Handle list_prompts request."""
+        try:
+            prompts = self.capabilities_manager.list_prompts()
+            return MCPResponse.success({'prompts': prompts})
+        except Exception as e:
+            logger.error(f"Error handling list_prompts request: {str(e)}")
+            return MCPResponse.error(str(e))
+
+    async def _handle_get_prompt(self, request: MCPRequest) -> MCPResponse:
+        """Handle get_prompt request."""
+        try:
+            name = request.parameters.get('name')
+            args = request.parameters.get('args', {})
+            
+            prompt = self.capabilities_manager.get_prompt(name)
+            if not prompt:
+                return MCPResponse.error(f"Prompt not found: {name}")
+            
+            return MCPResponse.success(prompt)
+        except Exception as e:
+            logger.error(f"Error handling get_prompt request: {str(e)}")
+            return MCPResponse.error(str(e))
 
     async def start(self) -> None:
         """Start the MCP server."""
