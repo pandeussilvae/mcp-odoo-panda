@@ -16,6 +16,41 @@ from odoo_mcp.error_handling.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+# Global rate limiter instance
+_rate_limiter = None
+
+def initialize_rate_limiter(config: Dict[str, Any]) -> None:
+    """
+    Initialize the global rate limiter.
+
+    Args:
+        config: Configuration dictionary
+
+    Raises:
+        ConfigurationError: If the rate limiter is already initialized
+    """
+    global _rate_limiter
+    if _rate_limiter is not None:
+        raise ConfigurationError("Rate limiter is already initialized")
+    
+    requests_per_minute = config.get('requests_per_minute', 120)
+    _rate_limiter = RateLimiter(requests_per_minute=requests_per_minute)
+    logger.info("Rate limiter initialized successfully")
+
+def get_rate_limiter() -> 'RateLimiter':
+    """
+    Get the global rate limiter instance.
+
+    Returns:
+        RateLimiter: The global rate limiter instance
+
+    Raises:
+        ConfigurationError: If the rate limiter is not initialized
+    """
+    if _rate_limiter is None:
+        raise ConfigurationError("Rate limiter is not initialized")
+    return _rate_limiter
+
 class RateLimiter:
     """
     Implements rate limiting for Odoo API requests.

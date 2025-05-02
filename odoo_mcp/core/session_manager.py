@@ -8,13 +8,49 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 
-from odoo_mcp.core.authenticator import OdooAuthenticator
-from odoo_mcp.core.connection_pool import ConnectionPool
+from odoo_mcp.core.authenticator import OdooAuthenticator, get_authenticator
+from odoo_mcp.core.connection_pool import ConnectionPool, get_connection_pool
 from odoo_mcp.error_handling.exceptions import (
     OdooMCPError, ConfigurationError, NetworkError, AuthError
 )
 
 logger = logging.getLogger(__name__)
+
+# Global session manager instance
+_session_manager = None
+
+def initialize_session_manager(config: Dict[str, Any]) -> None:
+    """
+    Initialize the global session manager.
+
+    Args:
+        config: Configuration dictionary
+
+    Raises:
+        ConfigurationError: If the session manager is already initialized
+    """
+    global _session_manager
+    if _session_manager is not None:
+        raise ConfigurationError("Session manager is already initialized")
+    
+    authenticator = get_authenticator()
+    pool = get_connection_pool()
+    _session_manager = SessionManager(config, authenticator, pool)
+    logger.info("Session manager initialized successfully")
+
+def get_session_manager() -> 'SessionManager':
+    """
+    Get the global session manager instance.
+
+    Returns:
+        SessionManager: The global session manager instance
+
+    Raises:
+        ConfigurationError: If the session manager is not initialized
+    """
+    if _session_manager is None:
+        raise ConfigurationError("Session manager is not initialized")
+    return _session_manager
 
 class SessionManager:
     """
