@@ -58,6 +58,19 @@ class SessionError(OdooMCPError):
     """Raised for errors related to user session management."""
     pass
 
+class RateLimitError(OdooMCPError):
+    """Raised when a rate limit is exceeded for API requests."""
+    default_code = -32012
+    default_message = "Rate limit exceeded"
+
+    def to_jsonrpc_error(self) -> Dict[str, Any]:
+        """Convert exception to JSON-RPC error object using specific code."""
+        return {
+            "code": self.default_code,
+            "message": self.message or self.default_message,
+            "data": str(self.original_exception) if self.original_exception else None
+        }
+
 class OdooValidationError(ProtocolError): # Inherit from ProtocolError as it's an execution error
     """Raised specifically for Odoo model validation failures (e.g., UserError)."""
     default_code = -32010 # Example custom code for Odoo validation
