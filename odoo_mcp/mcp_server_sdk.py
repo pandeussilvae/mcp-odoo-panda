@@ -398,6 +398,9 @@ class OdooMCPServer:
                 headers=dict(request.headers)  # Pass all headers to MCPRequest
             )
             
+            # Log all request headers for debugging
+            logger.debug(f"Request headers: {dict(request.headers)}")
+            
             # Route the request based on method type
             if method in no_auth_methods:
                 logger.info(f"Handling public method: {method}")
@@ -428,10 +431,13 @@ class OdooMCPServer:
                     response = await self._handle_login(mcp_request)
             else:
                 logger.info(f"Handling authenticated method: {method}")
-                # For all other methods, validate session first
+                
+                # Check for session ID header
                 session_id = request.headers.get('X-Session-ID')
+                logger.debug(f"Session ID from headers: {session_id}")
+                
                 if not session_id:
-                    logger.warning(f"No session ID provided for method: {method}")
+                    logger.warning(f"No session ID provided for authenticated method: {method}")
                     return web.json_response({
                         'jsonrpc': '2.0',
                         'error': {
