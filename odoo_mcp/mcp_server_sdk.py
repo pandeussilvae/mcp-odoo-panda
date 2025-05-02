@@ -455,9 +455,9 @@ class OdooMCPServer:
             # Get server capabilities
             capabilities = self.capabilities_manager.get_capabilities()
             
-            # Create response
+            # Create response with correct protocol version
             return MCPResponse.success({
-                'protocolVersion': '1.0',
+                'protocolVersion': '2024-01-01',  # Use the correct protocol version
                 'serverInfo': {
                     'name': 'Odoo MCP Server',
                     'version': '1.0.0'
