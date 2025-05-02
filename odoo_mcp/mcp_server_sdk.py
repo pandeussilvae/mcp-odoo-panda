@@ -8,6 +8,7 @@ import asyncio
 from typing import Dict, Any, Optional, List, Union
 from fastmcp import FastMCP, MCPRequest, MCPResponse
 from fastmcp.decorators import mcp_handler, mcp_resource, mcp_tool
+from aiohttp import web
 
 from odoo_mcp.core.protocol_handler import JsonRpcRequest, JsonRpcResponse
 from odoo_mcp.core.connection_pool import ConnectionPool, initialize_connection_pool, get_connection_pool
@@ -60,6 +61,9 @@ class OdooMCPServer:
         if self.mcp_protocol == 'streamable_http':
             self.config['http'] = self.config.get('http', {})
             self.config['http']['streamable'] = True
+            # Initialize aiohttp app for HTTP server
+            self.web_app = web.Application()
+            self.web_app.router.add_post('/', self._handle_http_request)
         
         # Select handler class based on Odoo protocol
         handler_class = XMLRPCHandler if self.odoo_protocol == 'xmlrpc' else JSONRPCHandler
@@ -338,6 +342,31 @@ class OdooMCPServer:
                 id=request.id
             )
 
+    async def _handle_http_request(self, request: web.Request) -> web.Response:
+        """Handle HTTP requests."""
+        try:
+            # Parse request body as JSON
+            data = await request.json()
+            
+            # Create MCP request
+            mcp_request = MCPRequest(
+                method=data.get('method'),
+                params=data.get('params', {}),
+                id=data.get('id')
+            )
+            
+            # Handle request using FastMCP
+            response = await self.app.handle_request(mcp_request)
+            
+            # Return response
+            return web.json_response(response.to_dict())
+            
+        except Exception as e:
+            logger.error(f"Error handling HTTP request: {str(e)}")
+            return web.json_response({
+                'error': str(e)
+            }, status=500)
+
     async def start(self) -> None:
         """Start the MCP server."""
         try:
@@ -354,10 +383,11 @@ class OdooMCPServer:
             
             # Start the server
             if self.mcp_protocol == 'streamable_http':
-                # Start the server and store the server instance
-                self._started_mcp_server_instance = await self.app.start(host=host, port=port)
-                if self._started_mcp_server_instance is None:
-                    raise RuntimeError("Failed to start HTTP server - no server instance returned")
+                # Start the HTTP server
+                runner = web.AppRunner(self.web_app)
+                await runner.setup()
+                self._started_mcp_server_instance = web.TCPSite(runner, host, port)
+                await self._started_mcp_server_instance.start()
                 logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
             else:
                 # For stdio protocol, just start
@@ -373,8 +403,7 @@ class OdooMCPServer:
         try:
             logger.info("Stopping Odoo MCP Server...")
             if hasattr(self, '_started_mcp_server_instance') and self._started_mcp_server_instance is not None:
-                await self._started_mcp_server_instance.close()
-                await self._started_mcp_server_instance.wait_closed()
+                await self._started_mcp_server_instance.stop()
             logger.info("Odoo MCP Server stopped")
         except Exception as e:
             logger.error(f"Error stopping server: {str(e)}")
