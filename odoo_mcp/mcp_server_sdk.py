@@ -355,22 +355,12 @@ class OdooMCPServer:
             # Start the server
             if self.mcp_protocol == 'streamable_http':
                 # Start the server and store the server instance
-                self.server = await self.app.start(host=host, port=port)
+                self._started_mcp_server_instance = await self.app.start(host=host, port=port)
                 logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
-                
-                # Keep the server running until stopped
-                try:
-                    await self.server.wait_closed()
-                except asyncio.CancelledError:
-                    logger.info("Server shutdown requested")
             else:
-                # For stdio protocol, just start and keep running
+                # For stdio protocol, just start
                 await self.app.start()
                 logger.info("Odoo MCP Server started successfully in stdio mode")
-                
-                # Keep the server running
-                while True:
-                    await asyncio.sleep(1)
             
         except Exception as e:
             logger.error(f"Error starting server: {str(e)}")
@@ -380,9 +370,9 @@ class OdooMCPServer:
         """Stop the MCP server."""
         try:
             logger.info("Stopping Odoo MCP Server...")
-            if hasattr(self, 'server'):
-                await self.server.close()
-            await self.app.stop()
+            if hasattr(self, '_started_mcp_server_instance') and self._started_mcp_server_instance is not None:
+                await self._started_mcp_server_instance.close()
+                await self._started_mcp_server_instance.wait_closed()
             logger.info("Odoo MCP Server stopped")
         except Exception as e:
             logger.error(f"Error stopping server: {str(e)}")
@@ -414,8 +404,15 @@ async def run_server(config: Dict[str, Any]) -> None:
         logger.info("Starting server...")
         await server.start()
         
-    except KeyboardInterrupt:
-        logger.info("Received shutdown signal")
+        # Wait for the server to be stopped
+        if hasattr(server, '_started_mcp_server_instance') and server._started_mcp_server_instance is not None:
+            try:
+                await server._started_mcp_server_instance.wait_closed()
+            except asyncio.CancelledError:
+                logger.info("Server shutdown requested")
+            except KeyboardInterrupt:
+                logger.info("Server stopped by user")
+        
     except Exception as e:
         logger.error(f"Server error: {str(e)}")
         raise
