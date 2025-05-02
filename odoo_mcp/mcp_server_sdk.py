@@ -40,14 +40,19 @@ class OdooMCPServer:
             config: Configuration dictionary
         """
         self.config = config
-        self.protocol = config.get('protocol', 'stdio')  # Default to stdio if not specified
         
-        # Validate protocol
-        if self.protocol not in ['stdio', 'streamable_http']:
-            raise ConfigurationError(f"Unsupported protocol: {self.protocol}")
+        # Get Odoo protocol (xmlrpc/jsonrpc)
+        self.odoo_protocol = config.get('protocol', 'xmlrpc').lower()
+        if self.odoo_protocol not in ['xmlrpc', 'jsonrpc']:
+            raise ConfigurationError(f"Unsupported Odoo protocol: {self.odoo_protocol}")
         
-        # Initialize FastMCP with protocol
-        self.app = FastMCP(protocol=self.protocol)
+        # Get MCP protocol (stdio/streamable_http)
+        self.mcp_protocol = config.get('connection_type', 'stdio').lower()
+        if self.mcp_protocol not in ['stdio', 'streamable_http']:
+            raise ConfigurationError(f"Unsupported MCP protocol: {self.mcp_protocol}")
+        
+        # Initialize FastMCP with MCP protocol
+        self.app = FastMCP(protocol=self.mcp_protocol)
         
         # Initialize components
         try:
@@ -80,7 +85,7 @@ class OdooMCPServer:
         # Register handlers
         self._register_handlers()
         
-        logger.info(f"Odoo MCP Server initialized with protocol: {self.protocol}")
+        logger.info(f"Odoo MCP Server initialized with Odoo protocol: {self.odoo_protocol}, MCP protocol: {self.mcp_protocol}")
 
     def _register_handlers(self) -> None:
         """Register all MCP handlers."""
@@ -385,13 +390,13 @@ if __name__ == "__main__":
     import os
     
     # Parse command line arguments
-    protocol = None
+    mcp_protocol = None
     default_config_path = os.path.join('odoo_mcp', 'config', 'config.json')
     config_path = default_config_path
     
     if len(sys.argv) > 1:
         if sys.argv[1] in ['streamable_http', 'stdio']:
-            protocol = sys.argv[1]
+            mcp_protocol = sys.argv[1]
             if len(sys.argv) > 2:
                 config_path = sys.argv[2]
         else:
@@ -418,9 +423,9 @@ if __name__ == "__main__":
         logger.error(f"Invalid JSON in configuration file: {config_path}")
         sys.exit(1)
     
-    # Set protocol in config if specified
-    if protocol:
-        config['protocol'] = protocol
+    # Set MCP protocol in config if specified
+    if mcp_protocol:
+        config['connection_type'] = mcp_protocol
     
     # Configure logging
     logging.basicConfig(
