@@ -458,7 +458,7 @@ class OdooMCPServer:
                 logger.error("CapabilitiesManager not initialized in _handle_initialize")
                 return MCPResponse.error("Server not properly initialized")
             
-            # Get server capabilities
+            # Get server capabilities following MCP 2025-03-26 specification
             capabilities = self.capabilities_manager.get_capabilities()
             
             # Create response with correct protocol version and server info
@@ -469,7 +469,8 @@ class OdooMCPServer:
                     'name': SERVER_NAME,
                     'version': SERVER_VERSION
                 },
-                'capabilities': capabilities
+                'capabilities': capabilities,
+                'instructions': 'Optional instructions for the client'  # Optional field as per spec
             }
             
             # Log the complete response structure for debugging

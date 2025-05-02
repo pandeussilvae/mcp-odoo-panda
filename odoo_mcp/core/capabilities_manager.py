@@ -237,36 +237,34 @@ class CapabilitiesManager:
 
     def get_capabilities(self) -> Dict[str, Any]:
         """
-        Get server capabilities.
+        Get server capabilities following MCP 2025-03-26 specification.
 
         Returns:
-            Dict[str, Any]: Server capabilities
+            Dict[str, Any]: Server capabilities with the following structure:
+            {
+                "logging": {},
+                "prompts": {
+                    "listChanged": true
+                },
+                "resources": {
+                    "subscribe": true,
+                    "listChanged": true
+                },
+                "tools": {
+                    "listChanged": true
+                }
+            }
         """
         return {
-            'resources': {
-                name: {
-                    'type': resource.type.value,
-                    'description': resource.description,
-                    'operations': resource.operations,
-                    'parameters': resource.parameters
-                }
-                for name, resource in self.resources.items()
+            "logging": {},  # Empty object indicates basic logging support
+            "prompts": {
+                "listChanged": self.is_feature_enabled('prompts.listChanged')
             },
-            'tools': {
-                name: {
-                    'description': tool.description,
-                    'operations': tool.operations,
-                    'parameters': tool.parameters
-                }
-                for name, tool in self.tools.items()
+            "resources": {
+                "subscribe": self.is_feature_enabled('resources.subscribe'),
+                "listChanged": self.is_feature_enabled('resources.listChanged')
             },
-            'prompts': {
-                name: {
-                    'description': prompt.description,
-                    'template': prompt.template,
-                    'parameters': prompt.parameters
-                }
-                for name, prompt in self.prompts.items()
-            },
-            'features': self.feature_flags
+            "tools": {
+                "listChanged": self.is_feature_enabled('tools.listChanged')
+            }
         } 
