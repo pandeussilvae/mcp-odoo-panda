@@ -361,13 +361,23 @@ class OdooMCPServer:
         try:
             # Parse request body as JSON
             data = await request.json()
+            logger.debug(f"Received request data: {json.dumps(data, indent=2)}")
             
-            # Create MCP request with correct parameters
-            mcp_request = MCPRequest(
-                method=data.get('method'),
-                parameters=data.get('parameters', {}),
-                id=data.get('id')
-            )
+            # Extract MCP request details
+            method = data.get('method')
+            request_id = data.get('id')
+            params = data.get('params', {})  # Standard JSON-RPC uses 'params'
+            
+            if not method:
+                logger.error("No method specified in request")
+                return web.json_response({
+                    'jsonrpc': '2.0',
+                    'error': {
+                        'code': -32600,
+                        'message': 'Invalid request: method is required'
+                    },
+                    'id': request_id
+                }, status=400)
             
             # List of methods that don't require authentication
             no_auth_methods = {
@@ -378,10 +388,19 @@ class OdooMCPServer:
                 'get_prompt'
             }
             
-            # Route the request to the appropriate handler based on the request type
-            if mcp_request.method in no_auth_methods:
+            # Create MCP request object
+            mcp_request = MCPRequest(
+                method=method,
+                parameters=params,
+                id=request_id,
+                headers=dict(request.headers)  # Pass all headers to MCPRequest
+            )
+            
+            # Route the request based on method type
+            if method in no_auth_methods:
+                logger.info(f"Handling public method: {method}")
                 # Handle methods that don't require authentication
-                if mcp_request.method == 'initialize':
+                if method == 'initialize':
                     if not hasattr(self, 'capabilities_manager'):
                         logger.error("CapabilitiesManager not initialized")
                         return web.json_response({
@@ -390,34 +409,36 @@ class OdooMCPServer:
                                 'code': -32603,
                                 'message': 'Server not properly initialized'
                             },
-                            'id': mcp_request.id
+                            'id': request_id
                         }, status=500)
                     response = await self._handle_initialize(mcp_request)
-                elif mcp_request.method == 'list_resources':
+                elif method == 'list_resources':
                     response = await self._handle_list_resources(mcp_request)
-                elif mcp_request.method == 'list_tools':
+                elif method == 'list_tools':
                     response = await self._handle_list_tools(mcp_request)
-                elif mcp_request.method == 'list_prompts':
+                elif method == 'list_prompts':
                     response = await self._handle_list_prompts(mcp_request)
-                elif mcp_request.method == 'get_prompt':
+                elif method == 'get_prompt':
                     response = await self._handle_get_prompt(mcp_request)
             else:
+                logger.info(f"Handling authenticated method: {method}")
                 # For all other methods, validate session first
                 session = await self._validate_session(mcp_request)
                 if not session:
+                    logger.warning(f"Invalid session for method: {method}")
                     return web.json_response({
                         'jsonrpc': '2.0',
                         'error': {
                             'code': -32001,
                             'message': 'Invalid session'
                         },
-                        'id': mcp_request.id
+                        'id': request_id
                     }, status=401)
                 
                 # Route to appropriate handler based on request type
-                if mcp_request.resource:
+                if hasattr(mcp_request, 'resource') and mcp_request.resource:
                     response = await self.handle_resource(mcp_request)
-                elif mcp_request.tool:
+                elif hasattr(mcp_request, 'tool') and mcp_request.tool:
                     response = await self.handle_tool(mcp_request)
                 else:
                     response = await self.handle_default(mcp_request)
@@ -425,7 +446,7 @@ class OdooMCPServer:
             # Convert MCPResponse to JSON-RPC response
             response_dict = {
                 'jsonrpc': '2.0',
-                'id': mcp_request.id
+                'id': request_id
             }
             
             if response.success:
@@ -436,9 +457,19 @@ class OdooMCPServer:
                     'message': response.error
                 }
             
-            # Return response
+            logger.debug(f"Sending response: {json.dumps(response_dict, indent=2)}")
             return web.json_response(response_dict)
             
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in request body: {str(e)}")
+            return web.json_response({
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32700,
+                    'message': 'Parse error: Invalid JSON'
+                },
+                'id': None
+            }, status=400)
         except Exception as e:
             logger.error(f"Error handling HTTP request: {str(e)}")
             return web.json_response({
