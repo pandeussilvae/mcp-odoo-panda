@@ -35,7 +35,7 @@ from odoo_mcp.core.connection_pool import ConnectionPool
 from odoo_mcp.core.authenticator import OdooAuthenticator
 from odoo_mcp.core.session_manager import SessionManager
 from odoo_mcp.core.rate_limiter import RateLimiter
-from odoo_mcp.core.odoo_bus_handler import OdooBusHandler
+from odoo_mcp.core.bus_handler import OdooBusHandler
 from odoo_mcp.error_handling.exceptions import (
     OdooMCPError, ConfigurationError, ProtocolError, AuthError, NetworkError,
     OdooRecordNotFoundError
