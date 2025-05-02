@@ -30,6 +30,11 @@ from odoo_mcp.error_handling.exceptions import (
     CacheError, BusError
 )
 
+# Constants
+SERVER_NAME = "odoo-mcp-server"
+SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
+PROTOCOL_VERSION = "2024-01-01"
+
 logger = logging.getLogger(__name__)
 
 class OdooMCPServer:
@@ -455,12 +460,12 @@ class OdooMCPServer:
             # Get server capabilities
             capabilities = self.capabilities_manager.get_capabilities()
             
-            # Create response with correct protocol version
+            # Create response with correct protocol version and server info
             return MCPResponse.success({
-                'protocolVersion': '2024-01-01',  # Use the correct protocol version
+                'protocolVersion': PROTOCOL_VERSION,  # Use the constant
                 'serverInfo': {
-                    'name': 'Odoo MCP Server',
-                    'version': '1.0.0'
+                    'name': SERVER_NAME,  # Use the constant
+                    'version': SERVER_VERSION  # Use the constant
                 },
                 'capabilities': capabilities
             })
