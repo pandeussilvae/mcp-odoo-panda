@@ -595,7 +595,7 @@ class OdooMCPServer(Server):
         if missing_fields:
             raise ProtocolError(f"Missing required fields: {', '.join(missing_fields)}")
 
-                return {
+        return {
             "prompt": {
                 "model": model,
                 "values": values,
@@ -651,7 +651,7 @@ class OdooMCPServer(Server):
             kwargs={}
         )
 
-            return {
+        return {
             "prompt": {
                 "model": model,
                 "domain": domain,
