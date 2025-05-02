@@ -365,16 +365,19 @@ class OdooMCPServer:
             else:
                 response = await self.handle_default(mcp_request)
             
-            # Convert MCPResponse to dictionary
+            # Convert MCPResponse to JSON-RPC response
             response_dict = {
                 'jsonrpc': '2.0',
-                'id': response.id
+                'id': mcp_request.id  # Use the request ID since MCPResponse doesn't have one
             }
             
-            if hasattr(response, 'error') and response.error:
-                response_dict['error'] = response.error
+            if response.success:
+                response_dict['result'] = response.data
             else:
-                response_dict['result'] = response.result
+                response_dict['error'] = {
+                    'code': -32000,  # General error code
+                    'message': response.error
+                }
             
             # Return response
             return web.json_response(response_dict)
