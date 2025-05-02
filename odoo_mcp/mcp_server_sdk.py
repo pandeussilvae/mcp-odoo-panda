@@ -66,7 +66,7 @@ def load_odoo_config(path="odoo_mcp/config/config.yaml"):
     example_path = "odoo_mcp/config/config.example.yaml"
     if os.path.exists(example_path):
         logger.info(f"Caricamento configurazione base da {example_path}")
-        with open(example_path, "r") as f:
+        with open(example_path, "r", encoding='utf-8') as f:
             config = yaml.safe_load(f)
     else:
         logger.warning(f"File {example_path} non trovato. Uso configurazione di default.")
@@ -74,10 +74,17 @@ def load_odoo_config(path="odoo_mcp/config/config.yaml"):
     # 2. Override con config.yaml se esiste
     if os.path.exists(path):
         logger.info(f"Caricamento configurazione da {path}")
-        with open(path, "r") as f:
-            file_config = yaml.safe_load(f)
-            if file_config:
-                config.update(file_config)
+        try:
+            with open(path, "r", encoding='utf-8') as f:
+                file_config = yaml.safe_load(f)
+                if file_config:
+                    config.update(file_config)
+                    logger.info("Configurazione caricata con successo")
+                else:
+                    logger.warning(f"File {path} è vuoto o non valido")
+        except Exception as e:
+            logger.error(f"Errore nel caricamento di {path}: {str(e)}")
+    else:
         logger.warning(f"File {path} non trovato. Uso configurazione di base.")
     
     # 3. Override con variabili d'ambiente
@@ -103,6 +110,12 @@ def load_odoo_config(path="odoo_mcp/config/config.yaml"):
             level=getattr(logging, log_config.get("level", "INFO")),
             format=log_config.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )
+    
+    # Log della configurazione finale
+    logger.info("Configurazione finale caricata:")
+    for key, value in config.items():
+        if key != "api_key":  # Non logghiamo le credenziali
+            logger.info(f"  {key}: {value}")
     
     return config
 
@@ -389,25 +402,7 @@ class OdooMCPServer(FastMCP):
                             'name': self._name,
                             'version': self._version
                         },
-                        'capabilities': {
-                            "tools": {
-                                "listChanged": True,
-                                "tools": TOOLS
-                            },
-                            "prompts": {
-                                "listChanged": True,
-                                "prompts": {p.name: p.model_dump() for p in prompt_manager.list_prompts()}
-                            },
-                            "resources": {
-                                "listChanged": True,
-                                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
-                                "subscribe": True
-                            },
-                            "streaming": True,
-                            "sse": True,
-                            "websocket": True,
-                            "experimental": {}
-                        }
+                        'capabilities': self._capabilities
                     },
                     'id': request_id
                 }
@@ -416,7 +411,8 @@ class OdooMCPServer(FastMCP):
 
             # Handle resources/list
             elif method == 'resources/list':
-                return {
+                print(f"[DEBUG] Handling resources/list request", file=sys.stderr)
+                response = {
                     'jsonrpc': '2.0',
                     'result': {
                         'resources': [
@@ -433,6 +429,8 @@ class OdooMCPServer(FastMCP):
                     },
                     'id': request_id
                 }
+                print(f"[DEBUG] Resources/list response: {json.dumps(response, indent=2)}", file=sys.stderr)
+                return response
 
             # For all other requests, use parent implementation
             return await super().handle_request(request)
