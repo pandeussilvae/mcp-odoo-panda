@@ -7,6 +7,18 @@
 
 This document describes all available parameters in the `config.json` configuration file.
 
+## Configuration Files Location
+
+- Example configuration file: `odoo_mcp/config/config.example.json`
+- Default configuration file: `odoo_mcp/config/config.json`
+
+To get started, copy the example configuration file to create your own:
+```bash
+cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
+```
+
+Then modify the parameters according to your needs.
+
 ## Odoo Connection Configuration
 
 - `odoo_url`: Odoo server URL (e.g., "http://localhost:8069")
@@ -78,6 +90,18 @@ This document describes all available parameters in the `config.json` configurat
 # Configurazione MCP Server
 
 Questo documento descrive tutti i parametri disponibili nel file di configurazione `config.json`.
+
+## Posizione dei File di Configurazione
+
+- File di configurazione di esempio: `odoo_mcp/config/config.example.json`
+- File di configurazione predefinito: `odoo_mcp/config/config.json`
+
+Per iniziare, copia il file di configurazione di esempio per crearne uno tuo:
+```bash
+cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
+```
+
+Poi modifica i parametri in base alle tue esigenze.
 
 ## Configurazione Connessione Odoo
 

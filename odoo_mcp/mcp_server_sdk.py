@@ -386,7 +386,8 @@ if __name__ == "__main__":
     
     # Parse command line arguments
     protocol = None
-    config_path = 'config.json'
+    default_config_path = os.path.join('odoo_mcp', 'config', 'config.json')
+    config_path = default_config_path
     
     if len(sys.argv) > 1:
         if sys.argv[1] in ['streamable_http', 'stdio']:
@@ -401,8 +402,18 @@ if __name__ == "__main__":
         with open(config_path, 'r') as f:
             config = json.load(f)
     except FileNotFoundError:
-        logger.error(f"Configuration file not found: {config_path}")
-        sys.exit(1)
+        if config_path != default_config_path:
+            logger.error(f"Configuration file not found: {config_path}")
+            sys.exit(1)
+        else:
+            logger.info(f"Using default configuration file: {default_config_path}")
+            try:
+                with open(default_config_path, 'r') as f:
+                    config = json.load(f)
+            except FileNotFoundError:
+                logger.error(f"Default configuration file not found: {default_config_path}")
+                logger.error("Please create a configuration file or specify a valid path")
+                sys.exit(1)
     except json.JSONDecodeError:
         logger.error(f"Invalid JSON in configuration file: {config_path}")
         sys.exit(1)
