@@ -353,12 +353,17 @@ class OdooMCPServer:
             # Create MCP request with correct parameters
             mcp_request = MCPRequest(
                 method=data.get('method'),
-                parameters=data.get('parameters', {}),  # Changed from 'params' to 'parameters'
+                parameters=data.get('parameters', {}),
                 id=data.get('id')
             )
             
-            # Handle request using FastMCP
-            response = await self.app.handle_request(mcp_request)
+            # Route the request to the appropriate handler based on the request type
+            if mcp_request.resource:
+                response = await self.handle_resource(mcp_request)
+            elif mcp_request.tool:
+                response = await self.handle_tool(mcp_request)
+            else:
+                response = await self.handle_default(mcp_request)
             
             # Return response
             return web.json_response(response.to_dict())
