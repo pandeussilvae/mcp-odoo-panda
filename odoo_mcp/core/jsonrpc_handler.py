@@ -12,7 +12,7 @@ from odoo_mcp.error_handling.exceptions import (
     NetworkError, ProtocolError, OdooMCPError, AuthError, ConfigurationError,
     OdooValidationError, OdooRecordNotFoundError
 )
-from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE, initialize_cache_manager
+from odoo_mcp.performance.caching import get_cache_manager, CACHE_TYPE, initialize_cache_manager
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +20,15 @@ def safe_cache_decorator(func):
     """Safe wrapper for cache decorator that handles None cache_manager."""
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        if cache_manager and CACHE_TYPE == 'cachetools':
-            cache_decorator = cache_manager.get_ttl_cache_decorator(
-                cache_instance=cache_manager.odoo_read_cache
-            )
-            return await cache_decorator(func)(*args, **kwargs)
+        try:
+            cache_manager = get_cache_manager()
+            if cache_manager and CACHE_TYPE == 'cachetools':
+                cache_decorator = cache_manager.get_ttl_cache_decorator(
+                    cache_instance=cache_manager.odoo_read_cache
+                )
+                return await cache_decorator(func)(*args, **kwargs)
+        except ConfigurationError:
+            logger.warning("Cache manager not initialized, executing without cache")
         return await func(*args, **kwargs)
     return wrapper
 
@@ -56,7 +60,9 @@ class JSONRPCHandler:
         self.database = config.get('database')
 
         # Initialize cache manager if not already initialized
-        if cache_manager is None:
+        try:
+            get_cache_manager()
+        except ConfigurationError:
             initialize_cache_manager(config)
 
         # --- Configure HTTPX AsyncClient with TLS ---
@@ -170,19 +176,20 @@ class JSONRPCHandler:
         """
         is_cacheable = service == 'object' and method in {'read', 'search', 'search_read', 'search_count', 'fields_get', 'default_get'}
 
-        if is_cacheable and cache_manager:
+        if is_cacheable:
             logger.debug(f"Cacheable JSON-RPC method detected: {service}.{method}. Attempting cache lookup.")
             try:
+                cache_manager = get_cache_manager()
                 hashable_args = self._make_hashable(args)
-            except TypeError as e:
-                 logger.warning(f"Could not make arguments hashable for caching {service}.{method}: {e}. Executing directly.")
-                 return await self._call_direct(service, method, args)
+            except (ConfigurationError, TypeError) as e:
+                logger.warning(f"Could not use cache for {service}.{method}: {e}. Executing directly.")
+                return await self._call_direct(service, method, args)
 
             if CACHE_TYPE == 'cachetools':
-                 return await self._call_cached(service, method, hashable_args)
+                return await self._call_cached(service, method, hashable_args)
             else:
-                 logger.debug("Executing non-TTL cached or uncached JSON-RPC read method.")
-                 return await self._call_direct(service, method, args)
+                logger.debug("Executing non-TTL cached or uncached JSON-RPC read method.")
+                return await self._call_direct(service, method, args)
         else:
             logger.debug(f"Executing non-cacheable JSON-RPC method: {service}.{method}")
             return await self._call_direct(service, method, args)

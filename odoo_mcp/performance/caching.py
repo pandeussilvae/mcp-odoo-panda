@@ -9,6 +9,8 @@ import functools
 from typing import Dict, Any, Optional, Callable, TypeVar, cast
 from enum import Enum
 
+from odoo_mcp.error_handling.exceptions import ConfigurationError
+
 logger = logging.getLogger(__name__)
 
 class CACHE_TYPE(str, Enum):
@@ -16,6 +18,40 @@ class CACHE_TYPE(str, Enum):
     CACHETOOLS = 'cachetools'
     MEMORY = 'memory'
     REDIS = 'redis'
+
+# Global cache manager instance
+_cache_manager = None
+
+def initialize_cache_manager(config: Dict[str, Any]) -> None:
+    """
+    Initialize the global cache manager.
+
+    Args:
+        config: Configuration dictionary
+
+    Raises:
+        ConfigurationError: If the cache manager is already initialized
+    """
+    global _cache_manager
+    if _cache_manager is not None:
+        raise ConfigurationError("Cache manager is already initialized")
+    
+    _cache_manager = CacheManager(config)
+    logger.info("Cache manager initialized successfully")
+
+def get_cache_manager() -> 'CacheManager':
+    """
+    Get the global cache manager instance.
+
+    Returns:
+        CacheManager: The global cache manager instance
+
+    Raises:
+        ConfigurationError: If the cache manager is not initialized
+    """
+    if _cache_manager is None:
+        raise ConfigurationError("Cache manager is not initialized")
+    return _cache_manager
 
 class CacheManager:
     """Cache manager implementation."""
@@ -126,17 +162,3 @@ class CacheManager:
         self.clear_cache()
         if hasattr(self, 'redis_client'):
             await self.redis_client.close()
-
-# Global cache manager instance
-cache_manager: Optional[CacheManager] = None
-
-def initialize_cache_manager(config: Dict[str, Any]) -> None:
-    """
-    Initialize the global cache manager.
-
-    Args:
-        config: Configuration dictionary
-    """
-    global cache_manager
-    cache_manager = CacheManager(config)
-    logger.info("Cache manager initialized")

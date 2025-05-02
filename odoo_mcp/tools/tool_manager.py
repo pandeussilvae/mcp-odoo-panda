@@ -7,7 +7,43 @@ import logging
 from typing import Dict, Any, Optional, List, Callable, Union
 from functools import wraps
 
+from odoo_mcp.error_handling.exceptions import ConfigurationError
+
 logger = logging.getLogger(__name__)
+
+# Global tool manager instance
+_tool_manager = None
+
+def initialize_tool_manager(config: Dict[str, Any]) -> None:
+    """
+    Initialize the global tool manager.
+
+    Args:
+        config: Configuration dictionary
+
+    Raises:
+        ConfigurationError: If the tool manager is already initialized
+    """
+    global _tool_manager
+    if _tool_manager is not None:
+        raise ConfigurationError("Tool manager is already initialized")
+    
+    _tool_manager = ToolManager(config)
+    logger.info("Tool manager initialized successfully")
+
+def get_tool_manager() -> 'ToolManager':
+    """
+    Get the global tool manager instance.
+
+    Returns:
+        ToolManager: The global tool manager instance
+
+    Raises:
+        ConfigurationError: If the tool manager is not initialized
+    """
+    if _tool_manager is None:
+        raise ConfigurationError("Tool manager is not initialized")
+    return _tool_manager
 
 class ToolManager:
     """Manages Odoo tools and their operations."""
@@ -212,18 +248,4 @@ def tool_operation_handler(tool_name: str, operation_name: str):
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
         return wrapper
-    return decorator
-
-# Global tool manager instance
-tool_manager: Optional[ToolManager] = None
-
-def initialize_tool_manager(config: Dict[str, Any]) -> None:
-    """
-    Initialize the global tool manager.
-
-    Args:
-        config: Configuration dictionary
-    """
-    global tool_manager
-    tool_manager = ToolManager(config)
-    logger.info("Tool manager initialized") 
+    return decorator 

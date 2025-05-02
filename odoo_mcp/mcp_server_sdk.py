@@ -10,14 +10,14 @@ from fastmcp import FastMCP, MCPRequest, MCPResponse
 from fastmcp.decorators import mcp_handler, mcp_resource, mcp_tool
 
 from odoo_mcp.core.protocol_handler import JsonRpcRequest, JsonRpcResponse
-from odoo_mcp.core.connection_pool import ConnectionPool, initialize_connection_pool
-from odoo_mcp.core.authenticator import Authenticator, initialize_authenticator
-from odoo_mcp.core.session_manager import SessionManager, initialize_session_manager
-from odoo_mcp.core.rate_limiter import RateLimiter, initialize_rate_limiter
-from odoo_mcp.performance.caching import CacheManager, initialize_cache_manager
-from odoo_mcp.prompts.prompt_manager import PromptManager, initialize_prompt_manager
-from odoo_mcp.resources.resource_manager import ResourceManager, initialize_resource_manager
-from odoo_mcp.tools.tool_manager import ToolManager, initialize_tool_manager
+from odoo_mcp.core.connection_pool import ConnectionPool, initialize_connection_pool, get_connection_pool
+from odoo_mcp.core.authenticator import Authenticator, initialize_authenticator, get_authenticator
+from odoo_mcp.core.session_manager import SessionManager, initialize_session_manager, get_session_manager
+from odoo_mcp.core.rate_limiter import RateLimiter, initialize_rate_limiter, get_rate_limiter
+from odoo_mcp.performance.caching import CacheManager, initialize_cache_manager, get_cache_manager
+from odoo_mcp.prompts.prompt_manager import PromptManager, initialize_prompt_manager, get_prompt_manager
+from odoo_mcp.resources.resource_manager import ResourceManager, initialize_resource_manager, get_resource_manager
+from odoo_mcp.tools.tool_manager import ToolManager, initialize_tool_manager, get_tool_manager
 from odoo_mcp.core.capabilities_manager import CapabilitiesManager, ResourceTemplate, Tool, Prompt
 from odoo_mcp.error_handling.exceptions import (
     OdooMCPError, AuthError, NetworkError, ProtocolError,
@@ -51,6 +51,16 @@ class OdooMCPServer:
         initialize_prompt_manager(config)
         initialize_resource_manager(config)
         initialize_tool_manager(config)
+        
+        # Get manager instances
+        self.connection_pool = get_connection_pool()
+        self.authenticator = get_authenticator()
+        self.session_manager = get_session_manager()
+        self.rate_limiter = get_rate_limiter()
+        self.cache_manager = get_cache_manager()
+        self.prompt_manager = get_prompt_manager()
+        self.resource_manager = get_resource_manager()
+        self.tool_manager = get_tool_manager()
         
         # Register handlers
         self._register_handlers()
@@ -169,7 +179,7 @@ class OdooMCPServer:
         if not session_id:
             return None
         
-        return await session_manager.validate_session(session_id)
+        return await self.session_manager.validate_session(session_id)
 
     def _check_rate_limit(self, request: MCPRequest) -> bool:
         """
@@ -182,7 +192,7 @@ class OdooMCPServer:
             bool: True if within limits, False otherwise
         """
         client_id = request.headers.get('X-Client-ID', 'default')
-        return rate_limiter.check_rate_limit(client_id)
+        return self.rate_limiter.check_rate_limit(client_id)
 
     async def _execute_resource_operation(self, request: MCPRequest, session: Dict[str, Any]) -> Any:
         """
@@ -199,7 +209,7 @@ class OdooMCPServer:
         operation_name = request.operation
         
         # Get resource operation
-        operation = resource_manager.get_operation(resource_name, operation_name)
+        operation = self.resource_manager.get_operation(resource_name, operation_name)
         if not operation:
             raise ValueError(f"Operation not found: {resource_name}.{operation_name}")
         
@@ -221,7 +231,7 @@ class OdooMCPServer:
         operation_name = request.operation
         
         # Get tool operation
-        operation = tool_manager.get_operation(tool_name, operation_name)
+        operation = self.tool_manager.get_operation(tool_name, operation_name)
         if not operation:
             raise ValueError(f"Operation not found: {tool_name}.{operation_name}")
         
@@ -266,7 +276,7 @@ class OdooMCPServer:
         """
         try:
             # Get connection from pool
-            connection = await connection_pool.get_connection()
+            connection = await self.connection_pool.get_connection()
             
             try:
                 # Execute request
@@ -285,7 +295,7 @@ class OdooMCPServer:
                 
             finally:
                 # Release connection
-                await connection_pool.release_connection(connection)
+                await self.connection_pool.release_connection(connection)
 
         except Exception as e:
             logger.error(f"Error processing JSON-RPC request: {str(e)}")

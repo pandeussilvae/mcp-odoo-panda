@@ -8,7 +8,43 @@ import json
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
+from odoo_mcp.error_handling.exceptions import ConfigurationError
+
 logger = logging.getLogger(__name__)
+
+# Global prompt manager instance
+_prompt_manager = None
+
+def initialize_prompt_manager(config: Dict[str, Any]) -> None:
+    """
+    Initialize the global prompt manager.
+
+    Args:
+        config: Configuration dictionary
+
+    Raises:
+        ConfigurationError: If the prompt manager is already initialized
+    """
+    global _prompt_manager
+    if _prompt_manager is not None:
+        raise ConfigurationError("Prompt manager is already initialized")
+    
+    _prompt_manager = PromptManager(config)
+    logger.info("Prompt manager initialized successfully")
+
+def get_prompt_manager() -> 'PromptManager':
+    """
+    Get the global prompt manager instance.
+
+    Returns:
+        PromptManager: The global prompt manager instance
+
+    Raises:
+        ConfigurationError: If the prompt manager is not initialized
+    """
+    if _prompt_manager is None:
+        raise ConfigurationError("Prompt manager is not initialized")
+    return _prompt_manager
 
 class PromptManager:
     """Manages system prompts and templates."""
@@ -208,18 +244,4 @@ class PromptManager:
         Returns:
             List[str]: List of template names
         """
-        return list(self.templates.keys())
-
-# Global prompt manager instance
-prompt_manager: Optional[PromptManager] = None
-
-def initialize_prompt_manager(config: Dict[str, Any]) -> None:
-    """
-    Initialize the global prompt manager.
-
-    Args:
-        config: Configuration dictionary
-    """
-    global prompt_manager
-    prompt_manager = PromptManager(config)
-    logger.info("Prompt manager initialized") 
+        return list(self.templates.keys()) 

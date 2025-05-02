@@ -8,7 +8,7 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 
-from odoo_mcp.core.authenticator import OdooAuthenticator, get_authenticator
+from odoo_mcp.core.authenticator import Authenticator, get_authenticator
 from odoo_mcp.core.connection_pool import ConnectionPool, get_connection_pool
 from odoo_mcp.error_handling.exceptions import (
     OdooMCPError, ConfigurationError, NetworkError, AuthError
@@ -61,7 +61,7 @@ class SessionManager:
     def __init__(
         self,
         config: Dict[str, Any],
-        authenticator: OdooAuthenticator,
+        authenticator: Authenticator,
         pool: ConnectionPool
     ):
         """
@@ -69,7 +69,7 @@ class SessionManager:
 
         Args:
             config: Configuration dictionary
-            authenticator: OdooAuthenticator instance
+            authenticator: Authenticator instance
             pool: ConnectionPool instance
         """
         self.config = config

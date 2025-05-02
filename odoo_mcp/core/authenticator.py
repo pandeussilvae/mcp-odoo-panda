@@ -33,15 +33,15 @@ def initialize_authenticator(config: Dict[str, Any]) -> None:
         raise ConfigurationError("Authenticator is already initialized")
     
     pool = get_connection_pool()
-    _authenticator = OdooAuthenticator(config, pool)
+    _authenticator = Authenticator(config, pool)
     logger.info("Authenticator initialized successfully")
 
-def get_authenticator() -> 'OdooAuthenticator':
+def get_authenticator() -> 'Authenticator':
     """
     Get the global authenticator instance.
 
     Returns:
-        OdooAuthenticator: The global authenticator instance
+        Authenticator: The global authenticator instance
 
     Raises:
         ConfigurationError: If the authenticator is not initialized
@@ -50,7 +50,7 @@ def get_authenticator() -> 'OdooAuthenticator':
         raise ConfigurationError("Authenticator is not initialized")
     return _authenticator
 
-class OdooAuthenticator:
+class Authenticator:
     """
     Handles authentication for Odoo API connections.
     Provides session management, token refresh, and error handling.
