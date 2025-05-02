@@ -150,21 +150,21 @@ RESOURCE_TEMPLATES = [
     {
         "uriTemplate": "odoo://{model}/{id}",
         "name": "Odoo Record",
-        "description": "Represents a single record in an Odoo model",
+        "description": "Get a single Odoo record",
         "type": "record",
         "mimeType": "application/json"
     },
     {
         "uriTemplate": "odoo://{model}/list",
-        "name": "Odoo Record List",
-        "description": "Represents a list of records in an Odoo model",
+        "name": "Odoo Record List", 
+        "description": "Get a list of Odoo records",
         "type": "list",
         "mimeType": "application/json"
     },
     {
         "uriTemplate": "odoo://{model}/binary/{field}/{id}",
         "name": "Odoo Binary Field",
-        "description": "Represents a binary field value from an Odoo record",
+        "description": "Get a binary field from an Odoo record",
         "type": "binary",
         "mimeType": "application/octet-stream"
     }
@@ -336,8 +336,37 @@ PROMPTS = {
 
 # Constants
 SERVER_NAME = "odoo-mcp-server"
-SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
-PROTOCOL_VERSION = "2024-01-01"  # Protocol version in YYYY-MM-DD format
+SERVER_VERSION = "2024.2.5"
+PROTOCOL_VERSION = "0.1.0"
+
+DEFAULT_CAPABILITIES = {
+    "tools": {
+        "listChanged": True,
+        "tools": {
+            "odoo_login": {
+                "description": "Login to Odoo server",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "username": {"type": "string", "description": "Username"},
+                        "password": {"type": "string", "description": "Password"},
+                        "database": {"type": "string", "description": "Database name"},
+                        "odoo_url": {"type": "string", "description": "Odoo server URL"}
+                    }
+                }
+            }
+        }
+    },
+    "resources": {
+        "listChanged": True,
+        "resources": RESOURCE_TEMPLATES,
+        "subscribe": True
+    },
+    "streaming": True,
+    "sse": True,
+    "websocket": True,
+    "experimental": {}
+}
 
 class OdooMCPServer(FastMCP):
     """Custom MCP Server implementation that ensures proper version and capabilities."""
@@ -349,25 +378,7 @@ class OdooMCPServer(FastMCP):
         self._version = SERVER_VERSION
         
         # Initialize capabilities before calling parent
-        self._capabilities = {
-            "tools": {
-                "listChanged": True,
-                "tools": TOOLS
-            },
-            "prompts": {
-                "listChanged": True,
-                "prompts": {p.name: p.model_dump() for p in prompt_manager.list_prompts()}
-            },
-            "resources": {
-                "listChanged": True,
-                "resources": RESOURCE_TEMPLATES,
-                "subscribe": True
-            },
-            "streaming": True,
-            "sse": True,
-            "websocket": True,
-            "experimental": {}
-        }
+        self._capabilities = DEFAULT_CAPABILITIES
         
         # Load configuration
         self.config = load_odoo_config()
@@ -749,34 +760,11 @@ def initialize_mcp(transport_type):
                     model, type, id_or_info = parse_odoo_uri(uri)
                     
                     if type == "list":
-                        result = await odoo.execute_kw(
-                            model=model,
-                            method="search_read",
-                            args=[[], ["name", "id"]],
-                            kwargs={"limit": 50},
-                            uid=uid,
-                            password=password
-                        )
+                        result = await list_odoo_records(model)
                     elif type == "record":
-                        result = await odoo.execute_kw(
-                            model=model,
-                            method="read",
-                            args=[[id_or_info]],
-                            kwargs={},
-                            uid=uid,
-                            password=password
-                        )
-                        result = result[0] if result else None
+                        result = await get_odoo_record(model, id_or_info)
                     else:  # binary
-                        result = await odoo.execute_kw(
-                            model=model,
-                            method="read",
-                            args=[[id_or_info["id"]], [id_or_info["field"]]],
-                            kwargs={},
-                            uid=uid,
-                            password=password
-                        )
-                        result = result[0][id_or_info["field"]] if result else None
+                        result = await get_odoo_binary(model, id_or_info["field"], id_or_info["id"])
 
                     return {
                         "jsonrpc": "2.0",
