@@ -341,7 +341,8 @@ class OdooMCPServer(FastMCP):
             transport_types = [transport_types]
         self._name = SERVER_NAME
         self._version = SERVER_VERSION
-        super().__init__(server_name=self._name, transport_types=transport_types)
+        
+        # Initialize capabilities before calling parent
         self._capabilities = {
             "tools": {
                 "listChanged": True,
@@ -362,13 +363,16 @@ class OdooMCPServer(FastMCP):
             "experimental": {}
         }
         
+        # Call parent init with our server name
+        super().__init__(server_name=self._name, transport_types=transport_types)
+        
         # Log initialization
         print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
         print(f"[DEBUG] - name: {self._name}", file=sys.stderr)
         print(f"[DEBUG] - version: {self._version}", file=sys.stderr)
         print(f"[DEBUG] - transport types: {transport_types}", file=sys.stderr)
         print(f"[DEBUG] - capabilities: {json.dumps(self._capabilities, indent=2)}", file=sys.stderr)
-    
+
     @property
     def version(self) -> str:
         return self._version
@@ -394,7 +398,6 @@ class OdooMCPServer(FastMCP):
             # Handle initialization specially
             if method == 'initialize':
                 print(f"[DEBUG] Handling initialize request", file=sys.stderr)
-                # Do not call parent initialize - use our own response
                 response = {
                     'jsonrpc': '2.0',
                     'result': {
@@ -403,25 +406,7 @@ class OdooMCPServer(FastMCP):
                             'name': self._name,
                             'version': self._version
                         },
-                        'capabilities': {
-                            "tools": {
-                                "listChanged": True,
-                                "tools": TOOLS
-                            },
-                            "prompts": {
-                                "listChanged": True,
-                                "prompts": {p.name: p.model_dump() for p in prompt_manager.list_prompts()}
-                            },
-                            "resources": {
-                                "listChanged": True,
-                                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
-                                "subscribe": True
-                            },
-                            "streaming": True,
-                            "sse": True,
-                            "websocket": True,
-                            "experimental": {}
-                        }
+                        'capabilities': self._capabilities
                     },
                     'id': request_id
                 }
@@ -431,7 +416,6 @@ class OdooMCPServer(FastMCP):
             # Handle resources/list
             elif method == 'resources/list':
                 print(f"[DEBUG] Handling resources/list request", file=sys.stderr)
-                # Do not call parent resources/list - use our own response
                 response = {
                     'jsonrpc': '2.0',
                     'result': {
