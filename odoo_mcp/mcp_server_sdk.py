@@ -94,6 +94,11 @@ class OdooMCPServer:
             self.prompt_manager = get_prompt_manager()
             self.resource_manager = get_resource_manager()
             self.tool_manager = get_tool_manager()
+            
+            # Initialize capabilities manager
+            self.capabilities_manager = CapabilitiesManager(config)
+            logger.info(f"CapabilitiesManager initialized: {self.capabilities_manager is not None}")
+            
         except ConfigurationError as e:
             logger.error(f"Failed to get manager instances: {str(e)}")
             raise
@@ -346,6 +351,7 @@ class OdooMCPServer:
 
     async def _handle_http_request(self, request: web.Request) -> web.Response:
         """Handle HTTP requests."""
+        logger.debug(f"_handle_http_request called. Self: {self}, Type: {type(self)}, CapabilitiesManager: {getattr(self, 'capabilities_manager', None)}")
         try:
             # Parse request body as JSON
             data = await request.json()
@@ -430,6 +436,7 @@ class OdooMCPServer:
 
     async def _handle_initialize(self, request: MCPRequest) -> MCPResponse:
         """Handle initialize request."""
+        logger.debug(f"_handle_initialize called. Self: {self}, Type: {type(self)}, CapabilitiesManager: {getattr(self, 'capabilities_manager', None)}")
         try:
             # Get server capabilities
             capabilities = self.capabilities_manager.get_capabilities()
