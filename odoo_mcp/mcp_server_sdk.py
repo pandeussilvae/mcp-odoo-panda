@@ -427,9 +427,10 @@ class OdooMCPServer(FastMCP):
         )
         
         # Initialize Odoo components
-        self.pool = ConnectionPool(config, self._get_handler_class())
-        self.authenticator = OdooAuthenticator(config, self.pool)
-        self.session_manager = SessionManager(config, self.authenticator, self.pool)
+        self.xmlrpc_pool = ConnectionPool(config, XMLRPCHandler)
+        self.jsonrpc_pool = ConnectionPool(config, JSONRPCHandler)
+        self.authenticator = OdooAuthenticator(config, self.xmlrpc_pool)
+        self.session_manager = SessionManager(config, self.authenticator, self.xmlrpc_pool)
         self.rate_limiter = RateLimiter(
             requests_per_minute=config.get('requests_per_minute', 120),
             max_wait_seconds=config.get('rate_limit_max_wait_seconds', None)
@@ -446,15 +447,6 @@ class OdooMCPServer(FastMCP):
         
         # Auto-authenticate if credentials are available
         self._auto_authenticate()
-
-    def _get_handler_class(self) -> Type[Union[XMLRPCHandler, JSONRPCHandler]]:
-        """Get the appropriate handler class based on protocol type."""
-        if self.config.get('protocol', 'xmlrpc').lower() == 'xmlrpc':
-            return XMLRPCHandler
-        elif self.config.get('protocol', 'xmlrpc').lower() == 'jsonrpc':
-            return JSONRPCHandler
-        else:
-            raise ConfigurationError(f"Unsupported protocol type: {self.config.get('protocol')}")
 
     def _register_resource_handlers(self) -> None:
         """Register resource handlers."""
@@ -659,11 +651,11 @@ class OdooMCPServer(FastMCP):
     async def odoo_list_models(self) -> List[Dict[str, Any]]:
         """List all available Odoo models."""
         try:
-            models = await self.pool.execute_kw(
+            models = await self.xmlrpc_pool.execute_kw(
                 model="ir.model",
                 method="search_read",
-                args=[[], ["model", "name"]],
-                kwargs={}
+                args=[],
+                kwargs={"fields": ["model", "name"]}
             )
             return models
         except Exception as e:
@@ -673,10 +665,10 @@ class OdooMCPServer(FastMCP):
     async def odoo_search_read(self, model: str, domain: List[Any], fields: List[str]) -> List[Dict[str, Any]]:
         """Search and read records from an Odoo model."""
         try:
-            records = await self.pool.execute_kw(
+            records = await self.jsonrpc_pool.execute_kw(
                 model=model,
                 method="search_read",
-                args=[domain, fields],
+                args=[domain],
                 kwargs={}
             )
             return records
@@ -687,11 +679,11 @@ class OdooMCPServer(FastMCP):
     async def odoo_read(self, model: str, ids: List[int], fields: List[str]) -> List[Dict[str, Any]]:
         """Read specific records from an Odoo model."""
         try:
-            records = await self.pool.execute_kw(
+            records = await self.jsonrpc_pool.execute_kw(
                 model=model,
                 method="read",
-                args=[ids, fields],
-                kwargs={}
+                args=[ids],
+                kwargs={"fields": fields}
             )
             return records
         except Exception as e:
@@ -701,11 +693,10 @@ class OdooMCPServer(FastMCP):
     async def odoo_create(self, model: str, values: Dict[str, Any]) -> int:
         """Create a new record in an Odoo model."""
         try:
-            record_id = await self.pool.execute_kw(
+            record_id = await self.jsonrpc_pool.execute_kw(
                 model=model,
                 method="create",
-                args=[values],
-                kwargs={}
+                args=[values]
             )
             return record_id
         except Exception as e:
@@ -715,11 +706,10 @@ class OdooMCPServer(FastMCP):
     async def odoo_write(self, model: str, ids: List[int], values: Dict[str, Any]) -> bool:
         """Update existing records in an Odoo model."""
         try:
-            result = await self.pool.execute_kw(
+            result = await self.jsonrpc_pool.execute_kw(
                 model=model,
                 method="write",
-                args=[ids, values],
-                kwargs={}
+                args=[ids, values]
             )
             return result
         except Exception as e:
