@@ -63,7 +63,9 @@ class OdooMCPServer:
             self.config['http']['streamable'] = True
             # Initialize aiohttp app for HTTP server
             self.web_app = web.Application()
+            # Add routes for both root and /streamable paths
             self.web_app.router.add_post('/', self._handle_http_request)
+            self.web_app.router.add_post('/streamable', self._handle_http_request)
         
         # Select handler class based on Odoo protocol
         handler_class = XMLRPCHandler if self.odoo_protocol == 'xmlrpc' else JSONRPCHandler
@@ -348,10 +350,10 @@ class OdooMCPServer:
             # Parse request body as JSON
             data = await request.json()
             
-            # Create MCP request
+            # Create MCP request with correct parameters
             mcp_request = MCPRequest(
                 method=data.get('method'),
-                params=data.get('params', {}),
+                parameters=data.get('parameters', {}),  # Changed from 'params' to 'parameters'
                 id=data.get('id')
             )
             
