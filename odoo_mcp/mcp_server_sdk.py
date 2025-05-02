@@ -385,10 +385,12 @@ class OdooMCPServer:
                 'list_resources',
                 'list_tools',
                 'list_prompts',
-                'get_prompt'
+                'get_prompt',
+                'create_session',  # Add session creation method
+                'login'  # Add login method if needed
             }
             
-            # Create MCP request object
+            # Create MCP request object with all headers
             mcp_request = MCPRequest(
                 method=method,
                 parameters=params,
@@ -420,28 +422,70 @@ class OdooMCPServer:
                     response = await self._handle_list_prompts(mcp_request)
                 elif method == 'get_prompt':
                     response = await self._handle_get_prompt(mcp_request)
+                elif method == 'create_session':
+                    response = await self._handle_create_session(mcp_request)
+                elif method == 'login':
+                    response = await self._handle_login(mcp_request)
             else:
                 logger.info(f"Handling authenticated method: {method}")
                 # For all other methods, validate session first
-                session = await self._validate_session(mcp_request)
-                if not session:
-                    logger.warning(f"Invalid session for method: {method}")
+                session_id = request.headers.get('X-Session-ID')
+                if not session_id:
+                    logger.warning(f"No session ID provided for method: {method}")
                     return web.json_response({
                         'jsonrpc': '2.0',
                         'error': {
                             'code': -32001,
-                            'message': 'Invalid session'
+                            'message': 'No session ID provided'
                         },
                         'id': request_id
                     }, status=401)
                 
-                # Route to appropriate handler based on request type
-                if hasattr(mcp_request, 'resource') and mcp_request.resource:
-                    response = await self.handle_resource(mcp_request)
-                elif hasattr(mcp_request, 'tool') and mcp_request.tool:
-                    response = await self.handle_tool(mcp_request)
-                else:
-                    response = await self.handle_default(mcp_request)
+                try:
+                    # Validate session using session manager
+                    session = await self.session_manager.validate_session(session_id)
+                    if not session:
+                        logger.warning(f"Invalid session for method: {method}")
+                        return web.json_response({
+                            'jsonrpc': '2.0',
+                            'error': {
+                                'code': -32001,
+                                'message': 'Invalid session'
+                            },
+                            'id': request_id
+                        }, status=401)
+                    
+                    # Add session to request parameters
+                    mcp_request.parameters['session'] = session
+                    
+                    # Route to appropriate handler based on request type
+                    if hasattr(mcp_request, 'resource') and mcp_request.resource:
+                        response = await self.handle_resource(mcp_request)
+                    elif hasattr(mcp_request, 'tool') and mcp_request.tool:
+                        response = await self.handle_tool(mcp_request)
+                    else:
+                        response = await self.handle_default(mcp_request)
+                        
+                except AuthError as e:
+                    logger.error(f"Authentication error for method {method}: {str(e)}")
+                    return web.json_response({
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32001,
+                            'message': str(e)
+                        },
+                        'id': request_id
+                    }, status=401)
+                except Exception as e:
+                    logger.error(f"Error handling authenticated request: {str(e)}")
+                    return web.json_response({
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32603,
+                            'message': str(e)
+                        },
+                        'id': request_id
+                    }, status=500)
             
             # Convert MCPResponse to JSON-RPC response
             response_dict = {
@@ -564,6 +608,53 @@ class OdooMCPServer:
             return MCPResponse.success(prompt)
         except Exception as e:
             logger.error(f"Error handling get_prompt request: {str(e)}")
+            return MCPResponse.error(str(e))
+
+    async def _handle_create_session(self, request: MCPRequest) -> MCPResponse:
+        """Handle create_session request."""
+        try:
+            # Extract credentials from parameters
+            credentials = request.parameters.get('credentials', {})
+            if not credentials:
+                return MCPResponse.error("No credentials provided")
+            
+            # Create new session
+            session = await self.session_manager.create_session(credentials)
+            if not session:
+                return MCPResponse.error("Failed to create session")
+            
+            return MCPResponse.success({
+                'session_id': session['id'],
+                'expires_at': session['expires_at']
+            })
+        except Exception as e:
+            logger.error(f"Error creating session: {str(e)}")
+            return MCPResponse.error(str(e))
+
+    async def _handle_login(self, request: MCPRequest) -> MCPResponse:
+        """Handle login request."""
+        try:
+            # Extract credentials from parameters
+            credentials = request.parameters.get('credentials', {})
+            if not credentials:
+                return MCPResponse.error("No credentials provided")
+            
+            # Authenticate user
+            auth_result = await self.authenticator.authenticate(credentials)
+            if not auth_result:
+                return MCPResponse.error("Authentication failed")
+            
+            # Create session for authenticated user
+            session = await self.session_manager.create_session(credentials)
+            if not session:
+                return MCPResponse.error("Failed to create session")
+            
+            return MCPResponse.success({
+                'session_id': session['id'],
+                'expires_at': session['expires_at']
+            })
+        except Exception as e:
+            logger.error(f"Error during login: {str(e)}")
             return MCPResponse.error(str(e))
 
     async def start(self) -> None:
