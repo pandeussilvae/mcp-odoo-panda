@@ -5,12 +5,14 @@ This module provides the main server implementation for Odoo MCP.
 
 import logging
 import asyncio
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Callable
 from fastmcp import FastMCP, MCPRequest, MCPResponse
 from fastmcp.decorators import mcp_handler, mcp_resource, mcp_tool
 from aiohttp import web
 import json
 import sys
+import io
+import contextlib
 
 from odoo_mcp.core.protocol_handler import JsonRpcRequest, JsonRpcResponse
 from odoo_mcp.core.connection_pool import ConnectionPool, initialize_connection_pool, get_connection_pool
@@ -40,6 +42,37 @@ PROTOCOL_VERSION = "2024-11-05"  # MCP protocol version
 
 logger = logging.getLogger(__name__)
 
+class StdoutMonitor:
+    """Monitor and control stdout output."""
+    
+    def __init__(self):
+        self.original_stdout = sys.stdout
+        self.original_stdout_write = sys.stdout.write
+        self.buffer = io.StringIO()
+        self.is_jsonrpc_response = False
+    
+    def write(self, data: str) -> None:
+        """Write data to stdout, monitoring for non-JSON-RPC output."""
+        if not self.is_jsonrpc_response:
+            # Log unexpected stdout output to stderr
+            logger.error(f"Unexpected stdout output: {repr(data)}")
+            return
+        
+        # This is a JSON-RPC response, allow it through
+        self.original_stdout_write(data)
+    
+    def flush(self) -> None:
+        """Flush stdout."""
+        self.original_stdout.flush()
+    
+    def start_jsonrpc_response(self) -> None:
+        """Mark the start of a JSON-RPC response."""
+        self.is_jsonrpc_response = True
+    
+    def end_jsonrpc_response(self) -> None:
+        """Mark the end of a JSON-RPC response."""
+        self.is_jsonrpc_response = False
+
 class OdooMCPServer:
     """Main Odoo MCP Server implementation."""
 
@@ -61,6 +94,11 @@ class OdooMCPServer:
         self.mcp_protocol = config.get('connection_type', 'stdio').lower()
         if self.mcp_protocol not in ['stdio', 'streamable_http']:
             raise ConfigurationError(f"Unsupported MCP protocol: {self.mcp_protocol}")
+        
+        # Initialize stdout monitor for stdio protocol
+        if self.mcp_protocol == 'stdio':
+            self.stdout_monitor = StdoutMonitor()
+            sys.stdout = self.stdout_monitor
         
         # Initialize FastMCP
         self.app = FastMCP()
@@ -923,9 +961,15 @@ class OdooMCPServer:
                         # Log the exact bytes being written to stdout
                         logger.debug(f"Writing to stdout: {repr(response_str)}")
                         
+                        # Mark start of JSON-RPC response
+                        self.stdout_monitor.start_jsonrpc_response()
+                        
                         # Write the response to stdout
                         sys.stdout.write(response_str)
                         sys.stdout.flush()
+                        
+                        # Mark end of JSON-RPC response
+                        self.stdout_monitor.end_jsonrpc_response()
                         
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to parse JSON message: {str(e)}")
@@ -939,8 +983,16 @@ class OdooMCPServer:
                         }
                         error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
                         logger.debug(f"Writing error response to stdout: {repr(error_str)}")
+                        
+                        # Mark start of JSON-RPC response
+                        self.stdout_monitor.start_jsonrpc_response()
+                        
+                        # Write error response
                         sys.stdout.write(error_str)
                         sys.stdout.flush()
+                        
+                        # Mark end of JSON-RPC response
+                        self.stdout_monitor.end_jsonrpc_response()
                         
                 except Exception as e:
                     logger.error(f"Error processing stdin message: {str(e)}")
@@ -954,8 +1006,16 @@ class OdooMCPServer:
                     }
                     error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
                     logger.debug(f"Writing error response to stdout: {repr(error_str)}")
+                    
+                    # Mark start of JSON-RPC response
+                    self.stdout_monitor.start_jsonrpc_response()
+                    
+                    # Write error response
                     sys.stdout.write(error_str)
                     sys.stdout.flush()
+                    
+                    # Mark end of JSON-RPC response
+                    self.stdout_monitor.end_jsonrpc_response()
                     
         except Exception as e:
             logger.error(f"Error in stdio handler: {str(e)}")
@@ -1098,6 +1158,11 @@ class OdooMCPServer:
             logger.info("Stopping Odoo MCP Server...")
             if hasattr(self, '_started_mcp_server_instance') and self._started_mcp_server_instance is not None:
                 await self._started_mcp_server_instance.stop()
+            
+            # Restore original stdout if using stdio protocol
+            if self.mcp_protocol == 'stdio' and hasattr(self, 'stdout_monitor'):
+                sys.stdout = self.stdout_monitor.original_stdout
+            
             logger.info("Odoo MCP Server stopped")
         except Exception as e:
             logger.error(f"Error stopping server: {str(e)}")
