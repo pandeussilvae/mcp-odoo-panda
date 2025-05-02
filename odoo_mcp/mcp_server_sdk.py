@@ -51,8 +51,13 @@ class OdooMCPServer:
         if self.mcp_protocol not in ['stdio', 'streamable_http']:
             raise ConfigurationError(f"Unsupported MCP protocol: {self.mcp_protocol}")
         
-        # Initialize FastMCP with MCP protocol
-        self.app = FastMCP(protocol=self.mcp_protocol)
+        # Initialize FastMCP
+        self.app = FastMCP()
+        
+        # Configure MCP protocol
+        if self.mcp_protocol == 'streamable_http':
+            self.config['http'] = self.config.get('http', {})
+            self.config['http']['streamable'] = True
         
         # Initialize components
         try:
