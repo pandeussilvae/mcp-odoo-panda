@@ -1,168 +1,131 @@
 """
-Cache Manager implementation for Odoo MCP Server.
-This module provides caching functionality for Odoo API requests.
+Cache management for Odoo MCP Server.
+This module provides caching functionality for Odoo requests.
 """
 
 import logging
 import time
+import functools
 from typing import Dict, Any, Optional, Callable, TypeVar, cast
-from functools import wraps
-import cachetools
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
-# Cache types
-CACHE_TYPE = 'cachetools'  # Default cache type
+class CACHE_TYPE(str, Enum):
+    """Cache types supported by the server."""
+    CACHETOOLS = 'cachetools'
+    MEMORY = 'memory'
+    REDIS = 'redis'
 
 class CacheManager:
-    """Manages caching for Odoo API requests."""
+    """Cache manager implementation."""
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Initialize the cache manager.
+        Initialize cache manager.
 
         Args:
-            config: Configuration dictionary containing cache settings
+            config: Configuration dictionary
         """
         self.config = config
-        self.cache_type = config.get('cache_type', CACHE_TYPE)
-        self.default_ttl = config.get('cache_ttl', 300)  # 5 minutes default
+        self.cache_type = config.get('cache_type', CACHE_TYPE.MEMORY)
+        self.ttl = config.get('cache_ttl', 300)  # Default 5 minutes
+        self.max_size = config.get('cache_max_size', 1000)
         
         # Initialize caches
-        self.odoo_read_cache = cachetools.TTLCache(
-            maxsize=config.get('cache_max_size', 1000),
-            ttl=self.default_ttl
-        )
+        self._init_caches()
         
-        self.odoo_search_cache = cachetools.TTLCache(
-            maxsize=config.get('cache_max_size', 1000),
-            ttl=self.default_ttl
-        )
-        
-        self.odoo_fields_cache = cachetools.TTLCache(
-            maxsize=config.get('cache_max_size', 100),
-            ttl=self.default_ttl * 2  # Longer TTL for fields
-        )
+        logger.info(f"Cache manager initialized with type: {self.cache_type}")
 
-    def get_ttl_cache_decorator(self, cache_instance: Optional[cachetools.TTLCache] = None):
+    def _init_caches(self) -> None:
+        """Initialize cache instances based on cache type."""
+        if self.cache_type == CACHE_TYPE.CACHETOOLS:
+            try:
+                from cachetools import TTLCache
+                self.odoo_read_cache = TTLCache(maxsize=self.max_size, ttl=self.ttl)
+                self.odoo_write_cache = TTLCache(maxsize=self.max_size, ttl=self.ttl)
+                self.method_cache = TTLCache(maxsize=self.max_size, ttl=self.ttl)
+            except ImportError:
+                logger.warning("cachetools not found, falling back to memory cache")
+                self.cache_type = CACHE_TYPE.MEMORY
+                self._init_memory_cache()
+        elif self.cache_type == CACHE_TYPE.REDIS:
+            try:
+                import redis
+                self.redis_client = redis.Redis(
+                    host=self.config.get('redis_host', 'localhost'),
+                    port=self.config.get('redis_port', 6379),
+                    db=self.config.get('redis_db', 0)
+                )
+            except ImportError:
+                logger.warning("redis not found, falling back to memory cache")
+                self.cache_type = CACHE_TYPE.MEMORY
+                self._init_memory_cache()
+        else:
+            self._init_memory_cache()
+
+    def _init_memory_cache(self) -> None:
+        """Initialize in-memory caches."""
+        self.odoo_read_cache = {}
+        self.odoo_write_cache = {}
+        self.method_cache = {}
+
+    def get_ttl_cache_decorator(self, cache_instance: Optional[Dict] = None) -> Callable:
         """
-        Get a TTL cache decorator for a function.
+        Get a TTL cache decorator.
 
         Args:
-            cache_instance: Optional specific cache instance to use
+            cache_instance: Cache instance to use
 
         Returns:
-            Callable: Decorator function
+            Callable: Cache decorator
         """
+        if cache_instance is None:
+            cache_instance = self.method_cache
+
         def decorator(func: Callable) -> Callable:
-            @wraps(func)
-            async def wrapper(*args, **kwargs):
+            @functools.wraps(func)
+            async def wrapper(*args: Any, **kwargs: Any) -> Any:
                 # Generate cache key
-                cache_key = self._generate_cache_key(func.__name__, args, kwargs)
-                
-                # Use specified cache or default to odoo_read_cache
-                cache = cache_instance or self.odoo_read_cache
+                key = f"{func.__name__}:{str(args)}:{str(kwargs)}"
                 
                 # Check cache
-                if cache_key in cache:
+                if key in cache_instance:
                     logger.debug(f"Cache hit for {func.__name__}")
-                    return cache[cache_key]
+                    return cache_instance[key]
                 
                 # Execute function
                 result = await func(*args, **kwargs)
                 
                 # Cache result
-                cache[cache_key] = result
+                cache_instance[key] = result
                 logger.debug(f"Cached result for {func.__name__}")
                 
                 return result
             return wrapper
         return decorator
 
-    def _generate_cache_key(self, func_name: str, args: tuple, kwargs: dict) -> str:
+    def clear_cache(self, cache_type: Optional[str] = None) -> None:
         """
-        Generate a cache key for a function call.
+        Clear cache.
 
         Args:
-            func_name: Name of the function
-            args: Function arguments
-            kwargs: Function keyword arguments
-
-        Returns:
-            str: Cache key
+            cache_type: Type of cache to clear (None for all)
         """
-        # Convert args and kwargs to a stable string representation
-        key_parts = [func_name]
-        
-        # Add args
-        for arg in args:
-            if isinstance(arg, (str, int, float, bool)):
-                key_parts.append(str(arg))
-            elif isinstance(arg, (list, tuple)):
-                key_parts.append(str(sorted(arg)))
-            elif isinstance(arg, dict):
-                key_parts.append(str(sorted(arg.items())))
-            else:
-                key_parts.append(str(arg))
-        
-        # Add kwargs
-        for key, value in sorted(kwargs.items()):
-            if isinstance(value, (str, int, float, bool)):
-                key_parts.append(f"{key}:{value}")
-            elif isinstance(value, (list, tuple)):
-                key_parts.append(f"{key}:{sorted(value)}")
-            elif isinstance(value, dict):
-                key_parts.append(f"{key}:{sorted(value.items())}")
-            else:
-                key_parts.append(f"{key}:{value}")
-        
-        return "|".join(key_parts)
-
-    def clear_cache(self, cache_name: Optional[str] = None):
-        """
-        Clear specified cache or all caches.
-
-        Args:
-            cache_name: Optional specific cache to clear
-        """
-        if cache_name == 'read':
+        if cache_type == 'read' or cache_type is None:
             self.odoo_read_cache.clear()
-        elif cache_name == 'search':
-            self.odoo_search_cache.clear()
-        elif cache_name == 'fields':
-            self.odoo_fields_cache.clear()
-        else:
-            # Clear all caches
-            self.odoo_read_cache.clear()
-            self.odoo_search_cache.clear()
-            self.odoo_fields_cache.clear()
+        if cache_type == 'write' or cache_type is None:
+            self.odoo_write_cache.clear()
+        if cache_type == 'method' or cache_type is None:
+            self.method_cache.clear()
         
-        logger.info(f"Cleared cache: {cache_name if cache_name else 'all'}")
+        logger.info(f"Cache cleared for type: {cache_type or 'all'}")
 
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics for all caches.
-
-        Returns:
-            Dict[str, Any]: Cache statistics
-        """
-        return {
-            'read_cache': {
-                'size': len(self.odoo_read_cache),
-                'maxsize': self.odoo_read_cache.maxsize,
-                'ttl': self.odoo_read_cache.ttl
-            },
-            'search_cache': {
-                'size': len(self.odoo_search_cache),
-                'maxsize': self.odoo_search_cache.maxsize,
-                'ttl': self.odoo_search_cache.ttl
-            },
-            'fields_cache': {
-                'size': len(self.odoo_fields_cache),
-                'maxsize': self.odoo_fields_cache.maxsize,
-                'ttl': self.odoo_fields_cache.ttl
-            }
-        }
+    async def close(self) -> None:
+        """Clean up resources."""
+        self.clear_cache()
+        if hasattr(self, 'redis_client'):
+            await self.redis_client.close()
 
 # Global cache manager instance
 cache_manager: Optional[CacheManager] = None

@@ -1,113 +1,97 @@
 """
-Custom exceptions for the Odoo MCP Server application.
+Custom exceptions for Odoo MCP Server.
+This module provides custom exception classes for error handling.
 """
-from typing import Dict, Any
 
 class OdooMCPError(Exception):
-    """Base exception for all custom errors raised by the Odoo MCP Server application."""
-
-    def __init__(self, message: str, original_exception: Exception = None):
-        """
-        Initialize the base MCP error.
-
-        Args:
-            message: The error message describing the issue.
-            original_exception: The original exception that caused this error, if any.
-        """
-        super().__init__(message)
-        self.original_exception = original_exception
+    """Base exception class for Odoo MCP errors."""
+    def __init__(self, message: str, code: int = -32000):
         self.message = message
+        self.code = code
+        super().__init__(self.message)
 
-    def __str__(self):
-        if self.original_exception:
-            return f"{self.message}: {self.original_exception}"
-        return self.message
+    def to_jsonrpc_error(self) -> dict:
+        """Convert exception to JSON-RPC error object."""
+        return {
+            'code': self.code,
+            'message': self.message,
+            'data': {
+                'exception': self.__class__.__name__,
+                'args': self.args
+            }
+        }
 
 class AuthError(OdooMCPError):
-    """Raised when an authentication attempt fails or access is denied by Odoo."""
-    pass
+    """Authentication error."""
+    def __init__(self, message: str = "Authentication failed"):
+        super().__init__(message, code=-32001)
 
 class NetworkError(OdooMCPError):
-    """Raised for network-related issues during communication with Odoo.
-
-    This includes timeouts, DNS resolution failures, connection refusals, etc.
-    """
-    pass
+    """Network error."""
+    def __init__(self, message: str = "Network error occurred"):
+        super().__init__(message, code=-32002)
 
 class ProtocolError(OdooMCPError):
-    """Raised for errors related to the communication protocol (XML-RPC, JSON-RPC).
-
-    This includes issues like malformed requests/responses, unexpected data formats,
-    or specific protocol faults reported by the server (e.g., XML-RPC Faults not related to auth).
-    """
-    pass
+    """Protocol error."""
+    def __init__(self, message: str = "Protocol error occurred"):
+        super().__init__(message, code=-32003)
 
 class ConfigurationError(OdooMCPError):
-    """Raised when errors are detected in the server's configuration."""
-    pass
+    """Configuration error."""
+    def __init__(self, message: str = "Configuration error occurred"):
+        super().__init__(message, code=-32004)
 
 class ConnectionError(OdooMCPError):
-    """Base exception for errors related to connection management (e.g., pool errors, connection failures)."""
-    pass
-
-class PoolTimeoutError(ConnectionError): # Inherit from ConnectionError now
-    """Raised specifically when acquiring a connection from the pool times out."""
-    pass
+    """Connection error."""
+    def __init__(self, message: str = "Connection error occurred"):
+        super().__init__(message, code=-32005)
 
 class SessionError(OdooMCPError):
-    """Raised for errors related to user session management."""
-    pass
+    """Session error."""
+    def __init__(self, message: str = "Session error occurred"):
+        super().__init__(message, code=-32006)
+
+class OdooValidationError(OdooMCPError):
+    """Odoo validation error."""
+    def __init__(self, message: str = "Validation error occurred"):
+        super().__init__(message, code=-32007)
+
+class OdooRecordNotFoundError(OdooMCPError):
+    """Odoo record not found error."""
+    def __init__(self, message: str = "Record not found"):
+        super().__init__(message, code=-32008)
+
+class PoolTimeoutError(OdooMCPError):
+    """Connection pool timeout error."""
+    def __init__(self, message: str = "Connection pool timeout"):
+        super().__init__(message, code=-32009)
 
 class RateLimitError(OdooMCPError):
-    """Raised when a rate limit is exceeded for API requests."""
-    default_code = -32012
-    default_message = "Rate limit exceeded"
+    """Rate limit error."""
+    def __init__(self, message: str = "Rate limit exceeded"):
+        super().__init__(message, code=-32010)
 
-    def to_jsonrpc_error(self) -> Dict[str, Any]:
-        """Convert exception to JSON-RPC error object using specific code."""
-        return {
-            "code": self.default_code,
-            "message": self.message or self.default_message,
-            "data": str(self.original_exception) if self.original_exception else None
-        }
+class ResourceError(OdooMCPError):
+    """Resource error."""
+    def __init__(self, message: str = "Resource error occurred"):
+        super().__init__(message, code=-32011)
 
-class OdooValidationError(ProtocolError): # Inherit from ProtocolError as it's an execution error
-    """Raised specifically for Odoo model validation failures (e.g., UserError)."""
-    default_code = -32010 # Example custom code for Odoo validation
-    default_message = "Odoo validation error"
+class ToolError(OdooMCPError):
+    """Tool error."""
+    def __init__(self, message: str = "Tool error occurred"):
+        super().__init__(message, code=-32012)
 
-    def to_jsonrpc_error(self) -> Dict[str, Any]:
-        """Convert exception to JSON-RPC error object using specific code."""
-        return {
-            "code": self.default_code,
-            "message": self.message or self.default_message,
-            "data": str(self.original_exception) if self.original_exception else None
-        }
+class PromptError(OdooMCPError):
+    """Prompt error."""
+    def __init__(self, message: str = "Prompt error occurred"):
+        super().__init__(message, code=-32013)
 
-class OdooRecordNotFoundError(ProtocolError): # Inherit from ProtocolError
-    """Raised when an operation targets a record that does not exist."""
-    default_code = -32011 # Example custom code for Odoo record not found
-    default_message = "Odoo record not found"
+class CacheError(OdooMCPError):
+    """Cache error."""
+    def __init__(self, message: str = "Cache error occurred"):
+        super().__init__(message, code=-32014)
 
-    def to_jsonrpc_error(self) -> Dict[str, Any]:
-        """Convert exception to JSON-RPC error object using specific code."""
-        return {
-            "code": self.default_code,
-            "message": self.message or self.default_message,
-            "data": str(self.original_exception) if self.original_exception else None
-        }
-
-# Example of how to use them:
-#
-# try:
-#     # some operation
-#     pass
-# except xmlrpc.client.Fault as e:
-#     raise ProtocolError(f"XML-RPC Fault: {e.faultString}", original_exception=e)
-# except requests.exceptions.Timeout as e:
-#     raise NetworkError("Request timed out", original_exception=e)
-# except KeyError as e:
-#     raise ConfigurationError(f"Missing configuration key: {e}", original_exception=e)
-# except Exception as e:
-#     # Generic fallback or re-raise as OdooMCPError
-#     raise OdooMCPError("An unexpected error occurred", original_exception=e)
+class BusError(OdooMCPError):
+    """Bus error."""
+    def __init__(self, message: str = "Bus error occurred"):
+        super().__init__(message, code=-32015)

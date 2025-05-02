@@ -1,10 +1,15 @@
+"""
+Test module for Odoo MCP Session Manager.
+"""
+
 import asyncio
 import time
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, Mock, patch
+from typing import Dict, Any
 
 # Import the class to test and related exceptions/classes
-from odoo_mcp.connection.session_manager import SessionManager, Session
+from odoo_mcp.core.session_manager import SessionManager, Session
 from odoo_mcp.error_handling.exceptions import SessionError, AuthError
 # Import mocks from other tests if applicable, or define new ones
 # from .test_connection_pool import MockHandler # Example if needed

@@ -17,11 +17,17 @@ import json
 # Import core components
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler
-from odoo_mcp.connection.connection_pool import ConnectionPool
-from odoo_mcp.authentication.authenticator import OdooAuthenticator
-from odoo_mcp.connection.session_manager import SessionManager
+from odoo_mcp.core.connection_pool import ConnectionPool
+from odoo_mcp.core.authenticator import OdooAuthenticator
+from odoo_mcp.core.session_manager import SessionManager
 from odoo_mcp.security.utils import RateLimiter, mask_sensitive_data
-from odoo_mcp.error_handling.exceptions import OdooMCPError, ConfigurationError, ProtocolError, AuthError, NetworkError
+from odoo_mcp.error_handling.exceptions import (
+    OdooMCPError, AuthError, NetworkError, ProtocolError,
+    ConfigurationError, ConnectionError, SessionError,
+    OdooValidationError, OdooRecordNotFoundError, PoolTimeoutError,
+    RateLimitError, ResourceError, ToolError, PromptError,
+    CacheError, BusError
+)
 from odoo_mcp.core.logging_config import setup_logging
 from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE
 from odoo_mcp.core.bus_handler import OdooBusHandler

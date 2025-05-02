@@ -1,10 +1,15 @@
+"""
+Test module for Odoo MCP Connection Pool.
+"""
+
 import asyncio
 import time
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, Mock, patch
+from typing import Dict, Any
 
 # Import the class to test and related exceptions
-from odoo_mcp.connection.connection_pool import ConnectionPool, ConnectionWrapper
+from odoo_mcp.core.connection_pool import ConnectionPool, ConnectionWrapper
 from odoo_mcp.error_handling.exceptions import PoolTimeoutError, ConnectionError as PoolConnectionError
 
 # Mark all tests in this module as asyncio

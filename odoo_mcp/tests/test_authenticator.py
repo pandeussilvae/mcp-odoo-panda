@@ -1,12 +1,16 @@
+"""
+Test module for Odoo MCP Authenticator.
+"""
+
 import asyncio
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, Mock, patch
 import socket
 from xmlrpc.client import Fault, ProtocolError as XmlRpcProtocolError
-
+from typing import Dict, Any
 
 # Import the class to test and related exceptions
-from odoo_mcp.authentication.authenticator import OdooAuthenticator
+from odoo_mcp.core.authenticator import OdooAuthenticator
 from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, PoolTimeoutError, ConnectionError as PoolConnectionError
 
 # Mark all tests in this module as asyncio
@@ -116,16 +120,16 @@ async def test_authenticate_invalid_credentials(auth_config):
     with pytest.raises(AuthError, match="Invalid username or API key"):
         await authenticator.authenticate("wrong_user", "wrong_key")
 
-    async def test_authenticate_odoo_fault(auth_config):
-        """Test authentication failure due to XML-RPC Fault from Odoo."""
-        fault = Fault(1, "Odoo Server Error: Invalid database")
-        mock_pool = MockPool(connection_error=fault) # Correct indentation
-        authenticator = OdooAuthenticator(auth_config, mock_pool)
-        # Expect NetworkError because non-auth Fault is wrapped in NetworkError
-        # Update the expected message to match the actual one raised
-        expected_msg = "Authentication failed due to XML-RPC Fault: Odoo Server Error: Invalid database"
-        with pytest.raises(NetworkError, match=re.escape(expected_msg)): # Use re.escape for literal matching
-             await authenticator.authenticate("test_user", "test_key")
+async def test_authenticate_odoo_fault(auth_config):
+    """Test authentication failure due to XML-RPC Fault from Odoo."""
+    fault = Fault(1, "Odoo Server Error: Invalid database")
+    mock_pool = MockPool(connection_error=fault) # Correct indentation
+    authenticator = OdooAuthenticator(auth_config, mock_pool)
+    # Expect NetworkError because non-auth Fault is wrapped in NetworkError
+    # Update the expected message to match the actual one raised
+    expected_msg = "Authentication failed due to XML-RPC Fault: Odoo Server Error: Invalid database"
+    with pytest.raises(NetworkError, match=re.escape(expected_msg)): # Use re.escape for literal matching
+        await authenticator.authenticate("test_user", "test_key")
 
 async def test_authenticate_network_error(auth_config):
     """Test authentication failure due to a network error (e.g., socket error)."""

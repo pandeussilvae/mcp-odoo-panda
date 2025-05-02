@@ -19,6 +19,13 @@ from odoo_mcp.prompts.prompt_manager import PromptManager, initialize_prompt_man
 from odoo_mcp.resources.resource_manager import ResourceManager, initialize_resource_manager
 from odoo_mcp.tools.tool_manager import ToolManager, initialize_tool_manager
 from odoo_mcp.core.capabilities_manager import CapabilitiesManager, ResourceTemplate, Tool, Prompt
+from odoo_mcp.error_handling.exceptions import (
+    OdooMCPError, AuthError, NetworkError, ProtocolError,
+    ConfigurationError, ConnectionError, SessionError,
+    OdooValidationError, OdooRecordNotFoundError, PoolTimeoutError,
+    RateLimitError, ResourceError, ToolError, PromptError,
+    CacheError, BusError
+)
 
 logger = logging.getLogger(__name__)
 
