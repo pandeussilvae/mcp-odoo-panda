@@ -79,6 +79,49 @@ class RateLimiter:
         self.requests[key].append(time.time())
         self._cleanup_old_requests(key)
 
+    def get_remaining_requests(self, key: str) -> int:
+        """
+        Get the number of remaining requests in the current time window.
+
+        Args:
+            key: Client identifier
+
+        Returns:
+            int: Number of remaining requests
+        """
+        self._cleanup_old_requests(key)
+        return max(0, self.max_requests - len(self.requests.get(key, [])))
+
+    def get_reset_time(self, key: str) -> float:
+        """
+        Get the time until the rate limit resets.
+
+        Args:
+            key: Client identifier
+
+        Returns:
+            float: Time until reset in seconds
+        """
+        if not self.requests.get(key):
+            return 0.0
+        
+        oldest_request = min(self.requests[key])
+        return max(0.0, self.window - (time.time() - oldest_request))
+
+    def reset(self, key: str) -> None:
+        """
+        Reset the rate limit for a key.
+
+        Args:
+            key: Client identifier
+        """
+        if key in self.requests:
+            del self.requests[key]
+
+    async def close(self) -> None:
+        """Clean up resources."""
+        self.requests.clear()
+
 # --- Input Validation Schemas (using Pydantic) ---
 
 if PYDANTIC_AVAILABLE:
