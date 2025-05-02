@@ -350,8 +350,14 @@ class OdooMCPServer:
                 port = self.config.get('port', 8000)
             
             logger.info(f"Starting Odoo MCP Server on {host}:{port} with protocol {self.mcp_protocol}")
-            await self.app.start(host=host, port=port)
+            
+            # Start the server and store the server instance
+            self.server = await self.app.start(host=host, port=port)
             logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
+            
+            # Keep the server running
+            await self.server.wait_closed()
+            
         except Exception as e:
             logger.error(f"Error starting server: {str(e)}")
             raise
@@ -359,8 +365,12 @@ class OdooMCPServer:
     async def stop(self) -> None:
         """Stop the MCP server."""
         try:
-            await self.app.stop()
-            logger.info("Odoo MCP Server stopped")
+            if hasattr(self, 'server'):
+                logger.info("Stopping Odoo MCP Server...")
+                await self.server.close()
+                logger.info("Odoo MCP Server stopped")
+            else:
+                logger.warning("No server instance found to stop")
         except Exception as e:
             logger.error(f"Error stopping server: {str(e)}")
             raise
@@ -385,20 +395,20 @@ async def run_server(config: Dict[str, Any]) -> None:
         config: Configuration dictionary
     """
     try:
+        logger.info("Creating Odoo MCP Server instance...")
         server = create_server(config)
+        
+        logger.info("Starting server...")
         await server.start()
         
-        try:
-            # Keep the server running
-            while True:
-                await asyncio.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("Received shutdown signal")
-        finally:
-            await server.stop()
+    except KeyboardInterrupt:
+        logger.info("Received shutdown signal")
     except Exception as e:
         logger.error(f"Server error: {str(e)}")
         raise
+    finally:
+        logger.info("Shutting down server...")
+        await server.stop()
 
 if __name__ == "__main__":
     import json
@@ -451,6 +461,7 @@ if __name__ == "__main__":
     
     try:
         # Run server
+        logger.info("Initializing server...")
         asyncio.run(run_server(config))
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
