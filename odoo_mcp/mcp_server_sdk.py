@@ -156,7 +156,7 @@ RESOURCE_TEMPLATES = [
     },
     {
         "uriTemplate": "odoo://{model}/list",
-        "name": "Odoo Record List", 
+        "name": "Odoo Record List",
         "description": "Get a list of Odoo records",
         "type": "list",
         "mimeType": "application/json"
@@ -374,11 +374,30 @@ class OdooMCPServer(FastMCP):
     def __init__(self, transport_types):
         if isinstance(transport_types, str):
             transport_types = [transport_types]
-        self._name = SERVER_NAME
-        self._version = SERVER_VERSION
-        
+            
         # Initialize capabilities before calling parent
-        self._capabilities = DEFAULT_CAPABILITIES
+        self._capabilities = {
+            "tools": {
+                "listChanged": True,
+                "tools": TOOLS
+            },
+            "prompts": {
+                "listChanged": True,
+                "prompts": {p.name: p.model_dump() for p in prompt_manager.list_prompts()}
+            },
+            "resources": {
+                "listChanged": True,
+                "resources": RESOURCE_TEMPLATES,
+                "subscribe": True
+            },
+            "streaming": True,
+            "sse": True,
+            "websocket": True,
+            "experimental": {}
+        }
+        
+        # Call parent init with our server name
+        super().__init__(server_name=SERVER_NAME, transport_types=transport_types)
         
         # Load configuration
         self.config = load_odoo_config()
@@ -390,99 +409,70 @@ class OdooMCPServer(FastMCP):
         else:
             self.odoo = XMLRPCHandler(self.config)
         
-        # Call parent init with our server name
-        super().__init__(server_name=self._name, transport_types=transport_types)
-        
         # Log initialization
         print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
-        print(f"[DEBUG] - name: {self._name}", file=sys.stderr)
-        print(f"[DEBUG] - version: {self._version}", file=sys.stderr)
+        print(f"[DEBUG] - name: {SERVER_NAME}", file=sys.stderr)
+        print(f"[DEBUG] - version: {SERVER_VERSION}", file=sys.stderr)
         print(f"[DEBUG] - transport types: {transport_types}", file=sys.stderr)
         print(f"[DEBUG] - capabilities: {json.dumps(self._capabilities, indent=2)}", file=sys.stderr)
 
     @property
     def version(self) -> str:
-        return self._version
+        return SERVER_VERSION
 
     @property
     def name(self) -> str:
-        return self._name
+        return SERVER_NAME
 
     @property
     def capabilities(self):
         return self._capabilities
 
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Override handle_request to ensure proper version and capabilities in responses."""
+        """Handle MCP requests."""
         try:
-            if not isinstance(request, dict):
-                raise ValueError("Request must be a JSON object")
+            method = request.get("method")
+            req_id = request.get("id")
+            params = request.get("params", {})
 
-            method = request.get('method')
-            params = request.get('params', {})
-            request_id = request.get('id')
-
-            # Handle initialization specially
-            if method == 'initialize':
-                print(f"[DEBUG] Handling initialize request", file=sys.stderr)
-                response = {
-                    'jsonrpc': '2.0',
-                    'result': {
-                        'protocolVersion': '2024-01-01',
-                        'serverInfo': {
-                            'name': self._name,
-                            'version': self._version
+            if method == "initialize":
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "protocolVersion": PROTOCOL_VERSION,
+                        "serverInfo": {
+                            "name": SERVER_NAME,
+                            "version": SERVER_VERSION
                         },
-                        'capabilities': self._capabilities
-                    },
-                    'id': request_id
+                        "capabilities": self._capabilities
+                    }
                 }
-                print(f"[DEBUG] Initialize response: {json.dumps(response, indent=2)}", file=sys.stderr)
-                return response
 
-            # Handle resources/list
-            elif method == 'resources/list':
-                print(f"[DEBUG] Handling resources/list request", file=sys.stderr)
-                response = {
-                    'jsonrpc': '2.0',
-                    'result': {
-                        'resources': [
+            elif method == "resources/list":
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "resources": [
                             {
-                                'uri': template["uriTemplate"],
-                                'uriTemplate': template["uriTemplate"],
-                                'name': template["name"],
-                                'description': template["description"],
-                                'type': template["type"],
-                                'mimeType': template["mimeType"]
+                                "uri": template["uriTemplate"],
+                                "uriTemplate": template["uriTemplate"],
+                                "name": template["name"],
+                                "description": template["description"],
+                                "type": template["type"],
+                                "mimeType": template["mimeType"]
                             }
                             for template in RESOURCE_TEMPLATES
                         ]
-                    },
-                    'id': request_id
+                    }
                 }
-                print(f"[DEBUG] Resources/list response: {json.dumps(response, indent=2)}", file=sys.stderr)
-                return response
 
-            # Handle resources/templates/list
-            elif method == 'resources/templates/list':
-                print(f"[DEBUG] Handling resources/templates/list request", file=sys.stderr)
-                response = {
-                    'jsonrpc': '2.0',
-                    'result': {
-                        'resourceTemplates': RESOURCE_TEMPLATES
-                    },
-                    'id': request_id
-                }
-                print(f"[DEBUG] Resources/templates/list response: {json.dumps(response, indent=2)}", file=sys.stderr)
-                return response
-
-            # Handle resources/read
-            elif method == 'resources/read':
-                uri = params.get('uri')
+            elif method == "resources/read":
+                uri = params.get("uri")
                 if not uri:
                     raise ValueError("Missing uri parameter")
                 
-                print(f"[DEBUG] Handling resources/read request for URI: {uri}", file=sys.stderr)
                 try:
                     model, type, id_or_info = parse_odoo_uri(uri)
                     
@@ -508,48 +498,44 @@ class OdooMCPServer(FastMCP):
                         )
                         result = result[0][id_or_info["field"]] if result else None
                     
-                    response = {
-                        'jsonrpc': '2.0',
-                        'result': {
-                            'resource': {
-                                'uri': uri,
-                                'type': type,
-                                'mimeType': 'application/json'
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "resource": {
+                                "uri": uri,
+                                "type": type,
+                                "mimeType": "application/json"
                             },
-                            'contents': [
+                            "contents": [
                                 {
-                                    'uri': uri,
-                                    'type': 'text',
-                                    'text': json.dumps(result, indent=2)
+                                    "uri": uri,
+                                    "type": "text",
+                                    "text": json.dumps(result, indent=2)
                                 }
                             ]
-                        },
-                        'id': request_id
+                        }
                     }
-                    print(f"[DEBUG] Resources/read response: {json.dumps(response, indent=2)}", file=sys.stderr)
-                    return response
                 except Exception as e:
-                    print(f"[ERROR] Error handling resources/read: {e}", file=sys.stderr)
                     return {
-                        'jsonrpc': '2.0',
-                        'error': {
-                            'code': -32000,
-                            'message': str(e)
-                        },
-                        'id': request_id
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32000,
+                            "message": str(e)
+                        }
                     }
 
-            # For all other requests, use parent implementation
             return await super().handle_request(request)
+
         except Exception as e:
-            print(f"[ERROR] Error handling request: {e}", file=sys.stderr)
             return {
-                'jsonrpc': '2.0',
-                'error': {
-                    'code': -32603,
-                    'message': str(e)
-                },
-                'id': request_id
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {
+                    "code": -32603,
+                    "message": str(e)
+                }
             }
 
 def create_mcp_instance(transport_types):
