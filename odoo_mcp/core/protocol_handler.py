@@ -5,7 +5,7 @@ This module provides centralized protocol handling for the MCP server.
 
 import json
 import logging
-from typing import Dict, Any, Optional, Union, Type
+from typing import Dict, Any, Optional, Union, Type, Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from odoo_mcp.error_handling.exceptions import (
@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 
 class JsonRpcRequest(BaseModel):
     """JSON-RPC 2.0 request model."""
-    jsonrpc: str = Field("2.0", const=True)
+    jsonrpc: Literal["2.0"] = "2.0"
     method: str
     params: Optional[Dict[str, Any]] = None
     id: Optional[Union[str, int]] = None
 
 class JsonRpcResponse(BaseModel):
     """JSON-RPC 2.0 response model."""
-    jsonrpc: str = Field("2.0", const=True)
+    jsonrpc: Literal["2.0"] = "2.0"
     result: Optional[Any] = None
     error: Optional[Dict[str, Any]] = None
     id: Optional[Union[str, int]] = None
