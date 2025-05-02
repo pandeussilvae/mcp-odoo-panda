@@ -365,13 +365,29 @@ class OdooMCPServer:
             else:
                 response = await self.handle_default(mcp_request)
             
+            # Convert MCPResponse to dictionary
+            response_dict = {
+                'jsonrpc': '2.0',
+                'id': response.id
+            }
+            
+            if hasattr(response, 'error') and response.error:
+                response_dict['error'] = response.error
+            else:
+                response_dict['result'] = response.result
+            
             # Return response
-            return web.json_response(response.to_dict())
+            return web.json_response(response_dict)
             
         except Exception as e:
             logger.error(f"Error handling HTTP request: {str(e)}")
             return web.json_response({
-                'error': str(e)
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                },
+                'id': None
             }, status=500)
 
     async def start(self) -> None:
