@@ -868,11 +868,59 @@ class OdooMCPServer:
                         # Process the request
                         response = await self._process_mcp_request(mcp_request)
                         
+                        # Ensure response is a valid JSON-RPC 2.0 message
+                        if not isinstance(response, dict):
+                            logger.error(f"Invalid response type: {type(response)}")
+                            response = {
+                                'jsonrpc': '2.0',
+                                'error': {
+                                    'code': -32603,
+                                    'message': 'Internal error: Invalid response format'
+                                },
+                                'id': request_data.get('id')
+                            }
+                        
+                        # Validate response structure
+                        if 'jsonrpc' not in response or response['jsonrpc'] != '2.0':
+                            logger.error(f"Invalid response: missing or invalid jsonrpc field")
+                            response = {
+                                'jsonrpc': '2.0',
+                                'error': {
+                                    'code': -32603,
+                                    'message': 'Internal error: Invalid response format'
+                                },
+                                'id': request_data.get('id')
+                            }
+                        
+                        if 'id' not in response:
+                            logger.error(f"Invalid response: missing id field")
+                            response = {
+                                'jsonrpc': '2.0',
+                                'error': {
+                                    'code': -32603,
+                                    'message': 'Internal error: Missing response ID'
+                                },
+                                'id': None
+                            }
+                        
+                        if 'result' not in response and 'error' not in response:
+                            logger.error(f"Invalid response: missing result/error field")
+                            response = {
+                                'jsonrpc': '2.0',
+                                'error': {
+                                    'code': -32603,
+                                    'message': 'Internal error: Missing result/error field'
+                                },
+                                'id': response.get('id')
+                            }
+                        
+                        # Log the exact response being sent
+                        logger.debug(f"Sending JSON-RPC response: {json.dumps(response, indent=2)}")
+                        
                         # Send the response
                         response_json = json.dumps(response) + '\n'
                         sys.stdout.write(response_json)
                         sys.stdout.flush()
-                        logger.debug(f"Sent response: {response_json.strip()}")
                         
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to parse JSON message: {str(e)}")
@@ -884,6 +932,7 @@ class OdooMCPServer:
                             },
                             'id': None
                         }
+                        logger.debug(f"Sending JSON-RPC error response: {json.dumps(error_response, indent=2)}")
                         sys.stdout.write(json.dumps(error_response) + '\n')
                         sys.stdout.flush()
                         
@@ -897,6 +946,7 @@ class OdooMCPServer:
                         },
                         'id': None
                     }
+                    logger.debug(f"Sending JSON-RPC error response: {json.dumps(error_response, indent=2)}")
                     sys.stdout.write(json.dumps(error_response) + '\n')
                     sys.stdout.flush()
                     
