@@ -19,6 +19,8 @@ from odoo_mcp.prompts.prompt_manager import PromptManager, initialize_prompt_man
 from odoo_mcp.resources.resource_manager import ResourceManager, initialize_resource_manager, get_resource_manager
 from odoo_mcp.tools.tool_manager import ToolManager, initialize_tool_manager, get_tool_manager
 from odoo_mcp.core.capabilities_manager import CapabilitiesManager, ResourceTemplate, Tool, Prompt
+from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
+from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler
 from odoo_mcp.error_handling.exceptions import (
     OdooMCPError, AuthError, NetworkError, ProtocolError,
     ConfigurationError, ConnectionError, SessionError,
@@ -59,9 +61,12 @@ class OdooMCPServer:
             self.config['http'] = self.config.get('http', {})
             self.config['http']['streamable'] = True
         
+        # Select handler class based on Odoo protocol
+        handler_class = XMLRPCHandler if self.odoo_protocol == 'xmlrpc' else JSONRPCHandler
+        
         # Initialize components
         try:
-            initialize_connection_pool(config)
+            initialize_connection_pool(config, handler_class)
             initialize_authenticator(config)
             initialize_session_manager(config)
             initialize_rate_limiter(config)
