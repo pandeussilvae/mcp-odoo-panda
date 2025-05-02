@@ -4,9 +4,8 @@ Odoo MCP Connection Pool implementation.
 
 import logging
 import asyncio
-from typing import Dict, Any, Optional, Type, Union
+from typing import Dict, Any, Optional, Union, Type
 from contextlib import asynccontextmanager
-
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler
 from odoo_mcp.error_handling.exceptions import ConnectionError, PoolTimeoutError, OdooMCPError, NetworkError, AuthError
@@ -23,7 +22,7 @@ class ConnectionWrapper:
         last_used: Timestamp (monotonic) of when the connection was last used or acquired.
         is_active: Boolean flag indicating if the connection is considered healthy.
     """
-    def __init__(self, connection: Union[XMLRPCHandler, Any], pool: 'ConnectionPool'):
+    def __init__(self, connection: Union[XMLRPCHandler, JSONRPCHandler], pool: 'ConnectionPool'):
         """
         Initialize the ConnectionWrapper.
 
@@ -35,6 +34,7 @@ class ConnectionWrapper:
         self.pool = pool
         self.last_used = time.monotonic()
         self.is_active = True # Flag to mark connection as potentially stale/unhealthy
+        self.in_use = False
 
     def mark_used(self):
         """Update the last used timestamp to the current time."""
@@ -100,6 +100,14 @@ class ConnectionWrapper:
             await self.close() # Close failed connection
             return False
 
+    async def __aenter__(self):
+        """Enter context manager."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Exit context manager."""
+        await self.pool.release_connection(self)
+
 class ConnectionPool:
     """
     An asynchronous connection pool for managing Odoo connections (XMLRPC/JSONRPC handlers).
@@ -108,7 +116,7 @@ class ConnectionPool:
     handles connection creation with retries, performs periodic health checks
     on idle connections, and ensures proper cleanup on close.
     """
-    def __init__(self, config: Dict[str, Any], handler_class: Type[Union[XMLRPCHandler, Any]]):
+    def __init__(self, config: Dict[str, Any]):
         """
         Initialize the ConnectionPool.
 
@@ -116,183 +124,82 @@ class ConnectionPool:
             config: The server configuration dictionary. Expected keys include:
                     'pool_size', 'timeout', 'connection_health_interval',
                     'retry_count', 'odoo_url', 'database', 'username', 'api_key'.
-            handler_class: The class of the connection handler to manage (e.g., XMLRPCHandler).
         """
         self.config = config
-        self.handler_class = handler_class
-        self.pool_size = config.get('pool_size', 10)
-        self.timeout = config.get('timeout', 30) # Timeout for getting a connection
-        self.connection_health_interval = config.get('connection_health_interval', 60) # How often to check health
-        self.max_retries = config.get('retry_count', 3)
-        self.base_retry_delay = 1.0 # Initial delay for exponential backoff
-
-        self._pool: deque[ConnectionWrapper] = deque()
+        self._pool: List[ConnectionWrapper] = []
+        self._max_size = config.get('max_connections', 10)
+        self._timeout = config.get('connection_timeout', 30)
         self._lock = asyncio.Lock()
-        self._condition = asyncio.Condition(self._lock)
-        self._current_size = 0
         self._health_check_task: Optional[asyncio.Task] = None
         self._closing = False # Flag to indicate if the pool is shutting down
 
-    async def _create_connection(self) -> ConnectionWrapper:
-        """
-        Attempt to create a new connection instance using the handler_class.
-
-        Implements retry logic with exponential backoff based on config settings.
-
-        Returns:
-            A ConnectionWrapper containing the newly created connection.
-
-        Raises:
-            ConnectionError: If connection creation fails after all retries.
-        """
-        for attempt in range(self.max_retries + 1):
-            try:
-                logger.info(f"Attempting to create new connection (Attempt {attempt + 1}/{self.max_retries + 1})")
-                # Pass relevant parts of config to the handler
-                connection_instance = self.handler_class(self.config)
-                # Perform initial check/auth if needed by handler's __init__
-                logger.info(f"Successfully created connection: {id(connection_instance)}")
-                return ConnectionWrapper(connection_instance, self)
-            except Exception as e:
-                # Catch specific errors if possible (e.g., NetworkError, AuthError from handler init)
-                log_message = f"Failed to create connection (Attempt {attempt + 1}): {e}"
-                # Ensure AuthError is imported before using it here
-                if isinstance(e, (NetworkError, AuthError)):
-                     logger.warning(log_message) # Log as warning for known failure types
-                else:
-                     logger.error(log_message, exc_info=True) # Log as error for unexpected ones
-
-                if attempt >= self.max_retries:
-                    # Raise the specific ConnectionError from our exceptions module
-                    raise ConnectionError(f"Failed to create connection after {self.max_retries + 1} attempts", original_exception=e)
-                delay = self.base_retry_delay * (2 ** attempt)
-                logger.info(f"Retrying connection creation in {delay:.2f} seconds...")
-                await asyncio.sleep(delay)
-        # Should not be reached due to raise in loop, but raise specific error if it is
-        raise ConnectionError("Failed to create connection after multiple retries.")
-
-
+    @asynccontextmanager
     async def get_connection(self) -> ConnectionWrapper:
         """
-        Acquire a connection wrapper from the pool.
-
-        If the pool has idle connections, one is returned immediately.
-        If the pool is not full, a new connection is created.
-        If the pool is full, waits for a connection to be released or until timeout.
+        Get a connection from the pool.
 
         Returns:
-            A ConnectionWrapper instance.
+            ConnectionWrapper: Connection wrapper
 
         Raises:
-            PoolTimeoutError: If waiting for a connection exceeds the configured timeout.
-            ConnectionError: If the pool is closing or connection creation fails.
+            PoolTimeoutError: If timeout occurs while waiting for connection
+            ConnectionError: If connection creation fails
         """
-        if self._closing:
-            raise ConnectionError("Pool is closing, cannot get new connections.") # Uses the correct ConnectionError now
+        try:
+            async with self._lock:
+                # Try to get an existing connection
+                for conn in self._pool:
+                    if not conn.in_use:
+                        conn.in_use = True
+                        return conn
 
-        start_time = time.monotonic()
-        async with self._condition:
-            while True:
-                # Try to get an existing idle connection
-                while self._pool:
-                    wrapper = self._pool.popleft()
-                    if wrapper.is_active:
-                         # Optional: Perform a quick check before returning
-                         # if await wrapper.health_check():
-                         logger.debug(f"Reusing connection {id(wrapper.connection)} from pool.")
-                         wrapper.mark_used()
-                         return wrapper
-                         # else: # Health check failed in get_connection
-                         #    logger.warning(f"Connection {id(wrapper.connection)} failed pre-use health check.")
-                         #    self._current_size -= 1 # Decrement size as it's being discarded
-
-                # If no idle connection, try to create a new one if pool not full
-                # If no idle connection, try to create a new one if pool not full
-                # Keep the lock while creating the connection to ensure atomicity of size update
-                # If no idle connection, try to create a new one if pool not full
-                # Keep the lock while creating the connection to ensure atomicity of size update
-                if self._current_size < self.pool_size:
-                    # Increment size optimistically *before* creating
-                    self._current_size += 1
+                # Create new connection if pool not full
+                if len(self._pool) < self._max_size:
                     try:
-                        # Create connection while holding the lock
-                        wrapper = await self._create_connection()
-                        wrapper.mark_used()
-                        logger.debug(f"Created new connection {id(wrapper.connection)}. Pool size: {self._current_size}/{self.pool_size}")
-                        # Return the new connection; lock released by 'async with'
+                        if self.config.get('use_jsonrpc', False):
+                            connection = JSONRPCHandler(self.config)
+                        else:
+                            connection = XMLRPCHandler(self.config)
+                        wrapper = ConnectionWrapper(connection, self)
+                        wrapper.in_use = True
+                        self._pool.append(wrapper)
                         return wrapper
                     except Exception as e:
-                        # Failed to create, decrement size and let the loop continue
-                        logger.error(f"Failed to create connection for pool: {e}")
-                        self._current_size -= 1 # Decrement size on failure
-                        # Re-raise the original error? Or let the loop handle timeout/retry?
-                        # If _create_connection raises ConnectionError after retries,
-                        # maybe we should propagate that immediately?
-                        if isinstance(e, ConnectionError):
-                             raise # Propagate ConnectionError immediately if creation failed definitively
-                        # Otherwise, let the loop continue to check timeout or wait for release
+                        raise ConnectionError(f"Failed to create connection: {str(e)}")
 
-
-                # If pool is full or creation failed (and wasn't ConnectionError), wait
-                wait_time = self.timeout - (time.monotonic() - start_time)
-                if wait_time <= 0:
-                    # Raise the specific PoolTimeoutError from our exceptions module
-                    raise PoolTimeoutError(f"Timeout waiting for connection from pool after {self.timeout} seconds.")
-
-                logger.debug(f"Pool full ({self._current_size}/{self.pool_size}), waiting for connection...")
+                # Wait for connection with timeout
                 try:
-                    await asyncio.wait_for(self._condition.wait(), timeout=wait_time)
+                    async with asyncio.timeout(self._timeout):
+                        while True:
+                            for conn in self._pool:
+                                if not conn.in_use:
+                                    conn.in_use = True
+                                    return conn
+                            await asyncio.sleep(0.1)
                 except asyncio.TimeoutError:
-                     # Raise the specific PoolTimeoutError from our exceptions module
-                     raise PoolTimeoutError(f"Timeout waiting for connection from pool after {self.timeout} seconds.")
+                    raise PoolTimeoutError("Timeout waiting for available connection")
 
+        except Exception as e:
+            if not isinstance(e, (PoolTimeoutError, ConnectionError)):
+                raise OdooMCPError(f"Unexpected error in connection pool: {str(e)}")
+            raise
 
-    async def release_connection(self, wrapper: ConnectionWrapper):
+    async def release_connection(self, wrapper: ConnectionWrapper) -> None:
         """
-        Release a connection wrapper back to the pool.
-
-        If the pool is closing or the connection is marked inactive, the connection
-        is closed and discarded. Otherwise, it's added back to the idle pool.
+        Release a connection back to the pool.
 
         Args:
-            wrapper: The ConnectionWrapper instance to release.
+            wrapper: Connection wrapper to release
         """
-        if self._closing:
-            logger.info(f"Pool closing, discarding connection {id(wrapper.connection)} instead of releasing.")
-            await wrapper.close()
-            # Ensure size is decremented if closed during shutdown
-            # Use lock to protect _current_size modification if needed concurrently,
-            # though close() might already handle this if called from multiple places.
-            # async with self._lock: # Lock might not be needed if close() is safe
-            # Check if it was actually part of the count before decrementing
-            # This logic might need refinement depending on how close() interacts
-            # with pool state. Assuming close() marks inactive and release handles count.
-            # pass # Decrement happens below if inactive
-            # await wrapper.close() # Ensure close is called if pool is closing - Already called above
-            # Decrement size after closing if it was considered active before this call
-            # This needs careful state management. Let's assume inactive connections
-            # handle their own size decrement when marked inactive.
-            return
-
-        async with self._condition:
-            if wrapper.is_active:
-                logger.debug(f"Releasing connection {id(wrapper.connection)} back to pool.")
-                self._pool.append(wrapper)
-                self._condition.notify() # Notify waiting getters
-            else:
-                # Connection was marked inactive (e.g., failed health check)
-                logger.warning(f"Discarding inactive connection {id(wrapper.connection)} instead of releasing.")
-                self._current_size -= 1
-                # Optionally, trigger creation of a replacement connection immediately
-                # or let get_connection handle it lazily.
-
+        async with self._lock:
+            wrapper.in_use = False
 
     async def _run_health_checks(self):
         """Background task that periodically checks the health of idle connections."""
         logger.info("Starting background health check task.")
         while not self._closing:
             try:
-                await asyncio.sleep(self.connection_health_interval)
+                await asyncio.sleep(self.config.get('connection_health_interval', 60))
                 if self._closing: break # Exit if pool started closing during sleep
 
                 logger.debug("Running periodic health checks...")
@@ -341,14 +248,14 @@ class ConnectionPool:
             except Exception as e:
                 logger.exception(f"Error in health check task: {e}")
                 # Avoid task death loop, wait a bit before retrying health checks
-                await asyncio.sleep(min(self.connection_health_interval / 2, 30)) # Wait shorter time after error, max 30s
+                await asyncio.sleep(min(self.config.get('connection_health_interval', 60) / 2, 30)) # Wait shorter time after error, max 30s
 
     async def start_health_checks(self):
         """Start the background health check task if not already running."""
         if self._health_check_task is None or self._health_check_task.done():
-             if self.connection_health_interval > 0:
+             if self.config.get('connection_health_interval', 60) > 0:
                   self._health_check_task = asyncio.create_task(self._run_health_checks())
-                  logger.info(f"Background health check task started. Interval: {self.connection_health_interval}s")
+                  logger.info(f"Background health check task started. Interval: {self.config.get('connection_health_interval', 60)}s")
              else:
                   logger.info("Background health checks disabled (interval <= 0).")
 
@@ -377,7 +284,7 @@ class ConnectionPool:
             self._health_check_task = None
 
 
-        async with self._condition:
+        async with self._lock:
             logger.debug(f"Closing {len(self._pool)} idle connections in pool.")
             # Close all connections currently idle in the pool
             close_tasks = [wrapper.close() for wrapper in self._pool]
@@ -420,7 +327,7 @@ async def main():
     }
 
     # Assuming XMLRPCHandler is the desired connection type
-    pool = ConnectionPool(config, XMLRPCHandler)
+    pool = ConnectionPool(config)
 
     async with pool: # Manages start/stop of health checks and pool closing
         conn_wrappers = []

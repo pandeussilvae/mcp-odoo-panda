@@ -26,102 +26,91 @@ class OdooAuthenticator:
     for future enhancements like token caching and secure credential storage.
     """
 
-    def __init__(self, config: Dict[str, Any], pool: Any):
+    def __init__(self, config: Dict[str, Any]):
         """
         Initialize the OdooAuthenticator.
 
         Args:
             config: The server configuration dictionary. Requires keys like
                     'odoo_url', 'database'.
-            pool: An instance of ConnectionPool used to acquire connections
-                  for making authentication calls to Odoo.
         """
         self.config = config
-        self._pool = pool # To be replaced with actual ConnectionPool instance
+        self.connection_pool = ConnectionPool(config)
+        self._authenticated_users: Dict[str, Dict[str, Any]] = {}
         self.odoo_url = config.get('odoo_url')
         self.database = config.get('database')
         # TODO: Implement secure storage/retrieval if caching tokens/credentials
         self._token_cache: Dict[str, Tuple[int, float]] = {} # Example: {username: (uid, expiry_time)}
         self.token_lifetime = config.get('auth_token_lifetime', 3600) # e.g., 1 hour
 
-    async def authenticate(self, username: str, api_key: str) -> int:
+    async def authenticate(self, username: str, password: str) -> Dict[str, Any]:
         """
-        Authenticate a user against the configured Odoo instance.
-
-        Uses the connection pool to get a connection and calls the
-        `common.authenticate` method via XML-RPC.
+        Authenticate a user.
 
         Args:
-            username: The Odoo username.
-            api_key: The Odoo user's API key or password.
+            username: Username
+            password: Password
 
         Returns:
-            The integer user ID (UID) upon successful authentication.
+            Dict[str, Any]: Authentication result
 
         Raises:
-            AuthError: If Odoo rejects the credentials or the connection object
-                       doesn't support the required authentication method.
-            NetworkError: If communication with Odoo fails (e.g., connection error,
-                          timeout from pool, protocol error during auth call).
-            OdooMCPError: For other unexpected errors during the process.
+            AuthError: If authentication fails
         """
-        # Mask username in log message? Or assume username is not sensitive?
-        # Let's log it for now, but consider implications.
-        logger.info(f"Attempting authentication for user: {username}")
-
-        # TODO: Implement token caching/checking logic here if desired
-
         try:
-            # Use the connection pool to get a connection context manager
-            conn_wrapper_cm = await self._pool.get_connection()
-            # Enter the context manager to get the actual wrapper
-            async with conn_wrapper_cm as wrapper:
-                # Assuming XMLRPCHandler is used for authentication via common.authenticate
-                connection = wrapper.connection
-                if not hasattr(connection, 'common') or not hasattr(connection.common, 'authenticate'):
-                     logger.error("Connection object does not support common.authenticate method.")
-                     raise AuthError("Authentication mechanism not available via connection pool.")
+            # Check if user is already authenticated
+            if username in self._authenticated_users:
+                return self._authenticated_users[username]
 
-                # The actual authentication call
-                uid = connection.common.authenticate(self.database, username, api_key, {})
+            # Get connection from pool
+            async with self.connection_pool.get_connection() as conn:
+                # Authenticate with Odoo
+                result = await conn.authenticate(username, password)
+                if not result:
+                    raise AuthError("Authentication failed")
 
-                if uid:
-                    logger.info(f"Authentication successful for user '{username}'. UID: {uid}")
-                    # TODO: Store token in cache if implementing token-based auth
-                    return uid
-                else:
-                    logger.warning(f"Authentication failed for user '{username}': Invalid credentials.")
-                    raise AuthError("Invalid username or API key.")
+                # Store authentication result
+                self._authenticated_users[username] = result
+                return result
 
-        except AuthError: # Re-raise the specific AuthError from exceptions module
-            raise
-        except PoolTimeoutError as e:
-             logger.error(f"Authentication failed for user '{username}': Timeout acquiring connection from pool.", exc_info=True)
-             raise NetworkError(f"Authentication failed: Timeout acquiring connection from pool.", original_exception=e)
-        except PoolConnectionError as e: # Catch the aliased ConnectionError from the pool
-             logger.error(f"Authentication failed for user '{username}': Pool connection error.", exc_info=True)
-             raise NetworkError(f"Authentication failed: Could not establish connection via pool.", original_exception=e)
-        # --- Add specific exceptions from the XMLRPC call ---
-        except Fault as e:
-             logger.warning(f"Authentication failed for user '{username}' due to XML-RPC Fault: {e.faultString}")
-             # Treat Odoo-level auth failures (like wrong password) as AuthError
-             if "AccessDenied" in e.faultString or "AccessError" in e.faultString or "authenticate" in e.faultString or "Wrong login/password" in e.faultString:
-                  raise AuthError(f"Authentication failed: {e.faultString}", original_exception=e)
-             else: # Treat other faults as protocol/network issues in this context
-                  raise NetworkError(f"Authentication failed due to XML-RPC Fault: {e.faultString}", original_exception=e)
-        except (XmlRpcProtocolError, socket.gaierror, ConnectionRefusedError, OSError) as e:
-             logger.error(f"Authentication failed for user '{username}' due to network/protocol error: {e}", exc_info=True)
-             raise NetworkError(f"Authentication failed due to a network or protocol error: {e}", original_exception=e)
-        # --- End specific exceptions ---
-        except OdooMCPError as e: # Catch other specific MCP errors (less likely here)
-             logger.error(f"Authentication failed for user '{username}' due to unexpected MCP error: {e}", exc_info=True)
-             # Re-raise as NetworkError for auth context?
-             raise NetworkError(f"Authentication failed due to underlying MCP error: {e}", original_exception=e)
+        except (NetworkError, PoolTimeoutError, PoolConnectionError) as e:
+            raise AuthError(f"Authentication failed: {str(e)}")
         except Exception as e:
-            # Catch remaining unexpected errors during authentication process
-            logger.error(f"Unexpected error during authentication for user '{username}': {e}", exc_info=True)
-            # Wrap unexpected errors in a generic NetworkError or OdooMCPError for authentication context
-            raise NetworkError(f"Authentication failed due to an unexpected network or protocol error: {e}", original_exception=e)
+            raise OdooMCPError(f"Unexpected error during authentication: {str(e)}")
+
+    def logout(self, username: str) -> None:
+        """
+        Logout a user.
+
+        Args:
+            username: Username
+        """
+        if username in self._authenticated_users:
+            del self._authenticated_users[username]
+
+    def is_authenticated(self, username: str) -> bool:
+        """
+        Check if a user is authenticated.
+
+        Args:
+            username: Username
+
+        Returns:
+            bool: True if authenticated, False otherwise
+        """
+        return username in self._authenticated_users
+
+    def get_user_info(self, username: str) -> Optional[Dict[str, Any]]:
+        """
+        Get user information.
+
+        Args:
+            username: Username
+
+        Returns:
+            Optional[Dict[str, Any]]: User information if authenticated, None otherwise
+        """
+        return self._authenticated_users.get(username)
 
     async def verify_token(self, token: str) -> Optional[int]:
         """
@@ -208,7 +197,7 @@ async def auth_example():
     pool_mock = type('PoolMock', (), {'get_connection': lambda: type('AsyncContextManager', (), {'__aenter__': lambda: mock_wrapper, '__aexit__': lambda *a: None})()})()
 
 
-    authenticator = OdooAuthenticator(config, pool_mock)
+    authenticator = OdooAuthenticator(config)
     try:
         print("Authenticating valid user...")
         uid = await authenticator.authenticate('user', 'key')
