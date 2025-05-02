@@ -356,6 +356,8 @@ class OdooMCPServer:
             if self.mcp_protocol == 'streamable_http':
                 # Start the server and store the server instance
                 self._started_mcp_server_instance = await self.app.start(host=host, port=port)
+                if self._started_mcp_server_instance is None:
+                    raise RuntimeError("Failed to start HTTP server - no server instance returned")
                 logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
             else:
                 # For stdio protocol, just start
@@ -412,8 +414,9 @@ async def run_server(config: Dict[str, Any]) -> None:
             
             logger.info(f"Server is running on port {server.config.get('http', {}).get('port', 8080)}. Press Ctrl+C to stop.")
             try:
-                # Wait for the HTTP server to be stopped
-                await server._started_mcp_server_instance.wait_closed()
+                # Keep the server running until interrupted
+                while True:
+                    await asyncio.sleep(1)
             except asyncio.CancelledError:
                 logger.info("Server shutdown requested")
             except KeyboardInterrupt:
