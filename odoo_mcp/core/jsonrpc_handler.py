@@ -3,16 +3,30 @@ import json
 import logging
 import asyncio
 import ssl # Import ssl for context creation
-from typing import Dict, Any, Optional, Union, Tuple, List # Added Union, Tuple, List
+from typing import Dict, Any, Optional, Union, Tuple, List, Set # Added Union, Tuple, List, Set
+import aiohttp
+from functools import wraps
 
 # Import specific exceptions for mapping
 from odoo_mcp.error_handling.exceptions import (
     NetworkError, ProtocolError, OdooMCPError, AuthError, ConfigurationError,
     OdooValidationError, OdooRecordNotFoundError
 )
-from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE
+from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE, initialize_cache_manager
 
 logger = logging.getLogger(__name__)
+
+def safe_cache_decorator(func):
+    """Safe wrapper for cache decorator that handles None cache_manager."""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if cache_manager and CACHE_TYPE == 'cachetools':
+            cache_decorator = cache_manager.get_ttl_cache_decorator(
+                cache_instance=cache_manager.odoo_read_cache
+            )
+            return await cache_decorator(func)(*args, **kwargs)
+        return await func(*args, **kwargs)
+    return wrapper
 
 class JSONRPCHandler:
     """
@@ -40,6 +54,10 @@ class JSONRPCHandler:
         self.odoo_url = config.get('odoo_url')
         self.jsonrpc_url = f"{self.odoo_url}/jsonrpc"
         self.database = config.get('database')
+
+        # Initialize cache manager if not already initialized
+        if cache_manager is None:
+            initialize_cache_manager(config)
 
         # --- Configure HTTPX AsyncClient with TLS ---
         verify: Union[str, bool, ssl.SSLContext] = True
@@ -242,7 +260,7 @@ class JSONRPCHandler:
               raise OdooMCPError(f"An unexpected error occurred during JSON-RPC call: {e}", original_exception=e)
 
 
-    @cache_manager.get_ttl_cache_decorator(cache_instance=cache_manager.odoo_read_cache if cache_manager and CACHE_TYPE == 'cachetools' else None)
+    @safe_cache_decorator
     async def _call_cached(self, service: str, method: str, args: tuple) -> Any:
         """
         Wrapper method for cached execution using cachetools.
