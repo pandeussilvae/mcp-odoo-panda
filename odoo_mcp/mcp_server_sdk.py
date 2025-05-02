@@ -917,9 +917,14 @@ class OdooMCPServer:
                         # Log the exact response being sent
                         logger.debug(f"Sending JSON-RPC response: {json.dumps(response, indent=2)}")
                         
-                        # Send the response
-                        response_json = json.dumps(response) + '\n'
-                        sys.stdout.write(response_json)
+                        # Prepare the response string
+                        response_str = json.dumps(response, separators=(',', ':')) + '\n'
+                        
+                        # Log the exact bytes being written to stdout
+                        logger.debug(f"Writing to stdout: {repr(response_str)}")
+                        
+                        # Write the response to stdout
+                        sys.stdout.write(response_str)
                         sys.stdout.flush()
                         
                     except json.JSONDecodeError as e:
@@ -932,8 +937,9 @@ class OdooMCPServer:
                             },
                             'id': None
                         }
-                        logger.debug(f"Sending JSON-RPC error response: {json.dumps(error_response, indent=2)}")
-                        sys.stdout.write(json.dumps(error_response) + '\n')
+                        error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
+                        logger.debug(f"Writing error response to stdout: {repr(error_str)}")
+                        sys.stdout.write(error_str)
                         sys.stdout.flush()
                         
                 except Exception as e:
@@ -946,8 +952,9 @@ class OdooMCPServer:
                         },
                         'id': None
                     }
-                    logger.debug(f"Sending JSON-RPC error response: {json.dumps(error_response, indent=2)}")
-                    sys.stdout.write(json.dumps(error_response) + '\n')
+                    error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
+                    logger.debug(f"Writing error response to stdout: {repr(error_str)}")
+                    sys.stdout.write(error_str)
                     sys.stdout.flush()
                     
         except Exception as e:
