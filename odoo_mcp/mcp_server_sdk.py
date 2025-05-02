@@ -40,32 +40,47 @@ class OdooMCPServer:
             config: Configuration dictionary
         """
         self.config = config
-        self.app = FastMCP()
+        self.protocol = config.get('protocol', 'stdio')  # Default to stdio if not specified
+        
+        # Validate protocol
+        if self.protocol not in ['stdio', 'streamable_http']:
+            raise ConfigurationError(f"Unsupported protocol: {self.protocol}")
+        
+        # Initialize FastMCP with protocol
+        self.app = FastMCP(protocol=self.protocol)
         
         # Initialize components
-        initialize_connection_pool(config)
-        initialize_authenticator(config)
-        initialize_session_manager(config)
-        initialize_rate_limiter(config)
-        initialize_cache_manager(config)
-        initialize_prompt_manager(config)
-        initialize_resource_manager(config)
-        initialize_tool_manager(config)
+        try:
+            initialize_connection_pool(config)
+            initialize_authenticator(config)
+            initialize_session_manager(config)
+            initialize_rate_limiter(config)
+            initialize_cache_manager(config)
+            initialize_prompt_manager(config)
+            initialize_resource_manager(config)
+            initialize_tool_manager(config)
+        except ConfigurationError as e:
+            logger.error(f"Failed to initialize components: {str(e)}")
+            raise
         
         # Get manager instances
-        self.connection_pool = get_connection_pool()
-        self.authenticator = get_authenticator()
-        self.session_manager = get_session_manager()
-        self.rate_limiter = get_rate_limiter()
-        self.cache_manager = get_cache_manager()
-        self.prompt_manager = get_prompt_manager()
-        self.resource_manager = get_resource_manager()
-        self.tool_manager = get_tool_manager()
+        try:
+            self.connection_pool = get_connection_pool()
+            self.authenticator = get_authenticator()
+            self.session_manager = get_session_manager()
+            self.rate_limiter = get_rate_limiter()
+            self.cache_manager = get_cache_manager()
+            self.prompt_manager = get_prompt_manager()
+            self.resource_manager = get_resource_manager()
+            self.tool_manager = get_tool_manager()
+        except ConfigurationError as e:
+            logger.error(f"Failed to get manager instances: {str(e)}")
+            raise
         
         # Register handlers
         self._register_handlers()
         
-        logger.info("Odoo MCP Server initialized")
+        logger.info(f"Odoo MCP Server initialized with protocol: {self.protocol}")
 
     def _register_handlers(self) -> None:
         """Register all MCP handlers."""
@@ -348,23 +363,53 @@ async def run_server(config: Dict[str, Any]) -> None:
     Args:
         config: Configuration dictionary
     """
-    server = create_server(config)
-    await server.start()
-    
     try:
-        # Keep the server running
-        while True:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        await server.stop()
+        server = create_server(config)
+        await server.start()
+        
+        try:
+            # Keep the server running
+            while True:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Received shutdown signal")
+        finally:
+            await server.stop()
+    except Exception as e:
+        logger.error(f"Server error: {str(e)}")
+        raise
 
 if __name__ == "__main__":
     import json
     import sys
+    import os
+    
+    # Parse command line arguments
+    protocol = None
+    config_path = 'config.json'
+    
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ['streamable_http', 'stdio']:
+            protocol = sys.argv[1]
+            if len(sys.argv) > 2:
+                config_path = sys.argv[2]
+        else:
+            config_path = sys.argv[1]
     
     # Load configuration
-    with open(sys.argv[1] if len(sys.argv) > 1 else 'config.json', 'r') as f:
-        config = json.load(f)
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        logger.error(f"Configuration file not found: {config_path}")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        logger.error(f"Invalid JSON in configuration file: {config_path}")
+        sys.exit(1)
+    
+    # Set protocol in config if specified
+    if protocol:
+        config['protocol'] = protocol
     
     # Configure logging
     logging.basicConfig(
@@ -372,5 +417,11 @@ if __name__ == "__main__":
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    # Run server
-    asyncio.run(run_server(config)) 
+    try:
+        # Run server
+        asyncio.run(run_server(config))
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+    except Exception as e:
+        logger.error(f"Server error: {str(e)}")
+        sys.exit(1) 
