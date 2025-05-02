@@ -53,15 +53,15 @@ class XMLRPCHandler:
         self.username = config.get('username')
         self.password = config.get('api_key')
 
-        common_url = f'{self.odoo_url}/xmlrpc/2/common'
-        models_url = f'{self.odoo_url}/xmlrpc/2/object'
-        ssl_context: Optional[ssl.SSLContext] = None
-
         # Initialize cache manager if not already initialized
         if cache_manager is None:
             initialize_cache_manager(config)
 
-        # --- Configure SSL/TLS Context ---
+        common_url = f'{self.odoo_url}/xmlrpc/2/common'
+        models_url = f'{self.odoo_url}/xmlrpc/2/object'
+        ssl_context: Optional[ssl.SSLContext] = None
+
+        # Configure SSL/TLS Context
         if self.odoo_url.startswith('https://'):
             try:
                 tls_version_str = config.get('tls_version', 'TLSv1.3').upper().replace('.', '_')
@@ -69,7 +69,7 @@ class XMLRPCHandler:
                 ssl_context = ssl.SSLContext(protocol_version)
                 ssl_context.check_hostname = True
                 ssl_context.verify_mode = ssl.CERT_REQUIRED
-                ssl_context.load_default_certs()  # Carica i certificati CA di sistema
+                ssl_context.load_default_certs()
 
                 min_version_set = False
                 if hasattr(ssl, 'TLSVersion') and hasattr(ssl_context, 'minimum_version'):
@@ -87,7 +87,7 @@ class XMLRPCHandler:
                         except (ValueError, OSError) as e:
                             logger.warning(f"Could not set minimum TLS version to {min_version.name} via minimum_version: {e}")
                     else:
-                         logger.warning(f"TLS version '{config.get('tls_version')}' not directly mappable to ssl.TLSVersion enum.")
+                        logger.warning(f"TLS version '{config.get('tls_version')}' not directly mappable to ssl.TLSVersion enum.")
 
                 if not min_version_set:
                     logger.info("Attempting to set TLS version using context options (fallback).")
@@ -99,15 +99,15 @@ class XMLRPCHandler:
                         options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
                         logger.info("Attempting to disable TLSv1, TLSv1.1 for XMLRPC.")
                     else:
-                         logger.warning(f"Cannot enforce unsupported TLS version '{config.get('tls_version')}' using options. Using system defaults.")
-                         options = 0
+                        logger.warning(f"Cannot enforce unsupported TLS version '{config.get('tls_version')}' using options. Using system defaults.")
+                        options = 0
 
                     if options != 0:
-                         ssl_context.options |= options
+                        ssl_context.options |= options
 
             except Exception as e:
-                 logger.error(f"Failed to create SSL context for XMLRPC: {e}", exc_info=True)
-                 raise ConfigurationError(f"Failed to configure TLS for XMLRPC: {e}", original_exception=e)
+                logger.error(f"Failed to create SSL context for XMLRPC: {e}", exc_info=True)
+                raise ConfigurationError(f"Failed to configure TLS for XMLRPC: {e}", original_exception=e)
 
         # --- Create ServerProxy Instances ---
         try:
@@ -127,6 +127,7 @@ class XMLRPCHandler:
                 logger.info(f"Successfully connected to Odoo at {self.odoo_url} (db: {self.database}, user: {self.username})")
             except Exception as auth_e:
                 logger.error(f"Failed to authenticate with Odoo during handler init: {auth_e}")
+                raise AuthError(f"Authentication failed during handler initialization: {auth_e}")
         # Corrected order: Catch specific network/protocol errors first
         except (XmlRpcProtocolError, socket.gaierror, ConnectionRefusedError, OSError) as e:
              raise NetworkError(f"Failed to connect or authenticate via XML-RPC at {common_url}: {e}", original_exception=e)
