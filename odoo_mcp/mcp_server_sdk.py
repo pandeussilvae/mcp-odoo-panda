@@ -53,8 +53,8 @@ class OdooMCPServer:
         if self.mcp_protocol not in ['stdio', 'streamable_http']:
             raise ConfigurationError(f"Unsupported MCP protocol: {self.mcp_protocol}")
         
-        # Initialize FastMCP
-        self.app = FastMCP()
+        # Initialize FastMCP with the correct protocol
+        self.app = FastMCP(protocol=self.mcp_protocol)
         
         # Configure MCP protocol
         if self.mcp_protocol == 'streamable_http':
@@ -351,12 +351,8 @@ class OdooMCPServer:
             
             logger.info(f"Starting Odoo MCP Server on {host}:{port} with protocol {self.mcp_protocol}")
             
-            # Start the server with the correct protocol and configuration
-            if self.mcp_protocol == 'streamable_http':
-                self.server = await self.app.start_streamable_http(host=host, port=port)
-            else:
-                self.server = await self.app.start(host=host, port=port)
-            
+            # Start the server
+            await self.app.start(host=host, port=port)
             logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
             
             # Keep the server running
@@ -371,8 +367,6 @@ class OdooMCPServer:
         """Stop the MCP server."""
         try:
             logger.info("Stopping Odoo MCP Server...")
-            if hasattr(self, 'server') and self.server:
-                await self.server.close()
             await self.app.stop()
             logger.info("Odoo MCP Server stopped")
         except Exception as e:
