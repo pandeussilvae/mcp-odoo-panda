@@ -839,12 +839,30 @@ class OdooMCPServer:
                         request_data = json.loads(message)
                         logger.debug(f"Parsed JSON-RPC message: {json.dumps(request_data, indent=2)}")
                         
-                        # Create MCP request
+                        # Extract session ID from params for stdio protocol
+                        params = request_data.get('params', {})
+                        session_id = None
+                        
+                        # Try to get session ID from different possible locations in params
+                        if isinstance(params, dict):
+                            # Try direct session_id field
+                            session_id = params.get('session_id')
+                            # Try sessionId field
+                            if not session_id:
+                                session_id = params.get('sessionId')
+                            # Try context.session_id
+                            if not session_id and 'context' in params:
+                                context = params.get('context', {})
+                                session_id = context.get('session_id') or context.get('sessionId')
+                        
+                        logger.debug(f"Extracted session ID from params: {session_id}")
+                        
+                        # Create MCP request with session ID in headers for stdio protocol
                         mcp_request = MCPRequest(
                             method=request_data.get('method'),
-                            parameters=request_data.get('params', {}),
+                            parameters=params,
                             id=request_data.get('id'),
-                            headers={}  # No headers in stdio mode
+                            headers={'X-Session-ID': session_id} if session_id else {}
                         )
                         
                         # Process the request
