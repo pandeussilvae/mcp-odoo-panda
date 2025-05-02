@@ -376,6 +376,16 @@ class OdooMCPServer:
             if mcp_request.method in no_auth_methods:
                 # Handle methods that don't require authentication
                 if mcp_request.method == 'initialize':
+                    if not hasattr(self, 'capabilities_manager'):
+                        logger.error("CapabilitiesManager not initialized")
+                        return web.json_response({
+                            'jsonrpc': '2.0',
+                            'error': {
+                                'code': -32603,
+                                'message': 'Server not properly initialized'
+                            },
+                            'id': mcp_request.id
+                        }, status=500)
                     response = await self._handle_initialize(mcp_request)
                 elif mcp_request.method == 'list_resources':
                     response = await self._handle_list_resources(mcp_request)
@@ -438,6 +448,10 @@ class OdooMCPServer:
         """Handle initialize request."""
         logger.debug(f"_handle_initialize called. Self: {self}, Type: {type(self)}, CapabilitiesManager: {getattr(self, 'capabilities_manager', None)}")
         try:
+            if not hasattr(self, 'capabilities_manager'):
+                logger.error("CapabilitiesManager not initialized in _handle_initialize")
+                return MCPResponse.error("Server not properly initialized")
+            
             # Get server capabilities
             capabilities = self.capabilities_manager.get_capabilities()
             
