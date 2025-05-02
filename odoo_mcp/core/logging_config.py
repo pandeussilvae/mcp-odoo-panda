@@ -1,6 +1,6 @@
 import logging
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import contextlib # Add contextlib import
 
 # Import the masking utility
@@ -54,64 +54,68 @@ class SensitiveDataFilter(logging.Filter):
         return True # Always allow the record to pass after attempting masking
 
 
-def setup_logging(config: Dict[str, Any]):
+def setup_logging(level: str = 'INFO', protocol: str = 'stdio') -> None:
     """
-    Configure the Python root logger based on settings from the config dictionary.
-
-    Sets the log level, format, output handler (console or file), and optionally
-    adds a filter to mask sensitive data.
-
+    Configure logging for the Odoo MCP Server.
+    
     Args:
-        config: Configuration dictionary containing logging settings like:
-                'log_level' (e.g., "DEBUG", "INFO"),
-                'log_file' (path or null/None for console),
-                'log_format' (format string),
-                'log_mask_sensitive' (boolean).
+        level: Logging level (default: 'INFO')
+        protocol: Server protocol ('stdio' or 'streamable_http')
     """
-    log_level_str = config.get('log_level', 'INFO').upper()
-    log_file = config.get('log_file', None)
-    log_format = config.get('log_format', '%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
-    mask_sensitive = config.get('log_mask_sensitive', True)
-
-    log_level = getattr(logging, log_level_str, logging.INFO)
-
-    # Create formatter
-    formatter = logging.Formatter(log_format)
-
-    # Get root logger
+    # Remove any existing handlers from the root logger
     root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
-
-    # Remove existing handlers to avoid duplicates if called multiple times
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
-
-    # Create handler (console or file)
-    # Redirect print statements within this block to stderr
-    with contextlib.redirect_stdout(sys.stderr):
-        if log_file:
-            handler = logging.FileHandler(log_file, encoding='utf-8')
-            print(f"Logging configured to file: {log_file} at level {log_level_str}") # Print config info
-        else:
-            # Ensure console logs go to stderr to avoid interfering with stdio JSON communication
-            handler = logging.StreamHandler(sys.stderr) # Handler itself goes to stderr
-            print(f"Logging configured to console (stderr) at level {log_level_str}") # Print config info
-
-    handler.setFormatter(formatter)
-
-    # Add the masking filter if enabled
-    # Redirect print statements within this block to stderr
-    with contextlib.redirect_stdout(sys.stderr):
-        if mask_sensitive:
-            print("Sensitive data masking is ENABLED for logging.") # Print to stderr via redirect
-            sensitive_filter = SensitiveDataFilter()
-            handler.addFilter(sensitive_filter)
-        else:
-            print("Sensitive data masking is DISABLED for logging.") # Print to stderr via redirect
-
-
-    # Add handler to the root logger
-    root_logger.addHandler(handler)
+    
+    # Configure root logger
+    root_logger.setLevel(level)
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Create and configure stderr handler
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(formatter)
+    root_logger.addHandler(stderr_handler)
+    
+    # If using stdio protocol, ensure no logs go to stdout
+    if protocol == 'stdio':
+        # Create a null handler for stdout to prevent any logs from going there
+        class StdoutNullHandler(logging.Handler):
+            def emit(self, record):
+                pass
+        
+        stdout_handler = StdoutNullHandler()
+        stdout_handler.setFormatter(formatter)
+        root_logger.addHandler(stdout_handler)
+        
+        # Disable propagation to prevent double logging
+        root_logger.propagate = False
+        
+        # Log the configuration
+        root_logger.info(f"Logging configured for stdio protocol. All logs will be written to stderr.")
+    else:
+        root_logger.info(f"Logging configured for {protocol} protocol.")
+    
+    # Configure specific loggers
+    loggers = [
+        'odoo_mcp',
+        'odoo_mcp.core',
+        'odoo_mcp.resources',
+        'odoo_mcp.tools',
+        'odoo_mcp.prompts',
+        'odoo_mcp.performance',
+        'odoo_mcp.error_handling'
+    ]
+    
+    for logger_name in loggers:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(level)
+        # Ensure the logger uses the root logger's handlers
+        logger.propagate = True
+        logger.handlers = []
 
     # Configure logging for libraries if needed (e.g., reduce verbosity)
     logging.getLogger("requests").setLevel(logging.WARNING)
@@ -129,7 +133,7 @@ if __name__ == "__main__":
         "log_mask_sensitive": True
     } # Closing brace correctly indented
     print("--- Setting up Console Logging (DEBUG, Masked) ---", file=sys.stderr) # Print to stderr
-    setup_logging(example_config_console)
+    setup_logging(example_config_console['log_level'], 'stdio')
 
     # Test logging
     logger = logging.getLogger("MyTestApp")
@@ -153,7 +157,7 @@ if __name__ == "__main__":
         "log_format": "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         "log_mask_sensitive": False
     }
-    setup_logging(example_config_file)
+    setup_logging(example_config_file['log_level'], 'streamable_http')
     logger.info("This INFO message should go to the file.")
     logger.debug("This DEBUG message should NOT appear in the file.")
     logger.error("API Key: another_secret456") # Should NOT be masked

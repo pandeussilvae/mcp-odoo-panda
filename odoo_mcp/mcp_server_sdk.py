@@ -31,6 +31,7 @@ from odoo_mcp.error_handling.exceptions import (
     RateLimitError, ResourceError, ToolError, PromptError,
     CacheError, BusError
 )
+from odoo_mcp.core.logging_config import setup_logging
 
 # Constants
 SERVER_NAME = "odoo-mcp-server"
@@ -1091,6 +1092,9 @@ if __name__ == "__main__":
     import sys
     import os
     
+    # Configure logging first, before any other operations
+    setup_logging(config.get('log_level', 'INFO'), config.get('connection_type', 'stdio'))
+    
     # Parse command line arguments
     mcp_protocol = None
     default_config_path = os.path.join('odoo_mcp', 'config', 'config.json')
@@ -1110,30 +1114,27 @@ if __name__ == "__main__":
             config = json.load(f)
     except FileNotFoundError:
         if config_path != default_config_path:
-            logger.error(f"Configuration file not found: {config_path}")
+            print(f"Configuration file not found: {config_path}", file=sys.stderr)
             sys.exit(1)
         else:
-            logger.info(f"Using default configuration file: {default_config_path}")
+            print(f"Using default configuration file: {default_config_path}", file=sys.stderr)
             try:
                 with open(default_config_path, 'r') as f:
                     config = json.load(f)
             except FileNotFoundError:
-                logger.error(f"Default configuration file not found: {default_config_path}")
-                logger.error("Please create a configuration file or specify a valid path")
+                print(f"Default configuration file not found: {default_config_path}", file=sys.stderr)
+                print("Please create a configuration file or specify a valid path", file=sys.stderr)
                 sys.exit(1)
     except json.JSONDecodeError:
-        logger.error(f"Invalid JSON in configuration file: {config_path}")
+        print(f"Invalid JSON in configuration file: {config_path}", file=sys.stderr)
         sys.exit(1)
     
     # Set MCP protocol in config if specified
     if mcp_protocol:
         config['connection_type'] = mcp_protocol
     
-    # Configure logging
-    logging.basicConfig(
-        level=config.get('log_level', 'INFO'),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    # Configure logging with the correct protocol
+    setup_logging(config.get('log_level', 'INFO'), config.get('connection_type', 'stdio'))
     
     try:
         # Run server
