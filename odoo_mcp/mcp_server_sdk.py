@@ -352,12 +352,30 @@ class OdooMCPServer:
             logger.info(f"Starting Odoo MCP Server on {host}:{port} with protocol {self.mcp_protocol}")
             
             # Start the server
-            await self.app.start(host=host, port=port)
-            logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
-            
-            # Keep the server running
-            while True:
-                await asyncio.sleep(1)
+            if self.mcp_protocol == 'streamable_http':
+                # Configure streamable HTTP
+                self.app.config['http'] = self.app.config.get('http', {})
+                self.app.config['http']['streamable'] = True
+                self.app.config['http']['host'] = host
+                self.app.config['http']['port'] = port
+                
+                # Start the server and store the server instance
+                self.server = await self.app.start(host=host, port=port)
+                logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
+                
+                # Keep the server running until stopped
+                try:
+                    await self.server.wait_closed()
+                except asyncio.CancelledError:
+                    logger.info("Server shutdown requested")
+            else:
+                # For stdio protocol, just start and keep running
+                await self.app.start()
+                logger.info("Odoo MCP Server started successfully in stdio mode")
+                
+                # Keep the server running
+                while True:
+                    await asyncio.sleep(1)
             
         except Exception as e:
             logger.error(f"Error starting server: {str(e)}")
@@ -367,6 +385,8 @@ class OdooMCPServer:
         """Stop the MCP server."""
         try:
             logger.info("Stopping Odoo MCP Server...")
+            if hasattr(self, 'server'):
+                await self.server.close()
             await self.app.stop()
             logger.info("Odoo MCP Server stopped")
         except Exception as e:
