@@ -1,3 +1,8 @@
+"""
+Odoo MCP Server SDK implementation.
+This module implements the MCP server SDK for Odoo integration.
+"""
+
 import yaml
 import json
 import uuid
@@ -332,6 +337,7 @@ PROMPTS = {
 # Constants
 SERVER_NAME = "odoo-mcp-server"
 SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
+PROTOCOL_VERSION = "2024-01-01"  # Protocol version in YYYY-MM-DD format
 
 class OdooMCPServer(FastMCP):
     """Custom MCP Server implementation that ensures proper version and capabilities."""
@@ -354,7 +360,7 @@ class OdooMCPServer(FastMCP):
             },
             "resources": {
                 "listChanged": True,
-                "resources": {template["uriTemplate"]: template for template in RESOURCE_TEMPLATES},
+                "resources": RESOURCE_TEMPLATES,
                 "subscribe": True
             },
             "streaming": True,
@@ -362,6 +368,16 @@ class OdooMCPServer(FastMCP):
             "websocket": True,
             "experimental": {}
         }
+        
+        # Load configuration
+        self.config = load_odoo_config()
+        
+        # Initialize Odoo handler based on protocol
+        protocol = self.config.get("protocol", "jsonrpc").lower()
+        if protocol == "jsonrpc":
+            self.odoo = JSONRPCHandler(self.config)
+        else:
+            self.odoo = XMLRPCHandler(self.config)
         
         # Call parent init with our server name
         super().__init__(server_name=self._name, transport_types=transport_types)
@@ -435,6 +451,82 @@ class OdooMCPServer(FastMCP):
                 }
                 print(f"[DEBUG] Resources/list response: {json.dumps(response, indent=2)}", file=sys.stderr)
                 return response
+
+            # Handle resources/templates/list
+            elif method == 'resources/templates/list':
+                print(f"[DEBUG] Handling resources/templates/list request", file=sys.stderr)
+                response = {
+                    'jsonrpc': '2.0',
+                    'result': {
+                        'resourceTemplates': RESOURCE_TEMPLATES
+                    },
+                    'id': request_id
+                }
+                print(f"[DEBUG] Resources/templates/list response: {json.dumps(response, indent=2)}", file=sys.stderr)
+                return response
+
+            # Handle resources/read
+            elif method == 'resources/read':
+                uri = params.get('uri')
+                if not uri:
+                    raise ValueError("Missing uri parameter")
+                
+                print(f"[DEBUG] Handling resources/read request for URI: {uri}", file=sys.stderr)
+                try:
+                    model, type, id_or_info = parse_odoo_uri(uri)
+                    
+                    if type == "list":
+                        result = await self.odoo.execute_kw(
+                            model=model,
+                            method="search_read",
+                            args=[[], ["name", "id"]],
+                            kwargs={"limit": 50}
+                        )
+                    elif type == "record":
+                        result = await self.odoo.execute_kw(
+                            model=model,
+                            method="read",
+                            args=[[id_or_info]]
+                        )
+                        result = result[0] if result else None
+                    else:  # binary
+                        result = await self.odoo.execute_kw(
+                            model=model,
+                            method="read",
+                            args=[[id_or_info["id"]], [id_or_info["field"]]]
+                        )
+                        result = result[0][id_or_info["field"]] if result else None
+                    
+                    response = {
+                        'jsonrpc': '2.0',
+                        'result': {
+                            'resource': {
+                                'uri': uri,
+                                'type': type,
+                                'mimeType': 'application/json'
+                            },
+                            'contents': [
+                                {
+                                    'uri': uri,
+                                    'type': 'text',
+                                    'text': json.dumps(result, indent=2)
+                                }
+                            ]
+                        },
+                        'id': request_id
+                    }
+                    print(f"[DEBUG] Resources/read response: {json.dumps(response, indent=2)}", file=sys.stderr)
+                    return response
+                except Exception as e:
+                    print(f"[ERROR] Error handling resources/read: {e}", file=sys.stderr)
+                    return {
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32000,
+                            'message': str(e)
+                        },
+                        'id': request_id
+                    }
 
             # For all other requests, use parent implementation
             return await super().handle_request(request)
