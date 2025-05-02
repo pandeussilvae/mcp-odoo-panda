@@ -2,13 +2,26 @@ from xmlrpc.client import ServerProxy, Fault, ProtocolError as XmlRpcProtocolErr
 # Corrected imports - ensure all needed types from typing are imported
 from typing import Dict, Any, Optional, List, Tuple, Set, Union
 from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, ProtocolError, OdooMCPError, ConfigurationError, OdooValidationError, OdooRecordNotFoundError
-from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE # Import cache manager
+from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE, initialize_cache_manager
 import socket
 import logging
 import ssl # Import ssl module
 import sys
+from functools import wraps
 
 logger = logging.getLogger(__name__)
+
+def safe_cache_decorator(func):
+    """Safe wrapper for cache decorator that handles None cache_manager."""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if cache_manager and CACHE_TYPE == 'cachetools':
+            cache_decorator = cache_manager.get_ttl_cache_decorator(
+                cache_instance=cache_manager.odoo_read_cache
+            )
+            return await cache_decorator(func)(*args, **kwargs)
+        return await func(*args, **kwargs)
+    return wrapper
 
 class XMLRPCHandler:
     """
@@ -43,6 +56,10 @@ class XMLRPCHandler:
         common_url = f'{self.odoo_url}/xmlrpc/2/common'
         models_url = f'{self.odoo_url}/xmlrpc/2/object'
         ssl_context: Optional[ssl.SSLContext] = None
+
+        # Initialize cache manager if not already initialized
+        if cache_manager is None:
+            initialize_cache_manager(config)
 
         # --- Configure SSL/TLS Context ---
         if self.odoo_url.startswith('https://'):
@@ -231,3 +248,35 @@ class XMLRPCHandler:
             logger.error(f"Attempted to hash unhashable type: {type(item).__name__}")
             # Re-raise the TypeError with a more informative message
             raise TypeError(f"Object of type {type(item).__name__} is not hashable and cannot be used in cache key") from e
+
+    @safe_cache_decorator
+    async def execute_kw(self, model: str, method: str, args: List = None, kwargs: Dict = None) -> Any:
+        """
+        Execute a method on a model with keyword arguments.
+
+        Args:
+            model: Model name
+            method: Method name
+            args: Positional arguments
+            kwargs: Keyword arguments
+
+        Returns:
+            Any: Method result
+        """
+        try:
+            with ServerProxy(f"{self.odoo_url}/xmlrpc/2/object") as proxy:
+                return proxy.execute_kw(
+                    self.database,
+                    self.global_uid,
+                    self.global_password,
+                    model,
+                    method,
+                    args or [],
+                    kwargs or {}
+                )
+        except Fault as e:
+            logger.error(f"XML-RPC Fault: {str(e)}")
+            raise ProtocolError(f"XML-RPC Fault: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error executing XML-RPC method: {str(e)}")
+            raise NetworkError(f"Error executing XML-RPC method: {str(e)}")

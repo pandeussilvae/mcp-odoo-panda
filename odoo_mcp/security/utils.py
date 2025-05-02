@@ -8,6 +8,7 @@ import asyncio
 import logging
 import re
 from typing import Dict, Any, Optional, Union, Type, List
+from collections import defaultdict
 
 logger = logging.getLogger(__name__) # Define logger at the top
 
@@ -31,95 +32,70 @@ except ImportError:
 class RateLimiter:
     """Rate limiter implementation."""
 
-    def __init__(self, max_requests: int = 120, window: int = 60):
+    def __init__(self, requests_per_minute: int = 120, max_wait_seconds: Optional[int] = None):
         """
         Initialize rate limiter.
 
         Args:
-            max_requests: Maximum number of requests allowed in the time window
-            window: Time window in seconds
+            requests_per_minute: Maximum number of requests per minute
+            max_wait_seconds: Maximum time to wait for rate limit (None for no limit)
         """
-        self.max_requests = max_requests
-        self.window = window
-        self.requests: Dict[str, List[float]] = {}
+        self.requests_per_minute = requests_per_minute
+        self.max_wait_seconds = max_wait_seconds
+        self.requests = defaultdict(list)
+        self._cleanup_interval = 60  # Cleanup every minute
 
-    def _cleanup_old_requests(self, key: str) -> None:
-        """
-        Remove requests outside the time window.
-
-        Args:
-            key: Client identifier
-        """
+    def _cleanup_old_requests(self) -> None:
+        """Remove requests older than 1 minute."""
         current_time = time.time()
-        self.requests[key] = [t for t in self.requests.get(key, []) 
-                            if current_time - t < self.window]
+        for client_id in list(self.requests.keys()):
+            self.requests[client_id] = [
+                req_time for req_time in self.requests[client_id]
+                if current_time - req_time < 60
+            ]
+            if not self.requests[client_id]:
+                del self.requests[client_id]
 
-    def check_rate_limit(self, key: str) -> bool:
+    def check_rate_limit(self, client_id: str) -> bool:
         """
-        Check if a request is allowed under the rate limit.
+        Check if a request is within rate limits.
 
         Args:
-            key: Client identifier
+            client_id: Client identifier
 
         Returns:
-            bool: True if request is allowed, False otherwise
+            bool: True if within limits, False otherwise
         """
-        self._cleanup_old_requests(key)
-        return len(self.requests.get(key, [])) < self.max_requests
+        current_time = time.time()
+        
+        # Cleanup old requests
+        self._cleanup_old_requests()
+        
+        # Check rate limit
+        client_requests = self.requests[client_id]
+        if len(client_requests) >= self.requests_per_minute:
+            oldest_request = client_requests[0]
+            wait_time = 60 - (current_time - oldest_request)
+            
+            if self.max_wait_seconds is not None and wait_time > self.max_wait_seconds:
+                return False
+            
+            time.sleep(wait_time)
+            return True
+        
+        return True
 
-    def record_request(self, key: str) -> None:
+    def record_request(self, client_id: str) -> None:
         """
         Record a request.
 
         Args:
-            key: Client identifier
+            client_id: Client identifier
         """
-        if key not in self.requests:
-            self.requests[key] = []
-        self.requests[key].append(time.time())
-        self._cleanup_old_requests(key)
+        self.requests[client_id].append(time.time())
 
-    def get_remaining_requests(self, key: str) -> int:
-        """
-        Get the number of remaining requests in the current time window.
-
-        Args:
-            key: Client identifier
-
-        Returns:
-            int: Number of remaining requests
-        """
-        self._cleanup_old_requests(key)
-        return max(0, self.max_requests - len(self.requests.get(key, [])))
-
-    def get_reset_time(self, key: str) -> float:
-        """
-        Get the time until the rate limit resets.
-
-        Args:
-            key: Client identifier
-
-        Returns:
-            float: Time until reset in seconds
-        """
-        if not self.requests.get(key):
-            return 0.0
-        
-        oldest_request = min(self.requests[key])
-        return max(0.0, self.window - (time.time() - oldest_request))
-
-    def reset(self, key: str) -> None:
-        """
-        Reset the rate limit for a key.
-
-        Args:
-            key: Client identifier
-        """
-        if key in self.requests:
-            del self.requests[key]
-
-    async def close(self) -> None:
-        """Clean up resources."""
+    def reset_limits(self) -> None:
+        """Reset all rate limits."""
         self.requests.clear()
 
 # --- Input Validation Schemas (using Pydantic) ---
@@ -295,48 +271,51 @@ MASK_PATTERN = re.compile(
 )
 MASK_REPLACEMENT = r'\1"***MASKED***"'
 
-def mask_sensitive_data(data: Any, patterns: Optional[List[str]] = None) -> Any:
+def mask_sensitive_data(data: Union[Dict, List, str], patterns: Optional[List[str]] = None) -> Union[Dict, List, str]:
     """
-    Mask sensitive data in the given object.
+    Mask sensitive data in a data structure.
 
     Args:
         data: Data to mask
-        patterns: List of regex patterns to match sensitive fields
+        patterns: List of regex patterns for sensitive keys
 
     Returns:
-        Any: Masked data
+        Union[Dict, List, str]: Masked data
     """
     if patterns is None:
         patterns = [
             r'password',
             r'api_key',
-            r'token',
             r'secret',
-            r'credential',
-            r'auth',
-            r'key'
+            r'token',
+            r'key',
+            r'credential'
         ]
 
     if isinstance(data, dict):
-        return {k: mask_sensitive_data(v, patterns) if any(re.search(p, k, re.I) for p in patterns)
-                else mask_sensitive_data(v, patterns) for k, v in data.items()}
+        return {
+            k: mask_sensitive_data(v, patterns) if any(re.search(p, k, re.I) for p in patterns)
+            else mask_sensitive_data(v, patterns)
+            for k, v in data.items()
+        }
     elif isinstance(data, list):
         return [mask_sensitive_data(item, patterns) for item in data]
-    elif isinstance(data, str) and any(re.search(p, data, re.I) for p in patterns):
-        return '********'
-    return data
+    elif isinstance(data, str):
+        return '********' if any(re.search(p, data, re.I) for p in patterns) else data
+    else:
+        return data
 
 
 # Example Usage
 if __name__ == "__main__":
     # Rate Limiter Example
     async def rate_limit_test():
-        limiter = RateLimiter(max_requests=120, window=60) # 120 requests/min
-        print("Testing rate limiter (120 req/min)...")
+        limiter = RateLimiter(requests_per_minute=120, max_wait_seconds=None) # No limit
+        print("Testing rate limiter (no limit)...")
         for i in range(15):
             start_req = time.monotonic()
             print(f"Request {i+1}: Acquiring token...")
-            await limiter.acquire()
+            await limiter.check_rate_limit("test_client")
             end_req = time.monotonic()
             print(f"Request {i+1}: Token acquired! (Took {end_req - start_req:.2f}s)")
             # Simulate some work

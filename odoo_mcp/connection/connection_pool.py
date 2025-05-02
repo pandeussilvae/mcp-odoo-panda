@@ -1,17 +1,17 @@
-import asyncio
-import time
-from typing import Dict, Any, Optional, Union, Type
-from collections import deque
-import logging
+"""
+Odoo MCP Connection Pool implementation.
+"""
 
-# Placeholder for actual handler types
+import logging
+import asyncio
+from typing import Dict, Any, Optional, Type, Union
+from contextlib import asynccontextmanager
+
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
-# from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler # Import when JSONRPCHandler is fully integrated
+from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler
+from odoo_mcp.error_handling.exceptions import ConnectionError, PoolTimeoutError, OdooMCPError, NetworkError, AuthError
 
 logger = logging.getLogger(__name__)
-
-# Import custom exceptions
-from odoo_mcp.error_handling.exceptions import ConnectionError, PoolTimeoutError, OdooMCPError, NetworkError, AuthError
 
 class ConnectionWrapper:
     """

@@ -5,6 +5,9 @@ import hashlib # For basic hashing if storing tokens locally (use stronger metho
 import socket
 from xmlrpc.client import Fault, ProtocolError as XmlRpcProtocolError
 
+from odoo_mcp.core.connection_pool import ConnectionPool
+from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, OdooMCPError, PoolTimeoutError, ConnectionError as PoolConnectionError
+
 # Placeholder for ConnectionPool and custom exceptions
 # from odoo_mcp.connection.connection_pool import ConnectionPool
 # from odoo_mcp.error_handling import AuthError, NetworkError
@@ -12,7 +15,7 @@ from xmlrpc.client import Fault, ProtocolError as XmlRpcProtocolError
 logger = logging.getLogger(__name__)
 
 # Import custom exceptions
-from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, OdooMCPError, PoolTimeoutError, ConnectionError as PoolConnectionError # Alias to avoid name clash
+# from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, OdooMCPError, PoolTimeoutError, ConnectionError as PoolConnectionError # Alias to avoid name clash
 
 class OdooAuthenticator:
     """

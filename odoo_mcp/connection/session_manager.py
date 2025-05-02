@@ -1,16 +1,18 @@
-import asyncio
-import time
-import logging
-from typing import Dict, Any, Optional
+"""
+Odoo MCP Session Manager implementation.
+"""
 
-# Placeholder for OdooAuthenticator and ConnectionPool
-# from odoo_mcp.authentication.authenticator import OdooAuthenticator
-# from odoo_mcp.connection.connection_pool import ConnectionPool, ConnectionWrapper
+import logging
+import time
+import uuid
+from typing import Dict, Any, Optional
+from datetime import datetime
+
+from odoo_mcp.core.authenticator import OdooAuthenticator
+from odoo_mcp.core.connection_pool import ConnectionPool
+from odoo_mcp.error_handling.exceptions import SessionError, AuthError, OdooMCPError
 
 logger = logging.getLogger(__name__)
-
-# Import custom exceptions
-from odoo_mcp.error_handling.exceptions import SessionError, AuthError, OdooMCPError
 
 class Session:
     """
@@ -164,7 +166,6 @@ class SessionManager:
 
 
             # Generate a unique session ID (e.g., using uuid)
-            import uuid
             session_id = str(uuid.uuid4())
 
             session = Session(
