@@ -10,6 +10,7 @@ from fastmcp import FastMCP, MCPRequest, MCPResponse
 from fastmcp.decorators import mcp_handler, mcp_resource, mcp_tool
 from aiohttp import web
 import json
+import sys
 
 from odoo_mcp.core.protocol_handler import JsonRpcRequest, JsonRpcResponse
 from odoo_mcp.core.connection_pool import ConnectionPool, initialize_connection_pool, get_connection_pool
@@ -799,13 +800,221 @@ class OdooMCPServer:
                 await self._started_mcp_server_instance.start()
                 logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
             else:
-                # For stdio protocol, just start
-                await self.app.start()
+                # For stdio protocol, start reading from stdin
+                logger.info("Starting stdio protocol handler")
+                await self._start_stdio_handler()
                 logger.info("Odoo MCP Server started successfully in stdio mode")
             
         except Exception as e:
             logger.error(f"Error starting server: {str(e)}")
             raise
+
+    async def _start_stdio_handler(self) -> None:
+        """Start the stdio protocol handler."""
+        try:
+            # Create a stream reader for stdin
+            loop = asyncio.get_event_loop()
+            reader = asyncio.StreamReader()
+            protocol = asyncio.StreamReaderProtocol(reader)
+            await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+            
+            logger.info("Started reading from stdin")
+            
+            # Start the message processing loop
+            while True:
+                try:
+                    # Read a line from stdin (messages are delimited by newlines)
+                    data = await reader.readline()
+                    if not data:
+                        logger.warning("Received empty data from stdin")
+                        continue
+                    
+                    # Decode the data
+                    message = data.decode('utf-8').strip()
+                    logger.debug(f"Received message from stdin: {message}")
+                    
+                    try:
+                        # Parse the JSON-RPC message
+                        request_data = json.loads(message)
+                        logger.debug(f"Parsed JSON-RPC message: {json.dumps(request_data, indent=2)}")
+                        
+                        # Create MCP request
+                        mcp_request = MCPRequest(
+                            method=request_data.get('method'),
+                            parameters=request_data.get('params', {}),
+                            id=request_data.get('id'),
+                            headers={}  # No headers in stdio mode
+                        )
+                        
+                        # Process the request
+                        response = await self._process_mcp_request(mcp_request)
+                        
+                        # Send the response
+                        response_json = json.dumps(response) + '\n'
+                        sys.stdout.write(response_json)
+                        sys.stdout.flush()
+                        logger.debug(f"Sent response: {response_json.strip()}")
+                        
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON message: {str(e)}")
+                        error_response = {
+                            'jsonrpc': '2.0',
+                            'error': {
+                                'code': -32700,
+                                'message': 'Parse error: Invalid JSON'
+                            },
+                            'id': None
+                        }
+                        sys.stdout.write(json.dumps(error_response) + '\n')
+                        sys.stdout.flush()
+                        
+                except Exception as e:
+                    logger.error(f"Error processing stdin message: {str(e)}")
+                    error_response = {
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32603,
+                            'message': str(e)
+                        },
+                        'id': None
+                    }
+                    sys.stdout.write(json.dumps(error_response) + '\n')
+                    sys.stdout.flush()
+                    
+        except Exception as e:
+            logger.error(f"Error in stdio handler: {str(e)}")
+            raise
+
+    async def _process_mcp_request(self, request: MCPRequest) -> Dict[str, Any]:
+        """Process an MCP request and return the response."""
+        try:
+            # List of methods that don't require authentication
+            no_auth_methods = {
+                'initialize',
+                'list_resources',
+                'list_tools',
+                'list_prompts',
+                'get_prompt',
+                'create_session',
+                'login'
+            }
+            
+            # Route the request based on method type
+            if request.method in no_auth_methods:
+                logger.info(f"Handling public method: {request.method}")
+                # Handle methods that don't require authentication
+                if request.method == 'initialize':
+                    if not hasattr(self, 'capabilities_manager'):
+                        logger.error("CapabilitiesManager not initialized")
+                        return {
+                            'jsonrpc': '2.0',
+                            'error': {
+                                'code': -32603,
+                                'message': 'Server not properly initialized'
+                            },
+                            'id': request.id
+                        }
+                    response = await self._handle_initialize(request)
+                elif request.method == 'list_resources':
+                    response = await self._handle_list_resources(request)
+                elif request.method == 'list_tools':
+                    response = await self._handle_list_tools(request)
+                elif request.method == 'list_prompts':
+                    response = await self._handle_list_prompts(request)
+                elif request.method == 'get_prompt':
+                    response = await self._handle_get_prompt(request)
+                elif request.method == 'create_session':
+                    response = await self._handle_create_session(request)
+                elif request.method == 'login':
+                    response = await self._handle_login(request)
+            else:
+                logger.info(f"Handling authenticated method: {request.method}")
+                # For all other methods, validate session first
+                session_id = request.headers.get('X-Session-ID')
+                if not session_id:
+                    logger.warning(f"No session ID provided for method: {request.method}")
+                    return {
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32001,
+                            'message': 'No session ID provided'
+                        },
+                        'id': request.id
+                    }
+                
+                try:
+                    # Validate session using session manager
+                    session = await self.session_manager.validate_session(session_id)
+                    if not session:
+                        logger.warning(f"Invalid session for method: {request.method}")
+                        return {
+                            'jsonrpc': '2.0',
+                            'error': {
+                                'code': -32001,
+                                'message': 'Invalid session'
+                            },
+                            'id': request.id
+                        }
+                    
+                    # Add session to request parameters
+                    request.parameters['session'] = session
+                    
+                    # Route to appropriate handler based on request type
+                    if hasattr(request, 'resource') and request.resource:
+                        response = await self.handle_resource(request)
+                    elif hasattr(request, 'tool') and request.tool:
+                        response = await self.handle_tool(request)
+                    else:
+                        response = await self.handle_default(request)
+                        
+                except AuthError as e:
+                    logger.error(f"Authentication error for method {request.method}: {str(e)}")
+                    return {
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32001,
+                            'message': str(e)
+                        },
+                        'id': request.id
+                    }
+                except Exception as e:
+                    logger.error(f"Error handling authenticated request: {str(e)}")
+                    return {
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32603,
+                            'message': str(e)
+                        },
+                        'id': request.id
+                    }
+            
+            # Convert MCPResponse to JSON-RPC response
+            response_dict = {
+                'jsonrpc': '2.0',
+                'id': request.id
+            }
+            
+            if response.success:
+                response_dict['result'] = response.data
+            else:
+                response_dict['error'] = {
+                    'code': -32000,
+                    'message': response.error
+                }
+            
+            logger.debug(f"Processed request successfully: {json.dumps(response_dict, indent=2)}")
+            return response_dict
+            
+        except Exception as e:
+            logger.error(f"Error processing MCP request: {str(e)}")
+            return {
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                },
+                'id': request.id
+            }
 
     async def stop(self) -> None:
         """Stop the MCP server."""
