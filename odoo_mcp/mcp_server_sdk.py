@@ -351,13 +351,29 @@ class OdooMCPServer:
             
             logger.info(f"Starting Odoo MCP Server on {host}:{port} with protocol {self.mcp_protocol}")
             
-            # Start the server
-            await self.app.start(host=host, port=port)
+            # Create and start the server
+            self.server = await self.app.start(host=host, port=port)
+            if not self.server:
+                raise RuntimeError("Failed to start server: no server instance returned")
+            
             logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
             
             # Keep the server running
-            while True:
-                await asyncio.sleep(1)
+            try:
+                # Wait for the server to be ready
+                await self.server.start_serving()
+                logger.info("Server is now serving requests")
+                
+                # Keep the server running until stopped
+                while True:
+                    if not self.server.is_serving():
+                        logger.error("Server stopped serving unexpectedly")
+                        break
+                    await asyncio.sleep(1)
+                    
+            except Exception as e:
+                logger.error(f"Error while server was running: {str(e)}")
+                raise
             
         except Exception as e:
             logger.error(f"Error starting server: {str(e)}")
@@ -367,6 +383,8 @@ class OdooMCPServer:
         """Stop the MCP server."""
         try:
             logger.info("Stopping Odoo MCP Server...")
+            if hasattr(self, 'server') and self.server:
+                await self.server.close()
             await self.app.stop()
             logger.info("Odoo MCP Server stopped")
         except Exception as e:
