@@ -33,7 +33,7 @@ from odoo_mcp.error_handling.exceptions import (
 # Constants
 SERVER_NAME = "odoo-mcp-server"
 SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
-PROTOCOL_VERSION = "2024-01-01"
+PROTOCOL_VERSION = "2025-03-26"  # Latest MCP protocol version
 
 logger = logging.getLogger(__name__)
 

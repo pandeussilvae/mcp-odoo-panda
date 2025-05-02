@@ -34,7 +34,7 @@ class ProtocolHandler:
     Manages protocol version compatibility and request/response handling.
     """
 
-    def __init__(self, protocol_version: str = "2024-01-01"):
+    def __init__(self, protocol_version: str = "2025-03-26"):
         """
         Initialize the protocol handler.
 
@@ -42,7 +42,7 @@ class ProtocolHandler:
             protocol_version: The MCP protocol version to use
         """
         self.protocol_version = protocol_version
-        self._supported_versions = {"2024-01-01"}  # Add supported versions here
+        self._supported_versions = {"2025-03-26"}  # Latest supported version
 
     def validate_protocol_version(self, version: str) -> bool:
         """
