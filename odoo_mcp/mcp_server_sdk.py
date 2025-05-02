@@ -408,6 +408,10 @@ class OdooMCPServer(FastMCP):
             self.odoo = JSONRPCHandler(self.config)
         else:
             self.odoo = XMLRPCHandler(self.config)
+            
+        # Auto-authenticate in stdio mode
+        if "stdio" in transport_types:
+            self._auto_authenticate()
         
         # Log initialization
         print(f"[DEBUG] Creating MCP instance with:", file=sys.stderr)
@@ -415,6 +419,35 @@ class OdooMCPServer(FastMCP):
         print(f"[DEBUG] - version: {SERVER_VERSION}", file=sys.stderr)
         print(f"[DEBUG] - transport types: {transport_types}", file=sys.stderr)
         print(f"[DEBUG] - capabilities: {json.dumps(self._capabilities, indent=2)}", file=sys.stderr)
+
+    async def _auto_authenticate(self):
+        """Automatically authenticate using config credentials."""
+        try:
+            username = self.config.get("username")
+            password = self.config.get("password")
+            database = self.config.get("database")
+            odoo_url = self.config.get("odoo_url")
+            
+            if not all([username, password, database, odoo_url]):
+                missing = []
+                if not username: missing.append("username")
+                if not password: missing.append("password")
+                if not database: missing.append("database")
+                if not odoo_url: missing.append("odoo_url")
+                logger.warning(f"Missing credentials in config for auto-authentication: {', '.join(missing)}")
+                return
+                
+            logger.info(f"Auto-authenticating with Odoo: {odoo_url}, database: {database}, user: {username}")
+            uid = await self.odoo.authenticate(database, username, password)
+            
+            if uid:
+                self.odoo.global_uid = uid
+                self.odoo.global_password = password
+                logger.info("Auto-authentication successful")
+            else:
+                logger.error("Auto-authentication failed")
+        except Exception as e:
+            logger.error(f"Error during auto-authentication: {str(e)}")
 
     @property
     def version(self) -> str:
@@ -448,6 +481,23 @@ class OdooMCPServer(FastMCP):
                         "capabilities": self._capabilities
                     }
                 }
+
+            # Check authentication for all methods except initialize and odoo_login
+            if method not in ["initialize", "tools/call"] or (method == "tools/call" and params.get("name") != "odoo_login"):
+                if not hasattr(self.odoo, 'global_uid') or not hasattr(self.odoo, 'global_password'):
+                    # Try auto-authentication if not already authenticated
+                    await self._auto_authenticate()
+                    
+                    # If still not authenticated, return error
+                    if not hasattr(self.odoo, 'global_uid') or not hasattr(self.odoo, 'global_password'):
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "error": {
+                                "code": -32000,
+                                "message": "Authentication required. Please call odoo_login first."
+                            }
+                        }
 
             elif method == "resources/list":
                 return {
