@@ -397,6 +397,7 @@ async def run_server(config: Dict[str, Any]) -> None:
     Args:
         config: Configuration dictionary
     """
+    server = None
     try:
         logger.info("Creating Odoo MCP Server instance...")
         server = create_server(config)
@@ -404,10 +405,22 @@ async def run_server(config: Dict[str, Any]) -> None:
         logger.info("Starting server...")
         await server.start()
         
-        # Wait for the server to be stopped
+        # Keep the server running until interrupted
         if hasattr(server, '_started_mcp_server_instance') and server._started_mcp_server_instance is not None:
+            logger.info("Server is running. Press Ctrl+C to stop.")
             try:
+                # Wait for the server to be stopped
                 await server._started_mcp_server_instance.wait_closed()
+            except asyncio.CancelledError:
+                logger.info("Server shutdown requested")
+            except KeyboardInterrupt:
+                logger.info("Server stopped by user")
+        else:
+            # For stdio protocol, keep running until interrupted
+            logger.info("Server is running in stdio mode. Press Ctrl+C to stop.")
+            try:
+                while True:
+                    await asyncio.sleep(1)
             except asyncio.CancelledError:
                 logger.info("Server shutdown requested")
             except KeyboardInterrupt:
@@ -417,8 +430,9 @@ async def run_server(config: Dict[str, Any]) -> None:
         logger.error(f"Server error: {str(e)}")
         raise
     finally:
-        logger.info("Shutting down server...")
-        await server.stop()
+        if server is not None:
+            logger.info("Shutting down server...")
+            await server.stop()
 
 if __name__ == "__main__":
     import json
