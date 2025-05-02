@@ -617,51 +617,164 @@ class OdooMCPServer:
             return MCPResponse.error(str(e))
 
     async def _handle_create_session(self, request: MCPRequest) -> MCPResponse:
-        """Handle create_session request."""
+        """
+        Handle create_session request.
+        
+        Expected request format:
+        {
+            "jsonrpc": "2.0",
+            "method": "create_session",
+            "params": {
+                "credentials": {
+                    "username": "user",
+                    "password": "pass",
+                    "database": "db"
+                }
+            },
+            "id": 1
+        }
+        
+        Successful response format:
+        {
+            "jsonrpc": "2.0",
+            "result": {
+                "session": {
+                    "id": "session_id",
+                    "expires_at": "timestamp"
+                }
+            },
+            "id": 1
+        }
+        """
         try:
+            logger.info("Handling create_session request")
+            
             # Extract credentials from parameters
             credentials = request.parameters.get('credentials', {})
             if not credentials:
+                logger.error("No credentials provided in create_session request")
                 return MCPResponse.error("No credentials provided")
             
-            # Create new session
-            session = await self.session_manager.create_session(credentials)
-            if not session:
-                return MCPResponse.error("Failed to create session")
+            # Validate required credential fields
+            required_fields = ['username', 'password', 'database']
+            missing_fields = [field for field in required_fields if field not in credentials]
+            if missing_fields:
+                logger.error(f"Missing required credential fields: {missing_fields}")
+                return MCPResponse.error(f"Missing required credential fields: {', '.join(missing_fields)}")
             
-            return MCPResponse.success({
-                'session_id': session['id'],
-                'expires_at': session['expires_at']
-            })
+            # Authenticate with Odoo
+            try:
+                auth_result = await self.authenticator.authenticate(credentials)
+                if not auth_result:
+                    logger.error("Authentication failed in create_session")
+                    return MCPResponse.error("Authentication failed")
+            except AuthError as e:
+                logger.error(f"Authentication error in create_session: {str(e)}")
+                return MCPResponse.error(str(e))
+            
+            # Create MCP session
+            try:
+                session = await self.session_manager.create_session(credentials)
+                if not session:
+                    logger.error("Failed to create session")
+                    return MCPResponse.error("Failed to create session")
+                
+                logger.info(f"Session created successfully: {session['id']}")
+                
+                # Return session information
+                return MCPResponse.success({
+                    'session': {
+                        'id': session['id'],
+                        'expires_at': session['expires_at']
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error creating session: {str(e)}")
+                return MCPResponse.error(f"Failed to create session: {str(e)}")
+                
         except Exception as e:
-            logger.error(f"Error creating session: {str(e)}")
-            return MCPResponse.error(str(e))
+            logger.error(f"Unexpected error in create_session: {str(e)}")
+            return MCPResponse.error(f"Unexpected error: {str(e)}")
 
     async def _handle_login(self, request: MCPRequest) -> MCPResponse:
-        """Handle login request."""
+        """
+        Handle login request.
+        
+        Expected request format:
+        {
+            "jsonrpc": "2.0",
+            "method": "login",
+            "params": {
+                "credentials": {
+                    "username": "user",
+                    "password": "pass",
+                    "database": "db"
+                }
+            },
+            "id": 1
+        }
+        
+        Successful response format:
+        {
+            "jsonrpc": "2.0",
+            "result": {
+                "session": {
+                    "id": "session_id",
+                    "expires_at": "timestamp"
+                }
+            },
+            "id": 1
+        }
+        """
         try:
+            logger.info("Handling login request")
+            
             # Extract credentials from parameters
             credentials = request.parameters.get('credentials', {})
             if not credentials:
+                logger.error("No credentials provided in login request")
                 return MCPResponse.error("No credentials provided")
             
-            # Authenticate user
-            auth_result = await self.authenticator.authenticate(credentials)
-            if not auth_result:
-                return MCPResponse.error("Authentication failed")
+            # Validate required credential fields
+            required_fields = ['username', 'password', 'database']
+            missing_fields = [field for field in required_fields if field not in credentials]
+            if missing_fields:
+                logger.error(f"Missing required credential fields: {missing_fields}")
+                return MCPResponse.error(f"Missing required credential fields: {', '.join(missing_fields)}")
             
-            # Create session for authenticated user
-            session = await self.session_manager.create_session(credentials)
-            if not session:
-                return MCPResponse.error("Failed to create session")
+            # Authenticate with Odoo
+            try:
+                auth_result = await self.authenticator.authenticate(credentials)
+                if not auth_result:
+                    logger.error("Authentication failed in login")
+                    return MCPResponse.error("Authentication failed")
+            except AuthError as e:
+                logger.error(f"Authentication error in login: {str(e)}")
+                return MCPResponse.error(str(e))
             
-            return MCPResponse.success({
-                'session_id': session['id'],
-                'expires_at': session['expires_at']
-            })
+            # Create MCP session
+            try:
+                session = await self.session_manager.create_session(credentials)
+                if not session:
+                    logger.error("Failed to create session after login")
+                    return MCPResponse.error("Failed to create session")
+                
+                logger.info(f"Login successful, session created: {session['id']}")
+                
+                # Return session information
+                return MCPResponse.success({
+                    'session': {
+                        'id': session['id'],
+                        'expires_at': session['expires_at']
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error creating session after login: {str(e)}")
+                return MCPResponse.error(f"Failed to create session: {str(e)}")
+                
         except Exception as e:
-            logger.error(f"Error during login: {str(e)}")
-            return MCPResponse.error(str(e))
+            logger.error(f"Unexpected error in login: {str(e)}")
+            return MCPResponse.error(f"Unexpected error: {str(e)}")
 
     async def start(self) -> None:
         """Start the MCP server."""
