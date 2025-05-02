@@ -93,7 +93,7 @@ class XMLRPCHandler:
                         except (ValueError, OSError) as e:
                             logger.warning(f"Could not set minimum TLS version to {min_version.name} via minimum_version: {e}")
                     else:
-                        logger.warning(f"TLS version '{config.get('tls_version')}' not directly mappable to ssl.TLSVersion enum.")
+                         logger.warning(f"TLS version '{config.get('tls_version')}' not directly mappable to ssl.TLSVersion enum.")
 
                 if not min_version_set:
                     logger.info("Attempting to set TLS version using context options (fallback).")
@@ -105,15 +105,15 @@ class XMLRPCHandler:
                         options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
                         logger.info("Attempting to disable TLSv1, TLSv1.1 for XMLRPC.")
                     else:
-                        logger.warning(f"Cannot enforce unsupported TLS version '{config.get('tls_version')}' using options. Using system defaults.")
-                        options = 0
+                         logger.warning(f"Cannot enforce unsupported TLS version '{config.get('tls_version')}' using options. Using system defaults.")
+                         options = 0
 
                     if options != 0:
-                        ssl_context.options |= options
+                         ssl_context.options |= options
 
             except Exception as e:
-                logger.error(f"Failed to create SSL context for XMLRPC: {e}", exc_info=True)
-                raise ConfigurationError(f"Failed to configure TLS for XMLRPC: {e}", original_exception=e)
+                 logger.error(f"Failed to create SSL context for XMLRPC: {e}", exc_info=True)
+                 raise ConfigurationError(f"Failed to configure TLS for XMLRPC: {e}", original_exception=e)
 
         # --- Create ServerProxy Instances ---
         try:
