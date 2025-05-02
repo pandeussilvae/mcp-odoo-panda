@@ -1,0 +1,314 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# MCP Server Implementation Rules
+
+## Core Architecture Rules
+
+1. **Server Base Class**
+   - All MCP servers must inherit from the base `Server` class
+   - Must implement all abstract methods defined in the base class
+   - Must provide proper initialization with server name and version
+   - Must maintain protocol version compatibility
+   - Must follow MCP's client-server architecture where:
+     - MCP Hosts: Programs that want to access data through MCP
+     - MCP Clients: Protocol clients that maintain 1:1 connections with servers
+     - MCP Servers: Lightweight programs exposing specific capabilities
+     - Local Data Sources: Computer's files, databases, and services
+     - Remote Services: External systems available over the internet
+
+2. **Protocol Support**
+   - Must support at least one of the following protocols:
+     - Stdio Protocol (default)
+     - Streamable HTTP Protocol
+   - Protocol selection must be configurable
+   - Must handle protocol-specific initialization and cleanup
+   - Must implement JSON-RPC 2.0 message format
+   - Must support stateful connections
+   - Must implement server and client capability negotiation
+
+3. **Capabilities Declaration**
+   - Must declare server capabilities during initialization
+   - Must include:
+     - Resources support and templates
+     - Tools support and list
+     - Prompts support and list
+     - Experimental features (if any)
+   - Must maintain capability list consistency
+   - Must support feature flags:
+     - prompts.listChanged
+     - resources.subscribelistChanged
+     - tools.listChanged
+     - logging
+     - completion
+
+## Resource Management Rules
+
+1. **Resource Handling**
+   - Must implement proper resource URI parsing
+   - Must support resource listing and retrieval
+   - Must handle resource updates and notifications
+   - Must validate resource access permissions
+   - Must follow MCP's resource primitives:
+     - Application-controlled contextual data
+     - Managed by the client application
+     - Examples: File contents, API responses
+
+2. **Resource Types**
+   - Must support standard resource types:
+     - Text resources
+     - Binary resources
+     - List resources
+     - Record resources
+   - Must provide proper MIME type handling
+   - Must implement resource caching when appropriate
+   - Must support Odoo-specific resources:
+     - Model records
+     - Binary fields
+     - Related records
+     - Computed fields
+
+## Tool Management Rules
+
+1. **Tool Implementation**
+   - Must implement tool registration and discovery
+   - Must validate tool parameters
+   - Must handle tool execution errors
+   - Must provide proper tool documentation
+   - Must follow MCP's tool primitives:
+     - Model-controlled functions
+     - Exposed to the LLM for actions
+     - Examples: API calls, data updates
+
+2. **Tool Security**
+   - Must implement rate limiting
+   - Must validate tool access permissions
+   - Must sanitize tool inputs
+   - Must handle sensitive data appropriately
+   - Must implement Odoo-specific security:
+     - User authentication
+     - Record access rights
+     - Field access rights
+     - Method access rights
+
+## Prompt Management Rules
+
+1. **Prompt Handling**
+   - Must implement prompt registration
+   - Must support prompt templates
+   - Must handle prompt arguments
+   - Must provide prompt documentation
+   - Must follow MCP's prompt primitives:
+     - User-controlled interactive templates
+     - Invoked by user choice
+     - Examples: Slash commands, menu options
+
+2. **Prompt Types**
+   - Must support standard prompt types:
+     - Analyze record prompts
+     - Create record prompts
+     - Update record prompts
+     - Search prompts
+     - Method call prompts
+   - Must support Odoo-specific prompts:
+     - Record creation workflows
+     - Record update workflows
+     - Record search workflows
+     - Method execution workflows
+
+## Configuration Rules
+
+1. **Configuration Management**
+   - Must support configuration via:
+     - YAML files
+     - JSON files
+     - Environment variables
+     - Command line arguments
+   - Must validate configuration values
+   - Must provide default values for optional settings
+   - Must support Odoo configuration:
+     - Database connection
+     - Authentication credentials
+     - API endpoints
+     - Protocol selection (XML-RPC/JSON-RPC)
+
+2. **Required Configuration**
+   - Must include:
+     - Server name and version
+     - Protocol settings
+     - Connection settings
+     - Authentication settings
+     - Rate limiting settings
+     - Logging settings
+   - Must support Odoo-specific settings:
+     - Database name
+     - User credentials
+     - API version
+     - Connection timeout
+     - Retry policies
+
+## Error Handling Rules
+
+1. **Error Management**
+   - Must implement proper error handling for:
+     - Protocol errors
+     - Authentication errors
+     - Resource errors
+     - Tool execution errors
+     - Configuration errors
+   - Must provide meaningful error messages
+   - Must maintain error logging
+   - Must handle Odoo-specific errors:
+     - Connection errors
+     - Authentication failures
+     - Record access errors
+     - Method execution errors
+
+2. **Error Types**
+   - Must use standard error codes
+   - Must implement custom error types when needed
+   - Must handle both synchronous and asynchronous errors
+   - Must support Odoo error types:
+     - AccessError
+     - ValidationError
+     - UserError
+     - MissingError
+
+## Logging Rules
+
+1. **Logging Implementation**
+   - Must implement proper logging for:
+     - Server initialization
+     - Request handling
+     - Error conditions
+     - Performance metrics
+   - Must support multiple logging handlers
+   - Must allow log level configuration
+   - Must log Odoo-specific events:
+     - API calls
+     - Record operations
+     - Method executions
+     - Authentication events
+
+2. **Log Format**
+   - Must include:
+     - Timestamp
+     - Log level
+     - Component name
+     - Message
+     - Context information when relevant
+   - Must include Odoo-specific context:
+     - User ID
+     - Database name
+     - Model name
+     - Record ID
+     - Method name
+
+## Performance Rules
+
+1. **Connection Management**
+   - Must implement connection pooling
+   - Must handle connection timeouts
+   - Must implement proper cleanup
+   - Must support connection limits
+   - Must optimize Odoo connections:
+     - Connection reuse
+     - Batch operations
+     - Caching strategies
+     - Request batching
+
+2. **Caching**
+   - Must implement caching for:
+     - Resources
+     - Authentication tokens
+     - Tool results
+   - Must handle cache invalidation
+   - Must respect cache TTL settings
+   - Must implement Odoo-specific caching:
+     - Record cache
+     - Field cache
+     - Method result cache
+     - Permission cache
+
+## Security Rules
+
+1. **Authentication**
+   - Must implement proper authentication
+   - Must handle session management
+   - Must support multiple authentication methods
+   - Must implement proper token handling
+   - Must support Odoo authentication:
+     - User/password authentication
+     - API key authentication
+     - Session management
+     - Token refresh
+
+2. **Authorization**
+   - Must implement access control
+   - Must validate permissions
+   - Must handle role-based access
+   - Must implement proper security headers
+   - Must enforce Odoo security:
+     - Record access rules
+     - Field access rules
+     - Method access rules
+     - User group permissions
+
+## Testing Rules
+
+1. **Test Coverage**
+   - Must include tests for:
+     - Core functionality
+     - Protocol handling
+     - Resource management
+     - Tool execution
+     - Error handling
+     - Security features
+   - Must test Odoo integration:
+     - API connectivity
+     - Record operations
+     - Method execution
+     - Error handling
+
+2. **Test Types**
+   - Must implement:
+     - Unit tests
+     - Integration tests
+     - Protocol tests
+     - Security tests
+     - Performance tests
+   - Must include Odoo-specific tests:
+     - API integration tests
+     - Record operation tests
+     - Permission tests
+     - Error handling tests
+
+## Documentation Rules
+
+1. **Code Documentation**
+   - Must include:
+     - Module documentation
+     - Class documentation
+     - Method documentation
+     - Type hints
+     - Examples
+   - Must document Odoo integration:
+     - API usage
+     - Record operations
+     - Method calls
+     - Error handling
+
+2. **API Documentation**
+   - Must document:
+     - Available resources
+     - Available tools
+     - Available prompts
+     - Protocol specifications
+     - Error codes
+   - Must include Odoo-specific documentation:
+     - Model descriptions
+     - Field descriptions
+     - Method descriptions
+     - Permission requirements
