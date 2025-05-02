@@ -341,11 +341,17 @@ class OdooMCPServer:
     async def start(self) -> None:
         """Start the MCP server."""
         try:
-            await self.app.start(
-                host=self.config.get('host', 'localhost'),
-                port=self.config.get('port', 8000)
-            )
-            logger.info("Odoo MCP Server started")
+            # Get host and port from http config if using streamable_http
+            if self.mcp_protocol == 'streamable_http':
+                host = self.config.get('http', {}).get('host', '0.0.0.0')
+                port = self.config.get('http', {}).get('port', 8080)
+            else:
+                host = self.config.get('host', 'localhost')
+                port = self.config.get('port', 8000)
+            
+            logger.info(f"Starting Odoo MCP Server on {host}:{port} with protocol {self.mcp_protocol}")
+            await self.app.start(host=host, port=port)
+            logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
         except Exception as e:
             logger.error(f"Error starting server: {str(e)}")
             raise
