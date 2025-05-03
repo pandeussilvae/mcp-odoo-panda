@@ -769,8 +769,16 @@ class OdooMCPServer:
     async def _handle_list_prompts(self, request: MCPRequest) -> MCPResponse:
         """Handle list_prompts request."""
         try:
+            # Get list of prompts from capabilities manager
             prompts = self.capabilities_manager.list_prompts()
-            return MCPResponse.success({'prompts': prompts})
+            
+            # Log the response for debugging
+            logger.debug(f"List prompts response: {json.dumps(prompts, indent=2)}")
+            
+            return MCPResponse(
+                success=True,
+                data={"prompts": prompts}
+            )
         except Exception as e:
             logger.error(f"Error handling list_prompts request: {str(e)}")
             return MCPResponse.error(str(e))
@@ -1305,6 +1313,10 @@ class OdooMCPServer:
             
             # Ensure request.id is never None
             request_id = request.id if request.id is not None else 0
+            
+            # Log request details for debugging
+            logger.debug(f"Processing MCP request: method={request.method}, id={request_id}")
+            logger.debug(f"Request headers: {request.headers}")
             
             # Handle notifications (they don't require authentication and don't need a response)
             if request.method.startswith('notifications/'):
