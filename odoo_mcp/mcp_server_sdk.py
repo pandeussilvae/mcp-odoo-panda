@@ -1322,16 +1322,21 @@ class OdooMCPServer:
                     values = arguments.get('values', {})
                     
                     # Special handling for res.partner with partner_firstname module
-                    if model == 'res.partner' and 'name' in values:
-                        # Split name into firstname and lastname
-                        name_parts = values['name'].split(' ', 1)
-                        if len(name_parts) > 1:
-                            values['firstname'] = name_parts[0]
-                            values['lastname'] = name_parts[1]
-                        else:
-                            values['firstname'] = name_parts[0]
-                            values['lastname'] = ''
-                        del values['name']
+                    if model == 'res.partner':
+                        if 'name' in values:
+                            # Split name into firstname and lastname
+                            name_parts = values['name'].split(' ', 1)
+                            if len(name_parts) > 1:
+                                values['firstname'] = name_parts[0]
+                                values['lastname'] = name_parts[1]
+                            else:
+                                values['firstname'] = name_parts[0]
+                                values['lastname'] = ''
+                            del values['name']
+                        elif 'firstname' not in values and 'lastname' not in values:
+                            # If neither name nor firstname/lastname are provided, set a default
+                            values['firstname'] = 'New'
+                            values['lastname'] = 'Partner'
                     
                     result = await connection.execute_kw(
                         model=model,
@@ -1348,6 +1353,18 @@ class OdooMCPServer:
                     model = arguments.get('model')
                     record_id = arguments.get('id')
                     values = arguments.get('values', {})
+                    
+                    # Special handling for res.partner with partner_firstname module
+                    if model == 'res.partner' and 'name' in values:
+                        # Split name into firstname and lastname
+                        name_parts = values['name'].split(' ', 1)
+                        if len(name_parts) > 1:
+                            values['firstname'] = name_parts[0]
+                            values['lastname'] = name_parts[1]
+                        else:
+                            values['firstname'] = name_parts[0]
+                            values['lastname'] = ''
+                        del values['name']
                     
                     result = await connection.execute_kw(
                         model=model,
