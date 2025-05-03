@@ -1341,13 +1341,35 @@ class OdooMCPServer:
                         'result': result,
                         '_meta': meta
                     })
-                else:
-                    # Handle other tools
-                    result = await connection.execute_tool(tool_name, arguments)
+                elif tool_name == 'odoo_update_record':
+                    # Handle update record tool
+                    model = arguments.get('model')
+                    record_id = arguments.get('id')
+                    values = arguments.get('values', {})
+                    
+                    result = await connection.execute_kw(
+                        model, 'write',
+                        [[record_id], values]
+                    )
                     return MCPResponse.success({
                         'result': result,
                         '_meta': meta
                     })
+                elif tool_name == 'odoo_delete_record':
+                    # Handle delete record tool
+                    model = arguments.get('model')
+                    record_id = arguments.get('id')
+                    
+                    result = await connection.execute_kw(
+                        model, 'unlink',
+                        [[record_id]]
+                    )
+                    return MCPResponse.success({
+                        'result': result,
+                        '_meta': meta
+                    })
+                else:
+                    raise ToolError(f"Unsupported tool operation: {tool_name}")
             finally:
                 # Always release the connection
                 await self.connection_pool.release_connection(connection)
