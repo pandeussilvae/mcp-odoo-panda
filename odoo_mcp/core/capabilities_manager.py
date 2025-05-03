@@ -187,7 +187,8 @@ class CapabilitiesManager:
                 "type": str,
                 "description": str,
                 "operations": List[str],
-                "parameters": Optional[Dict[str, Any]]
+                "parameters": Optional[Dict[str, Any]],
+                "uri": str  # Required field for MCP client
             }
         """
         return [
@@ -196,7 +197,8 @@ class CapabilitiesManager:
                 "type": resource.type.value,
                 "description": resource.description,
                 "operations": resource.operations,
-                "parameters": resource.parameters or {}
+                "parameters": resource.parameters or {},
+                "uri": f"odoo://{resource.name}"  # Add URI field in odoo:// format
             }
             for resource in self.resources.values()
         ]
