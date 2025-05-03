@@ -1290,9 +1290,8 @@ class OdooMCPServer:
             if not any(tool.get('name') == tool_name for tool in tools):
                 raise ToolError(f"Unsupported tool: {tool_name}")
 
-            # Execute tool operation
-            connection = await self.connection_pool.get_connection()
-            try:
+            # Execute tool operation using async context manager
+            async with self.connection_pool.get_connection() as connection:
                 if tool_name == 'odoo_search_records':
                     # Handle search records tool
                     model = arguments.get('model')
@@ -1370,9 +1369,6 @@ class OdooMCPServer:
                     })
                 else:
                     raise ToolError(f"Unsupported tool operation: {tool_name}")
-            finally:
-                # Always release the connection
-                await self.connection_pool.release_connection(connection)
 
         except Exception as e:
             raise ToolError(f"Error executing tool: {str(e)}", original_exception=e)
