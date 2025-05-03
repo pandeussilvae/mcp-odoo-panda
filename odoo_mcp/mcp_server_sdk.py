@@ -554,6 +554,7 @@ class OdooMCPServer:
                 'resources/list',  # Add both formats
                 'list_tools',
                 'tools/list',      # Add both formats
+                'tools/call',      # Add tools/call as public method
                 'list_prompts',
                 'prompts/list',    # Add both formats
                 'get_prompt',
@@ -598,6 +599,8 @@ class OdooMCPServer:
                     response = await self._handle_list_resources(mcp_request)
                 elif method in ['list_tools', 'tools/list']:
                     response = await self._handle_list_tools(mcp_request)
+                elif method == 'tools/call':
+                    response = await self._handle_tool_call(mcp_request)
                 elif method in ['list_prompts', 'prompts/list']:
                     response = await self._handle_list_prompts(mcp_request)
                 elif method in ['get_prompt', 'prompts/get']:
@@ -1273,6 +1276,26 @@ class OdooMCPServer:
             logger.error(f"Error handling completion/complete request: {str(e)}")
             return MCPResponse.error(str(e))
 
+    async def _handle_tool_call(self, request: MCPRequest) -> MCPResponse:
+        """Handle tools/call request."""
+        try:
+            # Validate session
+            session = await self._validate_session(request)
+            if not session:
+                return MCPResponse.error("Invalid session")
+            
+            # Check rate limit
+            if not self._check_rate_limit(request):
+                return MCPResponse.error("Rate limit exceeded")
+            
+            # Execute tool call operation
+            result = await self._execute_tool_call(request, session)
+            return MCPResponse.success(result)
+            
+        except Exception as e:
+            logger.error(f"Error handling tools/call request: {str(e)}")
+            return MCPResponse.error(str(e))
+
     async def start(self) -> None:
         """Start the MCP server."""
         try:
@@ -1490,6 +1513,7 @@ class OdooMCPServer:
                 'resources/list',  # Add both formats
                 'list_tools',
                 'tools/list',      # Add both formats
+                'tools/call',      # Add tools/call as public method
                 'list_prompts',
                 'prompts/list',    # Add both formats
                 'get_prompt',
@@ -1536,6 +1560,8 @@ class OdooMCPServer:
                     response = await self._handle_list_resources(request)
                 elif request.method in ['list_tools', 'tools/list']:
                     response = await self._handle_list_tools(request)
+                elif request.method == 'tools/call':
+                    response = await self._handle_tool_call(request)
                 elif request.method in ['list_prompts', 'prompts/list']:
                     response = await self._handle_list_prompts(request)
                 elif request.method in ['get_prompt', 'prompts/get']:
