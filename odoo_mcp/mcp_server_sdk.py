@@ -557,6 +557,7 @@ class OdooMCPServer:
                 'list_prompts',
                 'prompts/list',    # Add both formats
                 'get_prompt',
+                'prompts/get',     # Add prompts/get as public method
                 'create_session',
                 'login',
                 'resources/read',   # Add resources/read as public method
@@ -1219,7 +1220,8 @@ class OdooMCPServer:
                     
                     try:
                         # Get connection from pool
-                        async with self.connection_pool.get_connection() as connection:
+                        connection = await self.connection_pool.get_connection()
+                        try:
                             # Search for records matching the partial ID
                             records = await connection.execute_kw(
                                 model=model,
@@ -1238,6 +1240,9 @@ class OdooMCPServer:
                                     "values": values
                                 }
                             })
+                        finally:
+                            # Always release the connection
+                            await self.connection_pool.release_connection(connection)
                             
                     except Exception as e:
                         logger.error(f"Error completing ID for model {model}: {str(e)}")
@@ -1474,6 +1479,7 @@ class OdooMCPServer:
                 'list_prompts',
                 'prompts/list',    # Add both formats
                 'get_prompt',
+                'prompts/get',     # Add prompts/get as public method
                 'create_session',
                 'login',
                 'resources/read',   # Add resources/read as public method
