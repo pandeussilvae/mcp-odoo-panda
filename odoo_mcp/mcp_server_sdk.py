@@ -984,94 +984,94 @@ class OdooMCPServer:
             parts = uri[7:].split('/')  # Remove 'odoo://' prefix and split
             model = parts[0]
             
-            # Get connection from pool
-            connection = await self.connection_pool.get_connection()
-            if not connection:
-                return MCPResponse.error("Failed to get database connection")
-            
             try:
-                # Determine content type based on URI format
-                if len(parts) == 1:
-                    # Model schema request (e.g., odoo://res.partner)
-                    fields = await connection.execute_kw(
-                        model=model,
-                        method='fields_get',
-                        args=[],
-                        kwargs={'attributes': ['string', 'type', 'required', 'readonly', 'selection']}
-                    )
-                    content = {
-                        "uri": uri,
-                        "type": "text",
-                        "data": json.dumps(fields),
-                        "mimeType": "application/json",
-                        "metadata": {
-                            "model": model,
-                            "type": "schema",
-                            "last_modified": datetime.now().isoformat()
+                # Use async with for proper connection management
+                async with self.connection_pool.get_connection() as connection:
+                    # Determine content type based on URI format
+                    if len(parts) == 1:
+                        # Model schema request (e.g., odoo://res.partner)
+                        fields = await connection.execute_kw(
+                            model=model,
+                            method='fields_get',
+                            args=[],
+                            kwargs={'attributes': ['string', 'type', 'required', 'readonly', 'selection']}
+                        )
+                        content = {
+                            "uri": uri,
+                            "type": "text",
+                            "data": json.dumps(fields),
+                            "mimeType": "application/json",
+                            "metadata": {
+                                "model": model,
+                                "type": "schema",
+                                "last_modified": datetime.now().isoformat()
+                            }
                         }
-                    }
-                elif len(parts) == 2 and parts[1] == "list":
-                    # List records request (e.g., odoo://res.partner/list)
-                    records = await connection.execute_kw(
-                        model=model,
-                        method='search_read',
-                        args=[[], ["id", "name"]],
-                        kwargs={"limit": 100}
-                    )
-                    content = {
-                        "uri": uri,
-                        "type": "text",
-                        "data": json.dumps(records),
-                        "mimeType": "application/json",
-                        "metadata": {
-                            "model": model,
-                            "type": "list",
-                            "count": len(records),
-                            "last_modified": datetime.now().isoformat()
+                    elif len(parts) == 2 and parts[1] == "list":
+                        # List records request (e.g., odoo://res.partner/list)
+                        records = await connection.execute_kw(
+                            model=model,
+                            method='search_read',
+                            args=[[], ["id", "name"]],
+                            kwargs={"limit": 100}
+                        )
+                        content = {
+                            "uri": uri,
+                            "type": "text",
+                            "data": json.dumps(records),
+                            "mimeType": "application/json",
+                            "metadata": {
+                                "model": model,
+                                "type": "list",
+                                "count": len(records),
+                                "last_modified": datetime.now().isoformat()
+                            }
                         }
-                    }
-                elif len(parts) == 2:
-                    # Single record request (e.g., odoo://res.partner/1)
-                    try:
-                        record_id = int(parts[1])
-                    except ValueError:
-                        return MCPResponse.error(f"Invalid record ID in URI: {uri}")
-                    
-                    record = await connection.execute_kw(
-                        model=model,
-                        method='read',
-                        args=[[record_id]],
-                        kwargs={}
-                    )
-                    
-                    if not record:
-                        return MCPResponse.error(f"Record not found: {uri}")
-                    
-                    content = {
-                        "uri": uri,
-                        "type": "text",
-                        "data": json.dumps(record[0]),
-                        "mimeType": "application/json",
-                        "metadata": {
-                            "model": model,
-                            "type": "record",
-                            "id": record_id,
-                            "last_modified": datetime.now().isoformat()
+                    elif len(parts) == 2:
+                        # Single record request (e.g., odoo://res.partner/1)
+                        try:
+                            record_id = int(parts[1])
+                        except ValueError:
+                            return MCPResponse.error(f"Invalid record ID in URI: {uri}")
+                        
+                        record = await connection.execute_kw(
+                            model=model,
+                            method='read',
+                            args=[[record_id]],
+                            kwargs={}
+                        )
+                        
+                        if not record:
+                            return MCPResponse.error(f"Record not found: {uri}")
+                        
+                        content = {
+                            "uri": uri,
+                            "type": "text",
+                            "data": json.dumps(record[0]),
+                            "mimeType": "application/json",
+                            "metadata": {
+                                "model": model,
+                                "type": "record",
+                                "id": record_id,
+                                "last_modified": datetime.now().isoformat()
+                            }
                         }
+                    else:
+                        return MCPResponse.error(f"Invalid URI format: {uri}")
+                    
+                    # Format response according to MCP specification
+                    response_data = {
+                        "contents": [content]
                     }
-                else:
-                    return MCPResponse.error(f"Invalid URI format: {uri}")
-                
-                # Format response according to MCP specification
-                response_data = {
-                    "contents": [content]
-                }
-                
-                return MCPResponse.success(response_data)
-                
-            finally:
-                # Always release the connection back to the pool
-                await self.connection_pool.release_connection(connection)
+                    
+                    return MCPResponse.success(response_data)
+                    
+            except PoolTimeoutError:
+                logger.error("Connection pool timeout while handling resource read request")
+                return MCPResponse.error("Connection pool timeout")
+            except ConnectionError as e:
+                logger.error(f"Connection error while handling resource read request: {str(e)}")
+                return MCPResponse.error(f"Connection error: {str(e)}")
             
         except Exception as e:
             logger.error(f"Error handling resource read request: {str(e)}")
