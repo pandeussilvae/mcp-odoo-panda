@@ -53,11 +53,20 @@ class StdoutMonitor:
         self.response_count = 0
         self.blocked_count = 0
         self.debug_mode = True  # Enable detailed debugging
+        self.enabled = True  # Enable/disable the monitor
     
     def write(self, data: str) -> None:
         """Write data to stdout, monitoring for non-JSON-RPC output."""
+        if not self.enabled:
+            # If monitor is disabled, write directly to original stdout
+            self.original_stdout_write(data)
+            self.original_stdout.flush()
+            return
+        
         if self.debug_mode:
+            # Log the exact bytes being written
             print(f"[DEBUG_STDOUT_WRITE] Attempting to write: {repr(data)}", file=sys.stderr, flush=True)
+            print(f"[DEBUG_STDOUT_WRITE] Bytes: {[ord(c) for c in data]}", file=sys.stderr, flush=True)
         
         if not self.is_jsonrpc_response:
             self.blocked_count += 1
@@ -107,6 +116,7 @@ class StdoutMonitor:
             self.response_count += 1
             if self.debug_mode:
                 print(f"[DEBUG_STDOUT_WRITE] ALLOWED write #{self.response_count}: {repr(data)}", file=sys.stderr, flush=True)
+                print(f"[DEBUG_STDOUT_WRITE] Writing bytes: {[ord(c) for c in data]}", file=sys.stderr, flush=True)
             
             # Write the data directly to the original stdout
             self.original_stdout_write(data)
@@ -136,6 +146,18 @@ class StdoutMonitor:
         self.is_jsonrpc_response = False
         if self.debug_mode:
             print(f"[DEBUG_STDOUT_WRITE] Ended JSON-RPC response #{self.response_count}", file=sys.stderr, flush=True)
+    
+    def disable(self) -> None:
+        """Disable the stdout monitor."""
+        self.enabled = False
+        if self.debug_mode:
+            print("[DEBUG_STDOUT_WRITE] Monitor disabled", file=sys.stderr, flush=True)
+    
+    def enable(self) -> None:
+        """Enable the stdout monitor."""
+        self.enabled = True
+        if self.debug_mode:
+            print("[DEBUG_STDOUT_WRITE] Monitor enabled", file=sys.stderr, flush=True)
 
 class OdooMCPServer:
     """Main Odoo MCP Server implementation."""
@@ -1019,6 +1041,7 @@ class OdooMCPServer:
                         # Prepare the response string with minimal separators and single newline
                         response_str = json.dumps(response, separators=(',', ':')) + '\n'
                         print(f"[StdioHandler] Prepared response: {repr(response_str)}", file=sys.stderr, flush=True)
+                        print(f"[StdioHandler] Response bytes: {[ord(c) for c in response_str]}", file=sys.stderr, flush=True)
                         
                         # Mark start of JSON-RPC response
                         self.stdout_monitor.start_jsonrpc_response()
@@ -1042,6 +1065,7 @@ class OdooMCPServer:
                         }
                         error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
                         print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
+                        print(f"[StdioHandler] Error response bytes: {[ord(c) for c in error_str]}", file=sys.stderr, flush=True)
                         
                         # Mark start of JSON-RPC response
                         self.stdout_monitor.start_jsonrpc_response()
@@ -1065,6 +1089,7 @@ class OdooMCPServer:
                     }
                     error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
                     print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
+                    print(f"[StdioHandler] Error response bytes: {[ord(c) for c in error_str]}", file=sys.stderr, flush=True)
                     
                     # Mark start of JSON-RPC response
                     self.stdout_monitor.start_jsonrpc_response()
