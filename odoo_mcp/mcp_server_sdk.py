@@ -1302,9 +1302,10 @@ class OdooMCPServer:
                     order = arguments.get('order', '')
                     
                     result = await connection.execute_kw(
-                        model, 'search_read',
-                        [domain],
-                        {
+                        model=model,
+                        method='search_read',
+                        args=[domain],
+                        kwargs={
                             'fields': fields,
                             'limit': limit,
                             'offset': offset,
@@ -1333,8 +1334,10 @@ class OdooMCPServer:
                         del values['name']
                     
                     result = await connection.execute_kw(
-                        model, 'create',
-                        [values]
+                        model=model,
+                        method='create',
+                        args=[values],
+                        kwargs={}
                     )
                     return MCPResponse.success({
                         'result': result,
@@ -1347,8 +1350,10 @@ class OdooMCPServer:
                     values = arguments.get('values', {})
                     
                     result = await connection.execute_kw(
-                        model, 'write',
-                        [[record_id], values]
+                        model=model,
+                        method='write',
+                        args=[[record_id], values],
+                        kwargs={}
                     )
                     return MCPResponse.success({
                         'result': result,
@@ -1360,8 +1365,10 @@ class OdooMCPServer:
                     record_id = arguments.get('id')
                     
                     result = await connection.execute_kw(
-                        model, 'unlink',
-                        [[record_id]]
+                        model=model,
+                        method='unlink',
+                        args=[[record_id]],
+                        kwargs={}
                     )
                     return MCPResponse.success({
                         'result': result,
