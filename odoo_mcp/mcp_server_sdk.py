@@ -1157,7 +1157,9 @@ class OdooMCPServer:
                 'get_prompt',
                 'create_session',
                 'login',
-                'notifications/initialized'  # Add notifications/initialized to no_auth_methods
+                'resources/list',  # Add resources/list as a public method
+                'tools/list',      # Add tools/list as a public method
+                'prompts/list'     # Add prompts/list as a public method
             }
             
             # Ensure request.id is never None
@@ -1185,11 +1187,11 @@ class OdooMCPServer:
                             'id': request_id
                         }
                     response = await self._handle_initialize(request)
-                elif request.method == 'list_resources':
+                elif request.method == 'list_resources' or request.method == 'resources/list':
                     response = await self._handle_list_resources(request)
-                elif request.method == 'list_tools':
+                elif request.method == 'list_tools' or request.method == 'tools/list':
                     response = await self._handle_list_tools(request)
-                elif request.method == 'list_prompts':
+                elif request.method == 'list_prompts' or request.method == 'prompts/list':
                     response = await self._handle_list_prompts(request)
                 elif request.method == 'get_prompt':
                     response = await self._handle_get_prompt(request)
