@@ -1192,7 +1192,19 @@ class OdooMCPServer:
                 
                 elif arg_name == 'id':
                     # For ID completion, we need a valid model
-                    model = params.get('model')
+                    # Try to get model from different possible locations
+                    model = None
+                    
+                    # First try direct model parameter
+                    if 'model' in params:
+                        model = params['model']
+                    # Then try to extract from URI template
+                    elif uri_template:
+                        # Extract model from URI template (e.g., odoo://{model}/{id})
+                        parts = uri_template.split('/')
+                        if len(parts) >= 2 and parts[0] == 'odoo:':
+                            model = parts[1].strip('{}')
+                    
                     if not model:
                         return MCPResponse.error("Model name required for ID completion")
                     
