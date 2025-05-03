@@ -1188,7 +1188,11 @@ class OdooMCPServer:
                         for resource in resources
                         if resource['name'].startswith(arg_value)
                     ]
-                    return MCPResponse.success({"suggestions": suggestions})
+                    return MCPResponse.success({
+                        "completion": {
+                            "suggestions": suggestions
+                        }
+                    })
                 
                 elif arg_name == 'id':
                     # For ID completion, we need a valid model
@@ -1215,14 +1219,22 @@ class OdooMCPServer:
                                 }
                                 for record in records
                             ]
-                            return MCPResponse.success({"suggestions": suggestions})
+                            return MCPResponse.success({
+                                "completion": {
+                                    "suggestions": suggestions
+                                }
+                            })
                             
                     except Exception as e:
                         logger.error(f"Error completing ID for model {model}: {str(e)}")
                         return MCPResponse.error(f"Error completing ID: {str(e)}")
             
             # If we get here, we don't support this type of completion
-            return MCPResponse.success({"suggestions": []})
+            return MCPResponse.success({
+                "completion": {
+                    "suggestions": []
+                }
+            })
             
         except Exception as e:
             logger.error(f"Error handling completion/complete request: {str(e)}")
