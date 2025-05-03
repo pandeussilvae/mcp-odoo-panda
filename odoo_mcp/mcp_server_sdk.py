@@ -852,7 +852,13 @@ class OdooMCPServer:
                 "parameters": prompt.parameters
             }
             
-            return MCPResponse.success({"prompt": prompt_dict})
+            # Create response with required messages array
+            response_data = {
+                "prompt": prompt_dict,
+                "messages": []  # Add empty messages array as required
+            }
+            
+            return MCPResponse.success(response_data)
         except Exception as e:
             logger.error(f"Error handling get_prompt request: {str(e)}")
             return MCPResponse.error(str(e))
