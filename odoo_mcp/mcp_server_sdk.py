@@ -760,8 +760,27 @@ class OdooMCPServer:
     async def _handle_list_tools(self, request: MCPRequest) -> MCPResponse:
         """Handle list_tools request."""
         try:
+            # Get list of tools from capabilities manager
             tools = self.capabilities_manager.list_tools()
-            return MCPResponse.success({'tools': tools})
+            
+            # Log the response for debugging
+            logger.debug(f"List tools response: {json.dumps(tools, indent=2)}")
+            
+            # Ensure each tool has the required fields
+            for tool in tools:
+                if not isinstance(tool, dict):
+                    logger.error(f"Invalid tool format: {tool}")
+                    continue
+                
+                required_fields = ['name', 'description', 'operations', 'parameters']
+                missing_fields = [field for field in required_fields if field not in tool]
+                if missing_fields:
+                    logger.error(f"Tool {tool.get('name', 'unknown')} missing required fields: {missing_fields}")
+            
+            return MCPResponse(
+                success=True,
+                data={"tools": tools}
+            )
         except Exception as e:
             logger.error(f"Error handling list_tools request: {str(e)}")
             return MCPResponse.error(str(e))
