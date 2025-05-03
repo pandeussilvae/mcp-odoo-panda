@@ -1279,18 +1279,50 @@ class OdooMCPServer:
     async def _handle_tool_call(self, request: MCPRequest) -> MCPResponse:
         """Handle tools/call request."""
         try:
-            # Validate session
-            session = await self._validate_session(request)
-            if not session:
-                return MCPResponse.error("Invalid session")
+            # Extract tool call parameters
+            tool_name = request.parameters.get('name')
+            arguments = request.parameters.get('arguments', {})
+            meta = request.parameters.get('_meta', {})
             
-            # Check rate limit
-            if not self._check_rate_limit(request):
-                return MCPResponse.error("Rate limit exceeded")
+            if not tool_name:
+                return MCPResponse.error("Tool name is required")
             
-            # Execute tool call operation
-            result = await self._execute_tool_call(request, session)
-            return MCPResponse.success(result)
+            # Get tool from capabilities manager
+            tool = self.capabilities_manager.get_tool(tool_name)
+            if not tool:
+                return MCPResponse.error(f"Tool not found: {tool_name}")
+            
+            # Execute tool operation
+            try:
+                # Get connection from pool
+                connection = await self.connection_pool.get_connection()
+                try:
+                    # Execute the tool operation
+                    if tool_name == 'odoo_search_records':
+                        result = await connection.execute_kw(
+                            model=arguments.get('model'),
+                            method='search_read',
+                            args=[arguments.get('domain', [])],
+                            kwargs={
+                                'fields': arguments.get('fields', []),
+                                'limit': arguments.get('limit', 10)
+                            }
+                        )
+                    else:
+                        return MCPResponse.error(f"Unsupported tool: {tool_name}")
+                    
+                    return MCPResponse.success({
+                        "result": result,
+                        "meta": meta
+                    })
+                    
+                finally:
+                    # Always release the connection
+                    await self.connection_pool.release_connection(connection)
+                    
+            except Exception as e:
+                logger.error(f"Error executing tool {tool_name}: {str(e)}")
+                return MCPResponse.error(f"Error executing tool: {str(e)}")
             
         except Exception as e:
             logger.error(f"Error handling tools/call request: {str(e)}")
