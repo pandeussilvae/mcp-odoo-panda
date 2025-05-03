@@ -739,11 +739,22 @@ class OdooMCPServer:
     async def _handle_list_resources(self, request: MCPRequest) -> MCPResponse:
         """Handle list_resources request."""
         try:
+            # Get list of resources from capabilities manager
             resources = self.capabilities_manager.list_resources()
-            return MCPResponse.success({'resources': resources})
+            
+            # Log the response for debugging
+            logger.debug(f"List resources response: {json.dumps(resources, indent=2)}")
+            
+            return MCPResponse(
+                success=True,
+                data={"resources": resources}
+            )
         except Exception as e:
-            logger.error(f"Error handling list_resources request: {str(e)}")
-            return MCPResponse.error(str(e))
+            logger.error(f"Error listing resources: {str(e)}")
+            return MCPResponse(
+                success=False,
+                error=f"Failed to list resources: {str(e)}"
+            )
 
     async def _handle_list_tools(self, request: MCPRequest) -> MCPResponse:
         """Handle list_tools request."""

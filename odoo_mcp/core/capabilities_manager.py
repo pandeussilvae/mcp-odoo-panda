@@ -176,14 +176,30 @@ class CapabilitiesManager:
         """
         return self.prompts.get(name)
 
-    def list_resources(self) -> List[str]:
+    def list_resources(self) -> List[Dict[str, Any]]:
         """
         List all registered resources.
 
         Returns:
-            List[str]: List of resource names
+            List[Dict[str, Any]]: List of resource templates as dictionaries with the following structure:
+            {
+                "name": str,
+                "type": str,
+                "description": str,
+                "operations": List[str],
+                "parameters": Optional[Dict[str, Any]]
+            }
         """
-        return list(self.resources.keys())
+        return [
+            {
+                "name": resource.name,
+                "type": resource.type.value,
+                "description": resource.description,
+                "operations": resource.operations,
+                "parameters": resource.parameters or {}
+            }
+            for resource in self.resources.values()
+        ]
 
     def list_tools(self) -> List[str]:
         """
