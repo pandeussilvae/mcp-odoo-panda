@@ -838,13 +838,21 @@ class OdooMCPServer:
         """Handle get_prompt request."""
         try:
             name = request.parameters.get('name')
-            args = request.parameters.get('args', {})
+            args = request.parameters.get('arguments', {})
             
             prompt = self.capabilities_manager.get_prompt(name)
             if not prompt:
                 return MCPResponse.error(f"Prompt not found: {name}")
             
-            return MCPResponse.success(prompt)
+            # Convert Prompt object to dictionary
+            prompt_dict = {
+                "name": prompt.name,
+                "description": prompt.description,
+                "template": prompt.template,
+                "parameters": prompt.parameters
+            }
+            
+            return MCPResponse.success({"prompt": prompt_dict})
         except Exception as e:
             logger.error(f"Error handling get_prompt request: {str(e)}")
             return MCPResponse.error(str(e))
