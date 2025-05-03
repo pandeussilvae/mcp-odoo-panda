@@ -299,21 +299,43 @@ class JSONRPCHandler:
         Raises:
             AuthError, NetworkError, ProtocolError, OdooMCPError, TypeError.
         """
-        # Determine authentication details (JSON-RPC often uses uid/password)
-        call_uid = uid if uid is not None else self.config.get('uid')
-        call_password = password if password is not None else self.config.get('api_key')
+        # Determine authentication details
+        # First try to use provided credentials
+        call_uid = uid
+        call_password = password
 
+        # If not provided, try to use global credentials from config
         if call_uid is None or call_password is None:
-            # JSON-RPC execute_kw requires authentication credentials
-            # Unlike XML-RPC's common.authenticate, JSON-RPC usually needs them per call.
-            # If session_id is provided, the expectation is that the caller handles auth,
-            # but Odoo's standard 'execute_kw' still needs uid/pwd.
-            # This highlights a potential mismatch if trying to use session_id directly
-            # with standard execute_kw without a custom Odoo endpoint.
-            # For now, raise AuthError if explicit uid/pwd are missing.
-            # TODO: Revisit this if a session-based JSON-RPC flow is implemented on the Odoo side.
-             raise AuthError("JSON-RPC execute_kw requires explicit uid and password/api_key parameters.")
+            # Try to get global credentials from config
+            global_uid = self.config.get('uid')
+            global_password = self.config.get('api_key')
+            
+            if global_uid is not None and global_password is not None:
+                call_uid = global_uid
+                call_password = global_password
+            else:
+                # If still no credentials, try to authenticate with username/password from config
+                username = self.config.get('username')
+                api_key = self.config.get('api_key')
+                
+                if username and api_key:
+                    try:
+                        # Authenticate with Odoo to get uid
+                        auth_result = await self.call(
+                            service='common',
+                            method='login',
+                            args=[self.database, username, api_key]
+                        )
+                        if auth_result:
+                            call_uid = auth_result
+                            call_password = api_key
+                    except Exception as e:
+                        logger.error(f"Failed to authenticate with global credentials: {str(e)}")
+                        raise AuthError(f"Failed to authenticate with global credentials: {str(e)}")
 
+        # If still no credentials, raise error
+        if call_uid is None or call_password is None:
+            raise AuthError("No valid credentials available for JSON-RPC execute_kw")
 
         # Prepare context, merging session_id if provided
         context = kwargs.pop('context', {}) # Get context from kwargs or default to empty dict
@@ -322,17 +344,14 @@ class JSONRPCHandler:
             logger.debug(f"Added session_id to context for JSON-RPC call {model}.{method}")
 
         # Arguments for Odoo's object.execute_kw: db, uid, password, model, method, args[, kwargs]
-        # Note: kwargs (including context) is often the last element.
         odoo_args = [self.database, call_uid, call_password, model, method, args]
         if kwargs or context: # Only add kwargs dict if it's not empty
-             final_kwargs = kwargs.copy()
-             if context:
-                  final_kwargs['context'] = context
-             odoo_args.append(final_kwargs)
-
+            final_kwargs = kwargs.copy()
+            if context:
+                final_kwargs['context'] = context
+            odoo_args.append(final_kwargs)
 
         # Use the 'call' method to execute 'object.execute_kw'
-        # Caching will be handled by 'call' if applicable (though execute_kw is less likely cacheable)
         return await self.call(service='object', method='execute_kw', args=odoo_args)
 
 
