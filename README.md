@@ -16,7 +16,7 @@ Il Server Odoo MCP è un'interfaccia standardizzata per interagire con le istanz
 
 - **Protocolli di Comunicazione**:
   - stdio: Comunicazione diretta via stdin/stdout
-  - SSE: Aggiornamenti in tempo reale via Server-Sent Events
+  - streamable_http: Comunicazione HTTP con supporto per streaming delle risposte
 
 - **Gestione Risorse**:
   - Record Odoo (singoli e liste)
@@ -32,15 +32,31 @@ Il Server Odoo MCP è un'interfaccia standardizzata per interagire con le istanz
 - **Sicurezza**:
   - Autenticazione e gestione sessioni
   - Rate limiting
-  - CORS per connessioni SSE
+  - CORS per connessioni streamable_http
 
-## Requisiti
+## Requisiti di Sistema
 
+### Requisiti Hardware
+- CPU: 2+ core
+- RAM: 4GB minimo (8GB raccomandato)
+- Spazio Disco: 1GB minimo
+
+### Requisiti Software
 - Python 3.9+
 - Odoo 15.0+
   - Moduli necessari: base, web, bus
   - Configurazione del database con utente admin
 - Docker (opzionale)
+
+### Requisiti di Rete
+- Porta 8069 (Odoo)
+- Porta 8080 (streamable_http, opzionale)
+- Porta 5432 (PostgreSQL, se locale)
+
+### Requisiti di Sicurezza
+- Certificato SSL per HTTPS (produzione)
+- Firewall configurato
+- Accesso VPN (opzionale)
 
 ## Installazione
 
@@ -61,10 +77,10 @@ pip install .[caching]
 pip install .[dev]
 
 # Copia il file di configurazione di esempio
-cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
 
-# Modifica config.yaml con le tue impostazioni
-# nano odoo_mcp/config/config.yaml
+# Modifica config.json con le tue impostazioni
+# nano odoo_mcp/config/config.json
 ```
 
 ### Installazione con Docker
@@ -80,55 +96,94 @@ docker-compose up -d
 
 ## Configurazione
 
-Il server può essere configurato attraverso un file YAML. Sono disponibili diversi template di configurazione:
+Il server può essere configurato attraverso un file JSON. Sono disponibili diversi template di configurazione:
 
-- `config.example.yaml`: Template principale da copiare e modificare
-- `config.dev.yaml`: Template per ambiente di sviluppo (opzionale)
-- `config.prod.yaml`: Template per ambiente di produzione (opzionale)
+- `config.example.json`: Template principale da copiare e modificare
+- `config.dev.json`: Template per ambiente di sviluppo (opzionale)
+- `config.prod.json`: Template per ambiente di produzione (opzionale)
 
 Per iniziare:
 
 ```bash
 # Copia il file di configurazione di esempio
-cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
 
-# Modifica config.yaml con le tue impostazioni
-# nano odoo_mcp/config/config.yaml
+# Modifica config.json con le tue impostazioni
+# nano odoo_mcp/config/config.json
 ```
 
 Esempio di configurazione completa:
 
-```yaml
-# config.yaml
-protocol: xmlrpc  # o jsonrpc
-connection_type: stdio  # o sse
-odoo_url: http://localhost:8069
-database: my_database
-uid: admin
-password: admin
-requests_per_minute: 120
-sse_queue_maxsize: 1000
-allowed_origins: ["*"]  # per connessioni SSE
-session_timeout: 3600
-max_sessions: 100
-notification_queue_size: 1000
-notification_timeout: 30
+```json
+{
+    "mcpServers": {
+        "mcp-odoo-panda": {
+            "command": "/usr/bin/python3",
+            "args": [
+                "--directory",
+                "/path/to/mcp-odoo-panda",
+                "mcp/server.py",
+                "--config",
+                "/path/to/mcp-odoo-panda/odoo_mcp/config/config.json"
+            ]
+        }
+    },
+    "odoo_url": "http://localhost:8069",
+    "database": "my_database",
+    "username": "admin",
+    "api_key": "admin",
+    "protocol": "xmlrpc",
+    "connection_type": "stdio",
+    "requests_per_minute": 120,
+    "rate_limit_max_wait_seconds": 5,
+    "pool_size": 5,
+    "timeout": 30,
+    "session_timeout_minutes": 60,
+    "http": {
+        "host": "0.0.0.0",
+        "port": 8080,
+        "streamable": false
+    },
+    "logging": {
+        "level": "INFO",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "handlers": [
+            {
+                "type": "StreamHandler",
+                "level": "INFO"
+            },
+            {
+                "type": "FileHandler",
+                "filename": "server.log",
+                "level": "DEBUG"
+            }
+        ]
+    }
+}
 ```
 
 ## Avvio del Server
 
-### Modalità stdio
+Il server può essere avviato in due modalità: stdio (default) e streamable_http. Il file di configurazione è opzionale e, se non specificato, il server cercherà automaticamente il file in `odoo_mcp/config/config.json`.
+
+### Modalità stdio (default)
 
 ```bash
-# Avvia il server in modalità stdio
-python -m odoo_mcp.server --config odoo_mcp/config/config.yaml
+# Avvia il server in modalità stdio senza specificare il file di configurazione
+python -m odoo_mcp.server
+
+# Avvia il server in modalità stdio con un file di configurazione specifico
+python -m odoo_mcp.server /path/to/config.json
 ```
 
-### Modalità SSE
+### Modalità streamable_http
 
 ```bash
-# Avvia il server in modalità SSE
-python -m odoo_mcp.server --config odoo_mcp/config/config.yaml --mode sse
+# Avvia il server in modalità streamable_http senza specificare il file di configurazione
+python -m odoo_mcp.server streamable_http
+
+# Avvia il server in modalità streamable_http con un file di configurazione specifico
+python -m odoo_mcp.server streamable_http /path/to/config.json
 ```
 
 ## Verifica del Server
@@ -136,15 +191,20 @@ python -m odoo_mcp.server --config odoo_mcp/config/config.yaml --mode sse
 ### Modalità stdio
 
 ```bash
-# Test di una richiesta
-echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server --config odoo_mcp/config/config.yaml
+# Test di una richiesta senza specificare il file di configurazione
+echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server
+
+# Test di una richiesta con un file di configurazione specifico
+echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server /path/to/config.json
 ```
 
-### Modalità SSE
+### Modalità streamable_http
 
 ```bash
-# Test della connessione SSE
-curl http://localhost:8080/events
+# Test della connessione streamable_http
+curl -X POST http://localhost:8080/ \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}'
 ```
 
 ## Utilizzo
@@ -167,17 +227,22 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Connessione SSE
+### Connessione streamable_http
 
-```javascript
-// Connetti all'endpoint SSE
-const eventSource = new EventSource('http://localhost:8080/events');
+```python
+import asyncio
+from mcp import Client
 
-// Gestisci aggiornamenti
-eventSource.addEventListener('notifications/resources/updated', (event) => {
-    const data = JSON.parse(event.data);
-    console.log('Risorsa aggiornata:', data.params.uri, data.params.data);
-});
+async def main():
+    client = Client(connection_type="streamable_http")
+    await client.initialize()
+    
+    # Esempio: Leggi un record
+    resource = await client.get_resource("odoo://res.partner/1")
+    print(resource.data)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ## Documentazione
@@ -199,6 +264,205 @@ La documentazione completa è disponibile nella directory `docs/`:
 ## Licenza
 
 Questo progetto è rilasciato sotto la licenza MIT. Vedi il file `LICENSE` per i dettagli.
+
+## Aggiornamento
+
+### Aggiornamento da Source
+```bash
+# Aggiorna il repository
+git pull origin main
+
+# Reinstalla il pacchetto
+pip install --upgrade .
+
+# Riavvia il server
+systemctl restart odoo-mcp-server
+```
+
+### Aggiornamento con Docker
+```bash
+# Aggiorna le immagini
+docker-compose pull
+
+# Riavvia i container
+docker-compose up -d
+```
+
+## Disinstallazione
+
+### Disinstallazione da Source
+```bash
+# Disinstalla il pacchetto
+pip uninstall odoo-mcp-server
+
+# Rimuovi i file di configurazione
+rm -rf ~/.odoo-mcp-server
+```
+
+### Disinstallazione con Docker
+```bash
+# Ferma e rimuovi i container
+docker-compose down
+
+# Rimuovi le immagini
+docker-compose rm -f
+```
+
+## Configurazione Avanzata
+
+### Configurazione per Ambienti
+
+#### Sviluppo
+```json
+{
+    "protocol": "xmlrpc",
+    "connection_type": "stdio",
+    "odoo_url": "http://localhost:8069",
+    "database": "dev_db",
+    "username": "admin",
+    "api_key": "admin",
+    "logging": {
+        "level": "DEBUG",
+        "handlers": [
+            {
+                "type": "FileHandler",
+                "filename": "logs/dev.log",
+                "level": "DEBUG"
+            }
+        ]
+    }
+}
+```
+
+#### Produzione
+```json
+{
+    "protocol": "jsonrpc",
+    "connection_type": "streamable_http",
+    "odoo_url": "https://odoo.example.com",
+    "database": "prod_db",
+    "username": "admin",
+    "api_key": "your-secure-api-key",
+    "http": {
+        "host": "0.0.0.0",
+        "port": 8080,
+        "streamable": true
+    },
+    "logging": {
+        "level": "INFO",
+        "handlers": [
+            {
+                "type": "FileHandler",
+                "filename": "logs/prod.log",
+                "level": "INFO"
+            }
+        ]
+    }
+}
+```
+
+### Backup della Configurazione
+```bash
+# Backup configurazione
+cp odoo_mcp/config/config.json odoo_mcp/config/config.json.backup
+
+# Ripristino configurazione
+cp odoo_mcp/config/config.json.backup odoo_mcp/config/config.json
+```
+
+## Utilizzo Avanzato
+
+### Gestione degli Errori
+```python
+from odoo_mcp.error_handling.exceptions import (
+    AuthError, NetworkError, ProtocolError
+)
+
+try:
+    await client.get_resource("odoo://res.partner/1")
+except AuthError as e:
+    logger.error(f"Errore di autenticazione: {e}")
+    # Gestione errore
+except NetworkError as e:
+    logger.error(f"Errore di rete: {e}")
+    # Gestione errore
+except ProtocolError as e:
+    logger.error(f"Errore di protocollo: {e}")
+    # Gestione errore
+```
+
+### Best Practices
+
+1. **Gestione delle Connessioni**:
+   ```python
+   async with Client() as client:
+       await client.initialize()
+       # Operazioni
+   ```
+
+2. **Gestione della Cache**:
+   ```python
+   # Configurazione cache
+   cache_config = {
+       'enabled': True,
+       'ttl': 300,
+       'max_size': 1000
+   }
+   ```
+
+3. **Gestione delle Sessioni**:
+   ```python
+   # Creazione sessione
+   session = await client.create_session()
+   
+   # Validazione sessione
+   if await client.validate_session(session_id):
+       # Operazioni
+   ```
+
+## Troubleshooting
+
+### Problemi Comuni
+
+1. **Errore di Connessione**:
+   ```
+   ERROR: Could not connect to Odoo server
+   ```
+   Soluzione:
+   - Verifica che Odoo sia in esecuzione
+   - Controlla le impostazioni di rete
+   - Verifica le credenziali
+
+2. **Errore di Autenticazione**:
+   ```
+   ERROR: Authentication failed
+   ```
+   Soluzione:
+   - Verifica username e password
+   - Controlla i permessi utente
+   - Verifica la configurazione del database
+
+3. **Errore di Protocollo**:
+   ```
+   ERROR: Protocol error
+   ```
+   Soluzione:
+   - Verifica la versione del protocollo
+   - Controlla la configurazione
+   - Verifica la compatibilità
+
+### Log di Errore
+
+I log sono disponibili in:
+- `/var/log/odoo-mcp-server/` (Linux)
+- `C:\ProgramData\odoo-mcp-server\logs\` (Windows)
+
+### Supporto
+
+Per supporto tecnico:
+1. Controlla la [documentazione](docs/)
+2. Apri una [issue](https://github.com/pandeussilvae/mcp-odoo-panda/issues)
+3. Contatta [support@techlab.it](mailto:support@techlab.it)
 
 ---
 
@@ -268,10 +532,10 @@ pip install .[caching]
 pip install .[dev]
 
 # Copy example configuration file
-cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
 
-# Modify config.yaml with your settings
-# nano odoo_mcp/config/config.yaml
+# Modify config.json with your settings
+# nano odoo_mcp/config/config.json
 ```
 
 ### Docker Installation
@@ -287,121 +551,119 @@ docker-compose up -d
 
 ## Configuration
 
-The server can be configured through a YAML file. There are different configuration templates available:
+The server can be configured through a JSON file. There are different configuration templates available:
 
-- `config.example.yaml`: Main template to copy and modify
-- `config.dev.yaml`: Template for development environment (optional)
-- `config.prod.yaml`: Template for production environment (optional)
+- `config.example.json`: Main template to copy and modify
+- `config.dev.json`: Template for development environment (optional)
+- `config.prod.json`: Template for production environment (optional)
 
 To start:
 
 ```bash
 # Copy example configuration file
-cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
 
-# Modify config.yaml with your settings
-# nano odoo_mcp/config/config.yaml
+# Modify config.json with your settings
+# nano odoo_mcp/config/config.json
 ```
 
 Example of complete configuration:
 
-```yaml
-# config.yaml
-protocol: xmlrpc  # or jsonrpc
-connection_type: stdio  # or sse
-odoo_url: http://localhost:8069
-database: my_database
-uid: admin
-password: admin
-requests_per_minute: 120
-sse_queue_maxsize: 1000
-allowed_origins: ["*"]  # for SSE connections
-session_timeout: 3600
-max_sessions: 100
-notification_queue_size: 1000
-notification_timeout: 30
+```json
+{
+    "mcpServers": {
+        "mcp-odoo-panda": {
+            "command": "/usr/bin/python3",
+            "args": [
+                "--directory",
+                "/path/to/mcp-odoo-panda",
+                "mcp/server.py",
+                "--config",
+                "/path/to/mcp-odoo-panda/odoo_mcp/config/config.json"
+            ]
+        }
+    },
+    "odoo_url": "http://localhost:8069",
+    "database": "my_database",
+    "username": "admin",
+    "api_key": "admin",
+    "protocol": "xmlrpc",
+    "connection_type": "stdio",
+    "requests_per_minute": 120,
+    "rate_limit_max_wait_seconds": 5,
+    "pool_size": 5,
+    "timeout": 30,
+    "session_timeout_minutes": 60,
+    "http": {
+        "host": "0.0.0.0",
+        "port": 8080,
+        "streamable": false
+    },
+    "logging": {
+        "level": "INFO",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "handlers": [
+            {
+                "type": "StreamHandler",
+                "level": "INFO"
+            },
+            {
+                "type": "FileHandler",
+                "filename": "server.log",
+                "level": "DEBUG"
+            }
+        ]
+    }
+}
 ```
 
 ## Server Startup
 
-### stdio Mode
+Il server può essere avviato in two modes: stdio (default) and streamable_http. The configuration file is optional and, if not specified, the server will automatically look for the file in `odoo_mcp/config/config.json`.
+
+### Modalità stdio (default)
 
 ```bash
-# Start server in stdio mode
-python -m odoo_mcp.server --config odoo_mcp/config/config.yaml
+# Avvia il server in modalità stdio senza specificare il file di configurazione
+python -m odoo_mcp.server
+
+# Avvia il server in modalità stdio con un file di configurazione specifico
+python -m odoo_mcp.server /path/to/config.json
 ```
 
-### SSE Mode
+### Modalità streamable_http
 
 ```bash
-# Start server in SSE mode
-python -m odoo_mcp.server --config odoo_mcp/config/config.yaml --mode sse
+# Avvia il server in modalità streamable_http senza specificare il file di configurazione
+python -m odoo_mcp.server streamable_http
+
+# Avvia il server in modalità streamable_http con un file di configurazione specifico
+python -m odoo_mcp.server streamable_http /path/to/config.json
 ```
 
 ## Server Verification
 
-### stdio Mode
+### Modalità stdio
 
 ```bash
-# Test a request
-echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server --config odoo_mcp/config/config.yaml
+# Test di una richiesta senza specificare il file di configurazione
+echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server
+
+# Test di una richiesta con un file di configurazione specifico
+echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server /path/to/config.json
 ```
 
-### SSE Mode
+### Modalità streamable_http
 
 ```bash
-# Test SSE connection
-curl http://localhost:8080/events
+# Test della connessione streamable_http
+curl -X POST http://localhost:8080/ \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}'
 ```
 
 ## Usage
 
 ### stdio Connection
 
-```python
-import asyncio
-from mcp import Client
-
-async def main():
-    client = Client(connection_type="stdio")
-    await client.initialize()
-    
-    # Example: Read a record
-    resource = await client.get_resource("odoo://res.partner/1")
-    print(resource.data)
-
-if __name__ == "__main__":
-    asyncio.run(main())
 ```
-
-### SSE Connection
-
-```javascript
-// Connect to SSE endpoint
-const eventSource = new EventSource('http://localhost:8080/events');
-
-// Handle updates
-eventSource.addEventListener('notifications/resources/updated', (event) => {
-    const data = JSON.parse(event.data);
-    console.log('Resource updated:', data.params.uri, data.params.data);
-});
-```
-
-## Documentation
-
-Complete documentation is available in the `docs/` directory:
-- `mcp_protocol.md`: MCP protocol documentation
-- `odoo_server.md`: Odoo server documentation
-- `server_usage.md`: Server usage guide
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is released under the MIT License. See the `LICENSE` file for details.
