@@ -1179,7 +1179,7 @@ class OdooMCPServer:
                 
                 if arg_name == 'model':
                     # Complete model names
-                    suggestions = [
+                    values = [
                         {
                             "label": resource['name'],
                             "value": resource['name'],
@@ -1190,7 +1190,7 @@ class OdooMCPServer:
                     ]
                     return MCPResponse.success({
                         "completion": {
-                            "suggestions": suggestions
+                            "values": values
                         }
                     })
                 
@@ -1211,7 +1211,7 @@ class OdooMCPServer:
                                 kwargs={'fields': ['id', 'name'], 'limit': 10}
                             )
                             
-                            suggestions = [
+                            values = [
                                 {
                                     "label": f"{record['id']} - {record.get('name', '')}",
                                     "value": str(record['id']),
@@ -1221,7 +1221,7 @@ class OdooMCPServer:
                             ]
                             return MCPResponse.success({
                                 "completion": {
-                                    "suggestions": suggestions
+                                    "values": values
                                 }
                             })
                             
@@ -1232,7 +1232,7 @@ class OdooMCPServer:
             # If we get here, we don't support this type of completion
             return MCPResponse.success({
                 "completion": {
-                    "suggestions": []
+                    "values": []
                 }
             })
             
