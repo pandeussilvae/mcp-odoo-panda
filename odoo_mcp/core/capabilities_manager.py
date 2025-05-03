@@ -611,6 +611,33 @@ class CapabilitiesManager:
             for prompt in self.prompts.values()
         ]
 
+    def list_resource_templates(self) -> List[Dict[str, Any]]:
+        """
+        List all registered resource templates.
+
+        Returns:
+            List[Dict[str, Any]]: List of resource templates with the following structure:
+            {
+                "name": str,
+                "type": str,
+                "description": str,
+                "operations": List[str],
+                "parameters": Optional[Dict[str, Any]],
+                "uri_template": str
+            }
+        """
+        return [
+            {
+                "name": resource.name,
+                "type": resource.type.value,
+                "description": resource.description,
+                "operations": resource.operations,
+                "parameters": resource.parameters or {},
+                "uri_template": resource.parameters.get("uri_template", f"odoo://{resource.name}")
+            }
+            for resource in self.resources.values()
+        ]
+
     def is_feature_enabled(self, feature: str) -> bool:
         """
         Check if a feature is enabled.

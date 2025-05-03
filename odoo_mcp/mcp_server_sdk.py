@@ -592,11 +592,11 @@ class OdooMCPServer:
                             'id': request_id
                         }, status=500)
                     response = await self._handle_initialize(mcp_request)
-                elif method == 'list_resources':
+                elif method in ['list_resources', 'resources/list']:
                     response = await self._handle_list_resources(mcp_request)
-                elif method == 'list_tools':
+                elif method in ['list_tools', 'tools/list']:
                     response = await self._handle_list_tools(mcp_request)
-                elif method == 'list_prompts':
+                elif method in ['list_prompts', 'prompts/list']:
                     response = await self._handle_list_prompts(mcp_request)
                 elif method == 'get_prompt':
                     response = await self._handle_get_prompt(mcp_request)
@@ -604,6 +604,22 @@ class OdooMCPServer:
                     response = await self._handle_create_session(mcp_request)
                 elif method == 'login':
                     response = await self._handle_login(mcp_request)
+                elif method in ['resources/read', 'resources_read']:
+                    # Handle resources/read as a public method
+                    response = await self._handle_resource_read(mcp_request)
+                elif method in ['resources/templates/list', 'resources_templates_list']:
+                    # Handle resources templates list request
+                    response = await self._handle_resource_templates_list(mcp_request)
+                else:
+                    logger.error(f"Unhandled public method: {method}")
+                    return web.json_response({
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32601,
+                            'message': f'Method not found: {method}'
+                        },
+                        'id': request_id
+                    }, status=404)
             else:
                 logger.info(f"Handling authenticated method: {method} (auth required)")
                 
@@ -1122,6 +1138,23 @@ class OdooMCPServer:
             logger.error(f"Error handling resource read request: {str(e)}")
             return MCPResponse.error(str(e))
 
+    async def _handle_resource_templates_list(self, request: MCPRequest) -> MCPResponse:
+        """Handle resource templates list request."""
+        try:
+            # Get list of resource templates from capabilities manager
+            templates = self.capabilities_manager.list_resource_templates()
+            
+            # Log the response for debugging
+            logger.debug(f"Resource templates list response: {json.dumps(templates, indent=2)}")
+            
+            return MCPResponse(
+                success=True,
+                data={"templates": templates}
+            )
+        except Exception as e:
+            logger.error(f"Error handling resource templates list request: {str(e)}")
+            return MCPResponse.error(str(e))
+
     async def start(self) -> None:
         """Start the MCP server."""
         try:
@@ -1394,6 +1427,19 @@ class OdooMCPServer:
                 elif request.method in ['resources/read', 'resources_read']:
                     # Handle resources/read as a public method
                     response = await self._handle_resource_read(request)
+                elif request.method in ['resources/templates/list', 'resources_templates_list']:
+                    # Handle resources templates list request
+                    response = await self._handle_resource_templates_list(request)
+                else:
+                    logger.error(f"Unhandled public method: {request.method}")
+                    return {
+                        'jsonrpc': '2.0',
+                        'error': {
+                            'code': -32601,
+                            'message': f'Method not found: {request.method}'
+                        },
+                        'id': request_id
+                    }
             else:
                 logger.info(f"Handling authenticated method: {request.method} (auth required)")
                 # For all other methods, validate session first
