@@ -429,33 +429,84 @@ except ProtocolError as e:
    ERROR: Could not connect to Odoo server
    ```
    Soluzione:
-   - Verifica che Odoo sia in esecuzione
-   - Controlla le impostazioni di rete
-   - Verifica le credenziali
+   - Verifica che Odoo sia in esecuzione sulla porta 8069
+   - Controlla che il firewall permetta l'accesso alla porta 8069
+   - Verifica che l'URL di Odoo nel file di configurazione sia corretto
+   - Controlla che il database sia accessibile
 
 2. **Errore di Autenticazione**:
    ```
    ERROR: Authentication failed
    ```
    Soluzione:
-   - Verifica username e password
-   - Controlla i permessi utente
-   - Verifica la configurazione del database
+   - Verifica che username e api_key nel file di configurazione siano corretti
+   - Controlla che l'utente abbia i permessi necessari nel database Odoo
+   - Verifica che il database specificato esista
+   - Controlla che i moduli base, web e bus siano installati
 
 3. **Errore di Protocollo**:
    ```
    ERROR: Protocol error
    ```
    Soluzione:
-   - Verifica la versione del protocollo
-   - Controlla la configurazione
-   - Verifica la compatibilità
+   - Verifica che il protocollo specificato (xmlrpc/jsonrpc) sia supportato
+   - Controlla che la versione di Odoo sia compatibile (15.0+)
+   - Verifica che il tipo di connessione (stdio/streamable_http) sia corretto
+   - Controlla i log per dettagli specifici sull'errore
+
+4. **Errore di Rate Limiting**:
+   ```
+   ERROR: Rate limit exceeded
+   ```
+   Soluzione:
+   - Aumenta il valore di `requests_per_minute` nel file di configurazione
+   - Implementa un meccanismo di retry con backoff
+   - Ottimizza le richieste per ridurre il numero di chiamate
+
+5. **Errore di Cache**:
+   ```
+   ERROR: Cache error
+   ```
+   Soluzione:
+   - Verifica che il tipo di cache configurato sia supportato
+   - Controlla che ci sia spazio sufficiente per la cache
+   - Disabilita temporaneamente la cache se necessario
 
 ### Log di Errore
 
-I log sono disponibili in:
-- `/var/log/odoo-mcp-server/` (Linux)
-- `C:\ProgramData\odoo-mcp-server\logs\` (Windows)
+I log vengono scritti in base alla configurazione nel file `config.json`. Per default:
+
+1. **Log su Console**:
+   - Tutti i log vengono scritti su stderr
+   - In modalità stdio, i log non vengono scritti su stdout per evitare interferenze con il protocollo
+
+2. **Log su File**:
+   - I log vengono scritti nel file specificato nella configurazione
+   - Esempio di configurazione logging:
+   ```json
+   "logging": {
+       "level": "INFO",
+       "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+       "handlers": [
+           {
+               "type": "StreamHandler",
+               "level": "INFO"
+           },
+           {
+               "type": "FileHandler",
+               "filename": "server.log",
+               "level": "DEBUG"
+           }
+       ]
+   }
+   ```
+
+3. **Livelli di Log**:
+   - DEBUG: Informazioni dettagliate per il debug
+   - INFO: Informazioni generali sul funzionamento
+   - WARNING: Avvisi su potenziali problemi
+   - ERROR: Errori che non impediscono il funzionamento
+   - CRITICAL: Errori critici che impediscono il funzionamento
 
 ### Supporto
 
@@ -667,3 +718,306 @@ curl -X POST http://localhost:8080/ \
 ### stdio Connection
 
 ```
+```python
+import asyncio
+from mcp import Client
+
+async def main():
+    client = Client(connection_type="stdio")
+    await client.initialize()
+    
+    # Esempio: Leggi un record
+    resource = await client.get_resource("odoo://res.partner/1")
+    print(resource.data)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Connessione streamable_http
+
+```python
+import asyncio
+from mcp import Client
+
+async def main():
+    client = Client(connection_type="streamable_http")
+    await client.initialize()
+    
+    # Esempio: Leggi un record
+    resource = await client.get_resource("odoo://res.partner/1")
+    print(resource.data)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Documentazione
+
+La documentazione completa è disponibile nella directory `docs/`:
+
+- `mcp_protocol.md`: Documentazione del protocollo MCP
+- `odoo_server.md`: Documentazione del server Odoo
+- `server_usage.md`: Guida all'utilizzo del server
+
+## Contribuire
+
+1. Fork il repository
+2. Crea un branch per la tua feature (`git checkout -b feature/amazing-feature`)
+3. Commit le tue modifiche (`git commit -m 'Add amazing feature'`)
+4. Push al branch (`git push origin feature/amazing-feature`)
+5. Apri una Pull Request
+
+## Licenza
+
+Questo progetto è rilasciato sotto la licenza MIT. Vedi il file `LICENSE` per i dettagli.
+
+## Aggiornamento
+
+### Aggiornamento da Source
+```bash
+# Aggiorna il repository
+git pull origin main
+
+# Reinstalla il pacchetto
+pip install --upgrade .
+
+# Riavvia il server
+systemctl restart odoo-mcp-server
+```
+
+### Aggiornamento con Docker
+```bash
+# Aggiorna le immagini
+docker-compose pull
+
+# Riavvia i container
+docker-compose up -d
+```
+
+## Disinstallazione
+
+### Disinstallazione da Source
+```bash
+# Disinstalla il pacchetto
+pip uninstall odoo-mcp-server
+
+# Rimuovi i file di configurazione
+rm -rf ~/.odoo-mcp-server
+```
+
+### Disinstallazione con Docker
+```bash
+# Ferma e rimuovi i container
+docker-compose down
+
+# Rimuovi le immagini
+docker-compose rm -f
+```
+
+## Configurazione Avanzata
+
+### Configurazione per Ambienti
+
+#### Sviluppo
+```json
+{
+    "protocol": "xmlrpc",
+    "connection_type": "stdio",
+    "odoo_url": "http://localhost:8069",
+    "database": "dev_db",
+    "username": "admin",
+    "api_key": "admin",
+    "logging": {
+        "level": "DEBUG",
+        "handlers": [
+            {
+                "type": "FileHandler",
+                "filename": "logs/dev.log",
+                "level": "DEBUG"
+            }
+        ]
+    }
+}
+```
+
+#### Produzione
+```json
+{
+    "protocol": "jsonrpc",
+    "connection_type": "streamable_http",
+    "odoo_url": "https://odoo.example.com",
+    "database": "prod_db",
+    "username": "admin",
+    "api_key": "your-secure-api-key",
+    "http": {
+        "host": "0.0.0.0",
+        "port": 8080,
+        "streamable": true
+    },
+    "logging": {
+        "level": "INFO",
+        "handlers": [
+            {
+                "type": "FileHandler",
+                "filename": "logs/prod.log",
+                "level": "INFO"
+            }
+        ]
+    }
+}
+```
+
+### Backup della Configurazione
+```bash
+# Backup configurazione
+cp odoo_mcp/config/config.json odoo_mcp/config/config.json.backup
+
+# Ripristino configurazione
+cp odoo_mcp/config/config.json.backup odoo_mcp/config/config.json
+```
+
+## Utilizzo Avanzato
+
+### Gestione degli Errori
+```python
+from odoo_mcp.error_handling.exceptions import (
+    AuthError, NetworkError, ProtocolError
+)
+
+try:
+    await client.get_resource("odoo://res.partner/1")
+except AuthError as e:
+    logger.error(f"Errore di autenticazione: {e}")
+    # Gestione errore
+except NetworkError as e:
+    logger.error(f"Errore di rete: {e}")
+    # Gestione errore
+except ProtocolError as e:
+    logger.error(f"Errore di protocollo: {e}")
+    # Gestione errore
+```
+
+### Best Practices
+
+1. **Gestione delle Connessioni**:
+   ```python
+   async with Client() as client:
+       await client.initialize()
+       # Operazioni
+   ```
+
+2. **Gestione della Cache**:
+   ```python
+   # Configurazione cache
+   cache_config = {
+       'enabled': True,
+       'ttl': 300,
+       'max_size': 1000
+   }
+   ```
+
+3. **Gestione delle Sessioni**:
+   ```python
+   # Creazione sessione
+   session = await client.create_session()
+   
+   # Validazione sessione
+   if await client.validate_session(session_id):
+       # Operazioni
+   ```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Connection Error**:
+   ```
+   ERROR: Could not connect to Odoo server
+   ```
+   Solution:
+   - Verify that Odoo is running on port 8069
+   - Check that the firewall allows access to port 8069
+   - Verify that the Odoo URL in the configuration file is correct
+   - Check that the database is accessible
+
+2. **Authentication Error**:
+   ```
+   ERROR: Authentication failed
+   ```
+   Solution:
+   - Verify that username and api_key in the configuration file are correct
+   - Check that the user has the necessary permissions in the Odoo database
+   - Verify that the specified database exists
+   - Check that the base, web, and bus modules are installed
+
+3. **Protocol Error**:
+   ```
+   ERROR: Protocol error
+   ```
+   Solution:
+   - Verify that the specified protocol (xmlrpc/jsonrpc) is supported
+   - Check that the Odoo version is compatible (15.0+)
+   - Verify that the connection type (stdio/streamable_http) is correct
+   - Check the logs for specific error details
+
+4. **Rate Limiting Error**:
+   ```
+   ERROR: Rate limit exceeded
+   ```
+   Solution:
+   - Increase the `requests_per_minute` value in the configuration file
+   - Implement a retry mechanism with backoff
+   - Optimize requests to reduce the number of calls
+
+5. **Cache Error**:
+   ```
+   ERROR: Cache error
+   ```
+   Solution:
+   - Verify that the configured cache type is supported
+   - Check that there is sufficient space for the cache
+   - Temporarily disable the cache if necessary
+
+### Error Logs
+
+Logs are written according to the configuration in the `config.json` file. By default:
+
+1. **Console Logs**:
+   - All logs are written to stderr
+   - In stdio mode, logs are not written to stdout to avoid protocol interference
+
+2. **File Logs**:
+   - Logs are written to the file specified in the configuration
+   - Example logging configuration:
+   ```json
+   "logging": {
+       "level": "INFO",
+       "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+       "handlers": [
+           {
+               "type": "StreamHandler",
+               "level": "INFO"
+           },
+           {
+               "type": "FileHandler",
+               "filename": "server.log",
+               "level": "DEBUG"
+           }
+       ]
+   }
+   ```
+
+3. **Log Levels**:
+   - DEBUG: Detailed information for debugging
+   - INFO: General information about operation
+   - WARNING: Warnings about potential issues
+   - ERROR: Errors that don't prevent operation
+   - CRITICAL: Critical errors that prevent operation
+
+### Support
+
+For technical support:
+1. Check the [documentation](docs/)
+2. Open an [issue](https://github.com/pandeussilvae/mcp-odoo-panda/issues)
+3. Contact [support@techlab.it](mailto:support@techlab.it)
