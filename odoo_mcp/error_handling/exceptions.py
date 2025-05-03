@@ -3,22 +3,28 @@ Custom exceptions for Odoo MCP Server.
 This module provides custom exception classes for error handling.
 """
 
+from typing import Optional
+
 class OdooMCPError(Exception):
     """Base exception class for Odoo MCP errors."""
-    def __init__(self, message: str, code: int = -32000):
+    def __init__(self, message: str, code: int = -32000, original_exception: Optional[Exception] = None):
         self.message = message
         self.code = code
+        self.original_exception = original_exception
         super().__init__(self.message)
 
     def to_jsonrpc_error(self) -> dict:
         """Convert exception to JSON-RPC error object."""
+        error_data = {
+            'exception': self.__class__.__name__,
+            'args': self.args
+        }
+        if self.original_exception:
+            error_data['original_exception'] = str(self.original_exception)
         return {
             'code': self.code,
             'message': self.message,
-            'data': {
-                'exception': self.__class__.__name__,
-                'args': self.args
-            }
+            'data': error_data
         }
 
 class AuthError(OdooMCPError):
