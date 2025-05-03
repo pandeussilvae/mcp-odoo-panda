@@ -52,18 +52,19 @@ class StdoutMonitor:
         self.is_jsonrpc_response = False
         self.response_count = 0
         self.blocked_count = 0
+        self.debug_mode = True  # Enable detailed debugging
     
     def write(self, data: str) -> None:
         """Write data to stdout, monitoring for non-JSON-RPC output."""
-        # Log every write attempt to stderr
-        print(f"[StdoutMonitor] Write attempt: {repr(data)}", file=sys.stderr)
+        if self.debug_mode:
+            print(f"[DEBUG_STDOUT_WRITE] Attempting to write: {repr(data)}", file=sys.stderr, flush=True)
         
         if not self.is_jsonrpc_response:
             self.blocked_count += 1
-            print(f"[StdoutMonitor] BLOCKED write #{self.blocked_count}: {repr(data)}", file=sys.stderr)
+            if self.debug_mode:
+                print(f"[DEBUG_STDOUT_WRITE] BLOCKED (not in JSON-RPC mode): {repr(data)}", file=sys.stderr, flush=True)
             return
         
-        # Validate JSON-RPC response format
         try:
             # Remove trailing newline for validation
             json_str = data.rstrip('\n')
@@ -71,41 +72,53 @@ class StdoutMonitor:
             
             # Validate required JSON-RPC 2.0 fields
             if not isinstance(json_data, dict):
-                print(f"[StdoutMonitor] INVALID: Not a JSON object: {repr(data)}", file=sys.stderr)
+                if self.debug_mode:
+                    print(f"[DEBUG_STDOUT_WRITE] INVALID: Not a JSON object: {repr(data)}", file=sys.stderr, flush=True)
                 return
-                
+            
             if 'jsonrpc' not in json_data or json_data['jsonrpc'] != '2.0':
-                print(f"[StdoutMonitor] INVALID: Missing or invalid jsonrpc field: {repr(data)}", file=sys.stderr)
+                if self.debug_mode:
+                    print(f"[DEBUG_STDOUT_WRITE] INVALID: Missing or invalid jsonrpc field: {repr(data)}", file=sys.stderr, flush=True)
                 return
-                
+            
             if 'id' not in json_data:
-                print(f"[StdoutMonitor] INVALID: Missing id field: {repr(data)}", file=sys.stderr)
+                if self.debug_mode:
+                    print(f"[DEBUG_STDOUT_WRITE] INVALID: Missing id field: {repr(data)}", file=sys.stderr, flush=True)
                 return
-                
+            
             if 'result' not in json_data and 'error' not in json_data:
-                print(f"[StdoutMonitor] INVALID: Missing result/error field: {repr(data)}", file=sys.stderr)
+                if self.debug_mode:
+                    print(f"[DEBUG_STDOUT_WRITE] INVALID: Missing result/error field: {repr(data)}", file=sys.stderr, flush=True)
                 return
             
             # Validate newline termination
             if not data.endswith('\n'):
-                print(f"[StdoutMonitor] INVALID: Missing newline termination: {repr(data)}", file=sys.stderr)
+                if self.debug_mode:
+                    print(f"[DEBUG_STDOUT_WRITE] INVALID: Missing newline termination: {repr(data)}", file=sys.stderr, flush=True)
                 return
             
             # Check for multiple newlines
             if data.count('\n') > 1:
-                print(f"[StdoutMonitor] INVALID: Multiple newlines: {repr(data)}", file=sys.stderr)
+                if self.debug_mode:
+                    print(f"[DEBUG_STDOUT_WRITE] INVALID: Multiple newlines: {repr(data)}", file=sys.stderr, flush=True)
                 return
             
             # All validations passed, allow the write
             self.response_count += 1
-            print(f"[StdoutMonitor] ALLOWED write #{self.response_count}: {repr(data)}", file=sys.stderr)
+            if self.debug_mode:
+                print(f"[DEBUG_STDOUT_WRITE] ALLOWED write #{self.response_count}: {repr(data)}", file=sys.stderr, flush=True)
+            
+            # Write the data directly to the original stdout
             self.original_stdout_write(data)
+            self.original_stdout.flush()
             
         except json.JSONDecodeError:
-            print(f"[StdoutMonitor] INVALID: Not valid JSON: {repr(data)}", file=sys.stderr)
+            if self.debug_mode:
+                print(f"[DEBUG_STDOUT_WRITE] INVALID: Not valid JSON: {repr(data)}", file=sys.stderr, flush=True)
             return
         except Exception as e:
-            print(f"[StdoutMonitor] ERROR validating response: {str(e)}", file=sys.stderr)
+            if self.debug_mode:
+                print(f"[DEBUG_STDOUT_WRITE] ERROR validating response: {str(e)}", file=sys.stderr, flush=True)
             return
     
     def flush(self) -> None:
@@ -115,12 +128,14 @@ class StdoutMonitor:
     def start_jsonrpc_response(self) -> None:
         """Mark the start of a JSON-RPC response."""
         self.is_jsonrpc_response = True
-        print(f"[StdoutMonitor] Starting JSON-RPC response #{self.response_count + 1}", file=sys.stderr)
+        if self.debug_mode:
+            print(f"[DEBUG_STDOUT_WRITE] Starting JSON-RPC response #{self.response_count + 1}", file=sys.stderr, flush=True)
     
     def end_jsonrpc_response(self) -> None:
         """Mark the end of a JSON-RPC response."""
         self.is_jsonrpc_response = False
-        print(f"[StdoutMonitor] Ended JSON-RPC response #{self.response_count}", file=sys.stderr)
+        if self.debug_mode:
+            print(f"[DEBUG_STDOUT_WRITE] Ended JSON-RPC response #{self.response_count}", file=sys.stderr, flush=True)
 
 class OdooMCPServer:
     """Main Odoo MCP Server implementation."""
@@ -906,7 +921,7 @@ class OdooMCPServer:
             protocol = asyncio.StreamReaderProtocol(reader)
             await loop.connect_read_pipe(lambda: protocol, sys.stdin)
             
-            print("[StdioHandler] Started reading from stdin", file=sys.stderr)
+            print("[StdioHandler] Started reading from stdin", file=sys.stderr, flush=True)
             
             # Start the message processing loop
             while True:
@@ -914,17 +929,17 @@ class OdooMCPServer:
                     # Read a line from stdin (messages are delimited by newlines)
                     data = await reader.readline()
                     if not data:
-                        print("[StdioHandler] Received empty data from stdin", file=sys.stderr)
+                        print("[StdioHandler] Received empty data from stdin", file=sys.stderr, flush=True)
                         continue
                     
                     # Decode the data
                     message = data.decode('utf-8').strip()
-                    print(f"[StdioHandler] Received message: {repr(message)}", file=sys.stderr)
+                    print(f"[StdioHandler] Received message: {repr(message)}", file=sys.stderr, flush=True)
                     
                     try:
                         # Parse the JSON-RPC message
                         request_data = json.loads(message)
-                        print(f"[StdioHandler] Parsed JSON-RPC message: {json.dumps(request_data, indent=2)}", file=sys.stderr)
+                        print(f"[StdioHandler] Parsed JSON-RPC message: {json.dumps(request_data, indent=2)}", file=sys.stderr, flush=True)
                         
                         # Extract session ID from params for stdio protocol
                         params = request_data.get('params', {})
@@ -942,7 +957,7 @@ class OdooMCPServer:
                                 context = params.get('context', {})
                                 session_id = context.get('session_id') or context.get('sessionId')
                         
-                        print(f"[StdioHandler] Extracted session ID: {session_id}", file=sys.stderr)
+                        print(f"[StdioHandler] Extracted session ID: {session_id}", file=sys.stderr, flush=True)
                         
                         # Create MCP request with session ID in headers for stdio protocol
                         mcp_request = MCPRequest(
@@ -957,7 +972,7 @@ class OdooMCPServer:
                         
                         # Ensure response is a valid JSON-RPC 2.0 message
                         if not isinstance(response, dict):
-                            print(f"[StdioHandler] Invalid response type: {type(response)}", file=sys.stderr)
+                            print(f"[StdioHandler] Invalid response type: {type(response)}", file=sys.stderr, flush=True)
                             response = {
                                 'jsonrpc': '2.0',
                                 'error': {
@@ -969,7 +984,7 @@ class OdooMCPServer:
                         
                         # Validate response structure
                         if 'jsonrpc' not in response or response['jsonrpc'] != '2.0':
-                            print(f"[StdioHandler] Invalid response: missing or invalid jsonrpc field", file=sys.stderr)
+                            print(f"[StdioHandler] Invalid response: missing or invalid jsonrpc field", file=sys.stderr, flush=True)
                             response = {
                                 'jsonrpc': '2.0',
                                 'error': {
@@ -980,7 +995,7 @@ class OdooMCPServer:
                             }
                         
                         if 'id' not in response:
-                            print(f"[StdioHandler] Invalid response: missing id field", file=sys.stderr)
+                            print(f"[StdioHandler] Invalid response: missing id field", file=sys.stderr, flush=True)
                             response = {
                                 'jsonrpc': '2.0',
                                 'error': {
@@ -991,7 +1006,7 @@ class OdooMCPServer:
                             }
                         
                         if 'result' not in response and 'error' not in response:
-                            print(f"[StdioHandler] Invalid response: missing result/error field", file=sys.stderr)
+                            print(f"[StdioHandler] Invalid response: missing result/error field", file=sys.stderr, flush=True)
                             response = {
                                 'jsonrpc': '2.0',
                                 'error': {
@@ -1003,7 +1018,7 @@ class OdooMCPServer:
                         
                         # Prepare the response string with minimal separators and single newline
                         response_str = json.dumps(response, separators=(',', ':')) + '\n'
-                        print(f"[StdioHandler] Prepared response: {repr(response_str)}", file=sys.stderr)
+                        print(f"[StdioHandler] Prepared response: {repr(response_str)}", file=sys.stderr, flush=True)
                         
                         # Mark start of JSON-RPC response
                         self.stdout_monitor.start_jsonrpc_response()
@@ -1016,7 +1031,7 @@ class OdooMCPServer:
                         self.stdout_monitor.end_jsonrpc_response()
                         
                     except json.JSONDecodeError as e:
-                        print(f"[StdioHandler] Failed to parse JSON message: {str(e)}", file=sys.stderr)
+                        print(f"[StdioHandler] Failed to parse JSON message: {str(e)}", file=sys.stderr, flush=True)
                         error_response = {
                             'jsonrpc': '2.0',
                             'error': {
@@ -1026,7 +1041,7 @@ class OdooMCPServer:
                             'id': None
                         }
                         error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
-                        print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr)
+                        print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
                         
                         # Mark start of JSON-RPC response
                         self.stdout_monitor.start_jsonrpc_response()
@@ -1039,7 +1054,7 @@ class OdooMCPServer:
                         self.stdout_monitor.end_jsonrpc_response()
                         
                 except Exception as e:
-                    print(f"[StdioHandler] Error processing stdin message: {str(e)}", file=sys.stderr)
+                    print(f"[StdioHandler] Error processing stdin message: {str(e)}", file=sys.stderr, flush=True)
                     error_response = {
                         'jsonrpc': '2.0',
                         'error': {
@@ -1049,7 +1064,7 @@ class OdooMCPServer:
                         'id': None
                     }
                     error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
-                    print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr)
+                    print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
                     
                     # Mark start of JSON-RPC response
                     self.stdout_monitor.start_jsonrpc_response()
@@ -1062,7 +1077,7 @@ class OdooMCPServer:
                     self.stdout_monitor.end_jsonrpc_response()
                     
         except Exception as e:
-            print(f"[StdioHandler] Error in stdio handler: {str(e)}", file=sys.stderr)
+            print(f"[StdioHandler] Error in stdio handler: {str(e)}", file=sys.stderr, flush=True)
             raise
 
     async def _process_mcp_request(self, request: MCPRequest) -> Dict[str, Any]:
