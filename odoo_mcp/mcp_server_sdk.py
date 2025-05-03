@@ -542,6 +542,11 @@ class OdooMCPServer:
                     'id': request_id
                 }, status=400)
             
+            # Log the incoming request
+            logger.info(f"Received request - Method: {method}, ID: {request_id}")
+            logger.debug(f"Request parameters: {json.dumps(params, indent=2)}")
+            logger.debug(f"Request headers: {dict(request.headers)}")
+            
             # List of methods that don't require authentication
             no_auth_methods = {
                 'initialize',
@@ -571,7 +576,7 @@ class OdooMCPServer:
             
             # Route the request based on method type
             if method in no_auth_methods:
-                logger.info(f"Handling public method: {method}")
+                logger.info(f"Handling public method: {method} (no auth required)")
                 # Handle methods that don't require authentication
                 if method == 'initialize':
                     if not hasattr(self, 'capabilities_manager'):
@@ -598,7 +603,7 @@ class OdooMCPServer:
                 elif method == 'login':
                     response = await self._handle_login(mcp_request)
             else:
-                logger.info(f"Handling authenticated method: {method}")
+                logger.info(f"Handling authenticated method: {method} (auth required)")
                 
                 # Check for session ID header
                 session_id = request.headers.get('X-Session-ID')
@@ -1356,7 +1361,7 @@ class OdooMCPServer:
             
             # Route the request based on method type
             if request.method in no_auth_methods:
-                logger.info(f"Handling public method: {request.method}")
+                logger.info(f"Handling public method: {request.method} (no auth required)")
                 # Handle methods that don't require authentication
                 if request.method == 'initialize':
                     if not hasattr(self, 'capabilities_manager'):
@@ -1386,7 +1391,7 @@ class OdooMCPServer:
                     # Handle resources/read as a public method
                     response = await self._handle_resource_read(request)
             else:
-                logger.info(f"Handling authenticated method: {request.method}")
+                logger.info(f"Handling authenticated method: {request.method} (auth required)")
                 # For all other methods, validate session first
                 session_id = request.headers.get('X-Session-ID')
                 if not session_id:
