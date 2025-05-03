@@ -546,11 +546,16 @@ class OdooMCPServer:
             no_auth_methods = {
                 'initialize',
                 'list_resources',
+                'resources/list',  # Add both formats
                 'list_tools',
+                'tools/list',      # Add both formats
                 'list_prompts',
+                'prompts/list',    # Add both formats
                 'get_prompt',
-                'create_session',  # Add session creation method
-                'login'  # Add login method if needed
+                'create_session',
+                'login',
+                'resources/read',   # Add resources/read as public method
+                'resources_read'    # Add alternative format
             }
             
             # Create MCP request object with all headers
