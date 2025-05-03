@@ -949,6 +949,41 @@ class OdooMCPServer:
             logger.error(f"Unexpected error in login: {str(e)}")
             return MCPResponse.error(f"Unexpected error: {str(e)}")
 
+    async def _handle_resource_read(self, request: MCPRequest) -> MCPResponse:
+        """Handle resource read request."""
+        try:
+            # Extract URI from parameters
+            uri = request.parameters.get('uri')
+            if not uri:
+                return MCPResponse.error("No URI provided")
+            
+            # Extract resource name from URI (format: odoo://res.partner)
+            if not uri.startswith('odoo://'):
+                return MCPResponse.error("Invalid URI format")
+            
+            resource_name = uri[7:]  # Remove 'odoo://' prefix
+            
+            # Get resource from capabilities manager
+            resource = self.capabilities_manager.get_resource(resource_name)
+            if not resource:
+                return MCPResponse.error(f"Resource not found: {resource_name}")
+            
+            # Convert resource to dictionary format
+            resource_dict = {
+                "name": resource.name,
+                "type": resource.type.value,
+                "description": resource.description,
+                "operations": resource.operations,
+                "parameters": resource.parameters or {},
+                "uri": f"odoo://{resource.name}"
+            }
+            
+            return MCPResponse.success(resource_dict)
+            
+        except Exception as e:
+            logger.error(f"Error handling resource read request: {str(e)}")
+            return MCPResponse.error(str(e))
+
     async def start(self) -> None:
         """Start the MCP server."""
         try:
@@ -1170,7 +1205,9 @@ class OdooMCPServer:
                 'prompts/list',    # Add both formats
                 'get_prompt',
                 'create_session',
-                'login'
+                'login',
+                'resources/read',   # Add resources/read as public method
+                'resources_read'    # Add alternative format
             }
             
             # Ensure request.id is never None
@@ -1210,6 +1247,9 @@ class OdooMCPServer:
                     response = await self._handle_create_session(request)
                 elif request.method == 'login':
                     response = await self._handle_login(request)
+                elif request.method in ['resources/read', 'resources_read']:
+                    # Handle resources/read as a public method
+                    response = await self._handle_resource_read(request)
             else:
                 logger.info(f"Handling authenticated method: {request.method}")
                 # For all other methods, validate session first
