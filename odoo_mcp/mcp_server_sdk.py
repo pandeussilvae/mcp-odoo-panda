@@ -1286,7 +1286,8 @@ class OdooMCPServer:
             meta = params.get('_meta', {})
 
             # Validate tool exists
-            if not self.capabilities_manager.has_tool(tool_name):
+            tools = self.capabilities_manager.list_tools()
+            if not any(tool.get('name') == tool_name for tool in tools):
                 raise ToolError(f"Unsupported tool: {tool_name}")
 
             # Execute tool operation
@@ -1310,10 +1311,10 @@ class OdooMCPServer:
                             'order': order
                         }
                     )
-                    return {
+                    return MCPResponse.success({
                         'result': result,
                         '_meta': meta
-                    }
+                    })
                 elif tool_name == 'odoo_create_record':
                     # Handle create record tool
                     model = arguments.get('model')
@@ -1335,17 +1336,17 @@ class OdooMCPServer:
                         model, 'create',
                         [values]
                     )
-                    return {
+                    return MCPResponse.success({
                         'result': result,
                         '_meta': meta
-                    }
+                    })
                 else:
                     # Handle other tools
                     result = await conn.execute_tool(tool_name, arguments)
-                    return {
+                    return MCPResponse.success({
                         'result': result,
                         '_meta': meta
-                    }
+                    })
 
         except Exception as e:
             raise ToolError(f"Error executing tool: {str(e)}", original_exception=e)
