@@ -6,6 +6,7 @@ This module provides the main server implementation for Odoo MCP.
 import sys
 import os
 import json
+from datetime import datetime
 
 # --- DEBUG STDIO PRECOCE: START ---
 # Logga un marker su stderr per indicare che il debug precoce è attivo
@@ -960,7 +961,9 @@ class OdooMCPServer:
               {
                 "uri": "string",
                 "type": "string",
-                "data": any
+                "data": string,
+                "mimeType": "string",
+                "metadata": object
               }
             ]
           },
@@ -977,35 +980,98 @@ class OdooMCPServer:
             if not uri.startswith('odoo://'):
                 return MCPResponse.error("Invalid URI format")
             
-            resource_name = uri[7:]  # Remove 'odoo://' prefix
+            # Parse URI parts
+            parts = uri[7:].split('/')  # Remove 'odoo://' prefix and split
+            model = parts[0]
             
-            # Get resource from capabilities manager
-            resource = self.capabilities_manager.get_resource(resource_name)
-            if not resource:
-                return MCPResponse.error(f"Resource not found: {resource_name}")
+            # Get connection from pool
+            connection = await self.connection_pool.get_connection()
+            if not connection:
+                return MCPResponse.error("Failed to get database connection")
             
-            # Convert resource to dictionary format
-            resource_dict = {
-                "name": resource.name,
-                "type": resource.type.value,
-                "description": resource.description,
-                "operations": resource.operations,
-                "parameters": resource.parameters or {},
-                "uri": f"odoo://{resource.name}"
-            }
-            
-            # Format response according to MCP 2025-03-26 specification
-            response_data = {
-                "contents": [
-                    {
+            try:
+                # Determine content type based on URI format
+                if len(parts) == 1:
+                    # Model schema request (e.g., odoo://res.partner)
+                    fields = await connection.execute_kw(
+                        model=model,
+                        method='fields_get',
+                        args=[],
+                        kwargs={'attributes': ['string', 'type', 'required', 'readonly', 'selection']}
+                    )
+                    content = {
                         "uri": uri,
-                        "type": resource.type.value,
-                        "data": resource_dict
+                        "type": "text",
+                        "data": json.dumps(fields),
+                        "mimeType": "application/json",
+                        "metadata": {
+                            "model": model,
+                            "type": "schema",
+                            "last_modified": datetime.now().isoformat()
+                        }
                     }
-                ]
-            }
-            
-            return MCPResponse.success(response_data)
+                elif len(parts) == 2 and parts[1] == "list":
+                    # List records request (e.g., odoo://res.partner/list)
+                    records = await connection.execute_kw(
+                        model=model,
+                        method='search_read',
+                        args=[[], ["id", "name"]],
+                        kwargs={"limit": 100}
+                    )
+                    content = {
+                        "uri": uri,
+                        "type": "text",
+                        "data": json.dumps(records),
+                        "mimeType": "application/json",
+                        "metadata": {
+                            "model": model,
+                            "type": "list",
+                            "count": len(records),
+                            "last_modified": datetime.now().isoformat()
+                        }
+                    }
+                elif len(parts) == 2:
+                    # Single record request (e.g., odoo://res.partner/1)
+                    try:
+                        record_id = int(parts[1])
+                    except ValueError:
+                        return MCPResponse.error(f"Invalid record ID in URI: {uri}")
+                    
+                    record = await connection.execute_kw(
+                        model=model,
+                        method='read',
+                        args=[[record_id]],
+                        kwargs={}
+                    )
+                    
+                    if not record:
+                        return MCPResponse.error(f"Record not found: {uri}")
+                    
+                    content = {
+                        "uri": uri,
+                        "type": "text",
+                        "data": json.dumps(record[0]),
+                        "mimeType": "application/json",
+                        "metadata": {
+                            "model": model,
+                            "type": "record",
+                            "id": record_id,
+                            "last_modified": datetime.now().isoformat()
+                        }
+                    }
+                else:
+                    return MCPResponse.error(f"Invalid URI format: {uri}")
+                
+                # Format response according to MCP specification
+                response_data = {
+                    "contents": [content]
+                }
+                
+                return MCPResponse.success(response_data)
+                
+            finally:
+                # Always release the connection back to the pool
+                await self.connection_pool.release_connection(connection)
             
         except Exception as e:
             logger.error(f"Error handling resource read request: {str(e)}")
