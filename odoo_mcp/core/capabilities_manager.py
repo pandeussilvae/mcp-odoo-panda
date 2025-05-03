@@ -69,45 +69,228 @@ class CapabilitiesManager:
 
     def _register_default_capabilities(self) -> None:
         """Register default server capabilities."""
-        # Register default resources
+        # Register resource templates
         self.register_resource(ResourceTemplate(
             name="res.partner",
             type=ResourceType.MODEL,
             description="Odoo Partner/Contact resource",
-            operations=["create", "read", "update", "delete", "search"]
+            operations=["create", "read", "update", "delete", "search"],
+            parameters={
+                "uri_template": "odoo://{model}/{id}",
+                "list_uri_template": "odoo://{model}/list",
+                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
+            }
         ))
         
         self.register_resource(ResourceTemplate(
             name="res.users",
             type=ResourceType.MODEL,
             description="Odoo User resource",
-            operations=["create", "read", "update", "delete", "search"]
+            operations=["create", "read", "update", "delete", "search"],
+            parameters={
+                "uri_template": "odoo://{model}/{id}",
+                "list_uri_template": "odoo://{model}/list",
+                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
+            }
+        ))
+
+        self.register_resource(ResourceTemplate(
+            name="product.product",
+            type=ResourceType.MODEL,
+            description="Odoo Product resource",
+            operations=["create", "read", "update", "delete", "search"],
+            parameters={
+                "uri_template": "odoo://{model}/{id}",
+                "list_uri_template": "odoo://{model}/list",
+                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
+            }
+        ))
+
+        self.register_resource(ResourceTemplate(
+            name="sale.order",
+            type=ResourceType.MODEL,
+            description="Odoo Sales Order resource",
+            operations=["create", "read", "update", "delete", "search"],
+            parameters={
+                "uri_template": "odoo://{model}/{id}",
+                "list_uri_template": "odoo://{model}/list",
+                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
+            }
+        ))
+
+        self.register_resource(ResourceTemplate(
+            name="ir.attachment",
+            type=ResourceType.BINARY,
+            description="Odoo Attachment resource",
+            operations=["create", "read", "update", "delete"],
+            parameters={
+                "uri_template": "odoo://{model}/{id}",
+                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
+            }
         ))
         
-        # Register default tools
+        # Register tools
+        self.register_tool(Tool(
+            name="odoo_execute_kw",
+            description="Execute an arbitrary method on an Odoo model",
+            operations=["execute"],
+            parameters={
+                "model": "string",
+                "method": "string",
+                "args": "array",
+                "kwargs": "object"
+            }
+        ))
+
         self.register_tool(Tool(
             name="data_export",
             description="Export Odoo data to various formats",
-            operations=["csv", "excel", "json", "xml"]
+            operations=["csv", "excel", "json", "xml"],
+            parameters={
+                "model": "string",
+                "ids": "array",
+                "fields": "array",
+                "format": "string"
+            }
         ))
         
         self.register_tool(Tool(
             name="data_import",
             description="Import data into Odoo",
-            operations=["csv", "excel", "json", "xml"]
+            operations=["csv", "excel", "json", "xml"],
+            parameters={
+                "model": "string",
+                "data": "string",
+                "format": "string"
+            }
+        ))
+
+        self.register_tool(Tool(
+            name="report_generator",
+            description="Generate an Odoo report",
+            operations=["pdf", "html"],
+            parameters={
+                "report_name": "string",
+                "ids": "array",
+                "format": "string"
+            }
+        ))
+
+        self.register_tool(Tool(
+            name="odoo_create_record",
+            description="Create a new record in an Odoo model",
+            operations=["create"],
+            parameters={
+                "model": "string",
+                "values": "object"
+            }
+        ))
+
+        self.register_tool(Tool(
+            name="odoo_update_record",
+            description="Update an existing record in an Odoo model",
+            operations=["write"],
+            parameters={
+                "model": "string",
+                "id": "integer",
+                "values": "object"
+            }
+        ))
+
+        self.register_tool(Tool(
+            name="odoo_delete_record",
+            description="Delete a record from an Odoo model",
+            operations=["unlink"],
+            parameters={
+                "model": "string",
+                "id": "integer"
+            }
+        ))
+
+        self.register_tool(Tool(
+            name="odoo_search_records",
+            description="Search records in an Odoo model",
+            operations=["search_read"],
+            parameters={
+                "model": "string",
+                "domain": "array",
+                "fields": "array",
+                "limit": "integer"
+            }
         ))
         
-        # Register default prompts
+        # Register prompts
         self.register_prompt(Prompt(
             name="analyze_record",
             description="Analyze an Odoo record",
-            template="Analyze the following Odoo record: {record}"
+            template="Analyze the following Odoo record: {record}",
+            parameters={
+                "model": "string",
+                "id": "integer"
+            }
         ))
         
         self.register_prompt(Prompt(
             name="create_record",
             description="Create a new Odoo record",
-            template="Create a new {model} record with the following data: {data}"
+            template="Create a new {model} record with the following data: {data}",
+            parameters={
+                "model": "string"
+            }
+        ))
+
+        self.register_prompt(Prompt(
+            name="update_record",
+            description="Update an existing Odoo record",
+            template="Update the {model} record with ID {id} with the following data: {data}",
+            parameters={
+                "model": "string",
+                "id": "integer"
+            }
+        ))
+
+        self.register_prompt(Prompt(
+            name="advanced_search",
+            description="Perform an advanced search on an Odoo model",
+            template="Search {model} records with the following criteria: {criteria}",
+            parameters={
+                "model": "string"
+            }
+        ))
+
+        self.register_prompt(Prompt(
+            name="call_method",
+            description="Call a specific method on a model or record",
+            template="Call method {method} on {model} with ID {id} and arguments: {args}",
+            parameters={
+                "model": "string",
+                "method": "string",
+                "id": "integer",
+                "args": "array",
+                "kwargs": "object"
+            }
+        ))
+
+        self.register_prompt(Prompt(
+            name="view_related_records",
+            description="View records related to a specific record",
+            template="Show records related to {model} with ID {id} through field {field}",
+            parameters={
+                "model": "string",
+                "id": "integer",
+                "field": "string"
+            }
+        ))
+
+        self.register_prompt(Prompt(
+            name="upload_attachment",
+            description="Upload a file attachment to a record",
+            template="Upload file {filename} to {model} with ID {id}",
+            parameters={
+                "model": "string",
+                "id": "integer",
+                "filename": "string"
+            }
         ))
 
     def register_resource(self, resource: ResourceTemplate) -> None:

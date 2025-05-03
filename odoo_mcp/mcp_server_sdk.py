@@ -950,7 +950,23 @@ class OdooMCPServer:
             return MCPResponse.error(f"Unexpected error: {str(e)}")
 
     async def _handle_resource_read(self, request: MCPRequest) -> MCPResponse:
-        """Handle resource read request."""
+        """Handle resource read request.
+        
+        According to MCP 2025-03-26 specification, the response should have this structure:
+        {
+          "jsonrpc": "2.0",
+          "result": {
+            "contents": [
+              {
+                "uri": "string",
+                "type": "string",
+                "data": any
+              }
+            ]
+          },
+          "id": number
+        }
+        """
         try:
             # Extract URI from parameters
             uri = request.parameters.get('uri')
@@ -978,7 +994,18 @@ class OdooMCPServer:
                 "uri": f"odoo://{resource.name}"
             }
             
-            return MCPResponse.success(resource_dict)
+            # Format response according to MCP 2025-03-26 specification
+            response_data = {
+                "contents": [
+                    {
+                        "uri": uri,
+                        "type": resource.type.value,
+                        "data": resource_dict
+                    }
+                ]
+            }
+            
+            return MCPResponse.success(response_data)
             
         except Exception as e:
             logger.error(f"Error handling resource read request: {str(e)}")
