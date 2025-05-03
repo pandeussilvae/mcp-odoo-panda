@@ -1028,7 +1028,7 @@ class OdooMCPServer:
                         # Process the request
                         response = await self._process_mcp_request(mcp_request)
                         
-                        # Ensure response is a valid JSON-RPC 2.0 message
+                        # Validate response structure
                         if not isinstance(response, dict):
                             print(f"[StdioHandler] Invalid response type: {type(response)}", file=sys.stderr, flush=True)
                             response = {
@@ -1040,7 +1040,7 @@ class OdooMCPServer:
                                 'id': request_data.get('id', 0)
                             }
                         
-                        # Validate response structure
+                        # Ensure response has required JSON-RPC 2.0 fields
                         if 'jsonrpc' not in response or response['jsonrpc'] != '2.0':
                             print(f"[StdioHandler] Invalid response: missing or invalid jsonrpc field", file=sys.stderr, flush=True)
                             response = {
@@ -1097,7 +1097,7 @@ class OdooMCPServer:
                                 'code': -32700,
                                 'message': 'Parse error: Invalid JSON'
                             },
-                            'id': 0
+                            'id': request_data.get('id', 0) if 'request_data' in locals() else 0
                         }
                         error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
                         print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
@@ -1121,7 +1121,7 @@ class OdooMCPServer:
                             'code': -32603,
                             'message': str(e)
                         },
-                        'id': 0
+                        'id': request_data.get('id', 0) if 'request_data' in locals() else 0
                     }
                     error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
                     print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
@@ -1155,6 +1155,9 @@ class OdooMCPServer:
                 'login'
             }
             
+            # Ensure request.id is never None
+            request_id = request.id if request.id is not None else 0
+            
             # Route the request based on method type
             if request.method in no_auth_methods:
                 logger.info(f"Handling public method: {request.method}")
@@ -1168,7 +1171,7 @@ class OdooMCPServer:
                                 'code': -32603,
                                 'message': 'Server not properly initialized'
                             },
-                            'id': request.id if request.id is not None else 0
+                            'id': request_id
                         }
                     response = await self._handle_initialize(request)
                 elif request.method == 'list_resources':
@@ -1195,7 +1198,7 @@ class OdooMCPServer:
                             'code': -32001,
                             'message': 'No session ID provided'
                         },
-                        'id': request.id if request.id is not None else 0
+                        'id': request_id
                     }
                 
                 try:
@@ -1209,7 +1212,7 @@ class OdooMCPServer:
                                 'code': -32001,
                                 'message': 'Invalid session'
                             },
-                            'id': request.id if request.id is not None else 0
+                            'id': request_id
                         }
                     
                     # Add session to request parameters
@@ -1231,7 +1234,7 @@ class OdooMCPServer:
                             'code': -32001,
                             'message': str(e)
                         },
-                        'id': request.id if request.id is not None else 0
+                        'id': request_id
                     }
                 except Exception as e:
                     logger.error(f"Error handling authenticated request: {str(e)}")
@@ -1241,13 +1244,13 @@ class OdooMCPServer:
                             'code': -32603,
                             'message': str(e)
                         },
-                        'id': request.id if request.id is not None else 0
+                        'id': request_id
                     }
             
             # Convert MCPResponse to JSON-RPC response
             response_dict = {
                 'jsonrpc': '2.0',
-                'id': request.id if request.id is not None else 0
+                'id': request_id
             }
             
             if response.success:
