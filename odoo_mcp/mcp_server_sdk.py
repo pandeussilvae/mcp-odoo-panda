@@ -1201,9 +1201,18 @@ class OdooMCPServer:
                     # Then try to extract from URI template
                     elif uri_template:
                         # Extract model from URI template (e.g., odoo://{model}/{id})
-                        parts = uri_template.split('/')
-                        if len(parts) >= 2 and parts[0] == 'odoo:':
-                            model = parts[1].strip('{}')
+                        try:
+                            # Remove protocol prefix if present
+                            if uri_template.startswith('odoo://'):
+                                uri_template = uri_template[7:]
+                            
+                            # Split by / and get the model part
+                            parts = uri_template.split('/')
+                            if len(parts) >= 1:
+                                # Remove any { } brackets from the model part
+                                model = parts[0].strip('{}')
+                        except Exception as e:
+                            logger.error(f"Error extracting model from URI template: {str(e)}")
                     
                     if not model:
                         return MCPResponse.error("Model name required for ID completion")
