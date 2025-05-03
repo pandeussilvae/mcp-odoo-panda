@@ -600,7 +600,7 @@ class OdooMCPServer:
                     response = await self._handle_list_tools(mcp_request)
                 elif method in ['list_prompts', 'prompts/list']:
                     response = await self._handle_list_prompts(mcp_request)
-                elif method == 'get_prompt':
+                elif method in ['get_prompt', 'prompts/get']:
                     response = await self._handle_get_prompt(mcp_request)
                 elif method == 'create_session':
                     response = await self._handle_create_session(mcp_request)
@@ -1524,7 +1524,7 @@ class OdooMCPServer:
                     response = await self._handle_list_tools(request)
                 elif request.method in ['list_prompts', 'prompts/list']:
                     response = await self._handle_list_prompts(request)
-                elif request.method == 'get_prompt':
+                elif request.method in ['get_prompt', 'prompts/get']:
                     response = await self._handle_get_prompt(request)
                 elif request.method == 'create_session':
                     response = await self._handle_create_session(request)
