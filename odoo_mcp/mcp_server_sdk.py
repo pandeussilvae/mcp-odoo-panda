@@ -1307,6 +1307,14 @@ class OdooMCPServer:
                                 'limit': arguments.get('limit', 10)
                             }
                         )
+                    elif tool_name == 'odoo_create_record':
+                        # Create a new record
+                        result = await connection.execute_kw(
+                            model=arguments.get('model'),
+                            method='create',
+                            args=[arguments.get('values', {})],
+                            kwargs={}
+                        )
                     else:
                         return MCPResponse.error(f"Unsupported tool: {tool_name}")
                     
