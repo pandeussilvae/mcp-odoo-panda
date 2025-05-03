@@ -1294,9 +1294,8 @@ class OdooMCPServer:
             
             # Execute tool operation
             try:
-                # Get connection from pool
-                connection = await self.connection_pool.get_connection()
-                try:
+                # Use async with for proper connection management
+                async with self.connection_pool.get_connection() as connection:
                     # Execute the tool operation
                     if tool_name == 'odoo_search_records':
                         result = await connection.execute_kw(
@@ -1315,10 +1314,6 @@ class OdooMCPServer:
                         "result": result,
                         "meta": meta
                     })
-                    
-                finally:
-                    # Always release the connection
-                    await self.connection_pool.release_connection(connection)
                     
             except Exception as e:
                 logger.error(f"Error executing tool {tool_name}: {str(e)}")
