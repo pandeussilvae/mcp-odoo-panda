@@ -386,23 +386,51 @@ class CapabilitiesManager:
             for resource in self.resources.values()
         ]
 
-    def list_tools(self) -> List[str]:
+    def list_tools(self) -> List[Dict[str, Any]]:
         """
         List all registered tools.
 
         Returns:
-            List[str]: List of tool names
+            List[Dict[str, Any]]: List of tool objects with the following structure:
+            {
+                "name": str,
+                "description": str,
+                "operations": List[str],
+                "parameters": Optional[Dict[str, Any]]
+            }
         """
-        return list(self.tools.keys())
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "operations": tool.operations,
+                "parameters": tool.parameters or {}
+            }
+            for tool in self.tools.values()
+        ]
 
-    def list_prompts(self) -> List[str]:
+    def list_prompts(self) -> List[Dict[str, Any]]:
         """
         List all registered prompts.
 
         Returns:
-            List[str]: List of prompt names
+            List[Dict[str, Any]]: List of prompt objects with the following structure:
+            {
+                "name": str,
+                "description": str,
+                "template": str,
+                "parameters": Optional[Dict[str, Any]]
+            }
         """
-        return list(self.prompts.keys())
+        return [
+            {
+                "name": prompt.name,
+                "description": prompt.description,
+                "template": prompt.template,
+                "parameters": prompt.parameters or {}
+            }
+            for prompt in self.prompts.values()
+        ]
 
     def is_feature_enabled(self, feature: str) -> bool:
         """
