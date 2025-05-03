@@ -1178,13 +1178,9 @@ class OdooMCPServer:
                 resources = self.capabilities_manager.list_resources()
                 
                 if arg_name == 'model':
-                    # Complete model names
+                    # Complete model names - return just the model names as strings
                     values = [
-                        {
-                            "label": resource['name'],
-                            "value": resource['name'],
-                            "description": resource['description']
-                        }
+                        resource['name']
                         for resource in resources
                         if resource['name'].startswith(arg_value)
                     ]
@@ -1211,12 +1207,9 @@ class OdooMCPServer:
                                 kwargs={'fields': ['id', 'name'], 'limit': 10}
                             )
                             
+                            # Return just the ID values as strings
                             values = [
-                                {
-                                    "label": f"{record['id']} - {record.get('name', '')}",
-                                    "value": str(record['id']),
-                                    "description": f"Record {record['id']} of {model}"
-                                }
+                                str(record['id'])
                                 for record in records
                             ]
                             return MCPResponse.success({
