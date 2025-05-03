@@ -1291,7 +1291,8 @@ class OdooMCPServer:
                 raise ToolError(f"Unsupported tool: {tool_name}")
 
             # Execute tool operation
-            async with self.connection_pool.acquire() as conn:
+            connection = await self.connection_pool.get_connection()
+            try:
                 if tool_name == 'odoo_search_records':
                     # Handle search records tool
                     model = arguments.get('model')
@@ -1301,7 +1302,7 @@ class OdooMCPServer:
                     offset = arguments.get('offset', 0)
                     order = arguments.get('order', '')
                     
-                    result = await conn.execute_kw(
+                    result = await connection.execute_kw(
                         model, 'search_read',
                         [domain],
                         {
@@ -1332,7 +1333,7 @@ class OdooMCPServer:
                             values['lastname'] = ''
                         del values['name']
                     
-                    result = await conn.execute_kw(
+                    result = await connection.execute_kw(
                         model, 'create',
                         [values]
                     )
@@ -1342,11 +1343,14 @@ class OdooMCPServer:
                     })
                 else:
                     # Handle other tools
-                    result = await conn.execute_tool(tool_name, arguments)
+                    result = await connection.execute_tool(tool_name, arguments)
                     return MCPResponse.success({
                         'result': result,
                         '_meta': meta
                     })
+            finally:
+                # Always release the connection
+                await self.connection_pool.release_connection(connection)
 
         except Exception as e:
             raise ToolError(f"Error executing tool: {str(e)}", original_exception=e)
