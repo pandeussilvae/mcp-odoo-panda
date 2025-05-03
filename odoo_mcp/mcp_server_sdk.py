@@ -562,7 +562,8 @@ class OdooMCPServer:
                 'resources/read',   # Add resources/read as public method
                 'resources_read',   # Add alternative format
                 'resources/templates/list',  # Add templates list method
-                'resources_templates_list'   # Add alternative format
+                'resources_templates_list',   # Add alternative format
+                'completion/complete'  # Add completion method
             }
             
             # Create MCP request object with all headers
@@ -610,6 +611,8 @@ class OdooMCPServer:
                 elif method in ['resources/templates/list', 'resources_templates_list']:
                     # Handle resources templates list request
                     response = await self._handle_resource_templates_list(mcp_request)
+                elif method == 'completion/complete':
+                    response = await self._handle_completion_complete(mcp_request)
                 else:
                     logger.error(f"Unhandled public method: {method}")
                     return web.json_response({
@@ -1155,6 +1158,76 @@ class OdooMCPServer:
             logger.error(f"Error handling resource templates list request: {str(e)}")
             return MCPResponse.error(str(e))
 
+    async def _handle_completion_complete(self, request: MCPRequest) -> MCPResponse:
+        """Handle completion/complete request."""
+        try:
+            params = request.parameters
+            argument = params.get('argument', {})
+            ref = params.get('ref', {})
+            
+            # Log request details for debugging
+            logger.debug(f"Completion request - Argument: {argument}, Ref: {ref}")
+            
+            # Handle resource reference completion
+            if ref.get('type') == 'ref/resource':
+                uri_template = ref.get('uri', '')
+                arg_name = argument.get('name', '')
+                arg_value = argument.get('value', '')
+                
+                # Get list of resources from capabilities manager
+                resources = self.capabilities_manager.list_resources()
+                
+                if arg_name == 'model':
+                    # Complete model names
+                    suggestions = [
+                        {
+                            "label": resource['name'],
+                            "value": resource['name'],
+                            "description": resource['description']
+                        }
+                        for resource in resources
+                        if resource['name'].startswith(arg_value)
+                    ]
+                    return MCPResponse.success({"suggestions": suggestions})
+                
+                elif arg_name == 'id':
+                    # For ID completion, we need a valid model
+                    model = params.get('model')
+                    if not model:
+                        return MCPResponse.error("Model name required for ID completion")
+                    
+                    try:
+                        # Get connection from pool
+                        async with self.connection_pool.get_connection() as connection:
+                            # Search for records matching the partial ID
+                            records = await connection.execute_kw(
+                                model=model,
+                                method='search_read',
+                                args=[[('id', 'like', arg_value)]],
+                                kwargs={'fields': ['id', 'name'], 'limit': 10}
+                            )
+                            
+                            suggestions = [
+                                {
+                                    "label": f"{record['id']} - {record.get('name', '')}",
+                                    "value": str(record['id']),
+                                    "description": f"Record {record['id']} of {model}"
+                                }
+                                for record in records
+                            ]
+                            return MCPResponse.success({"suggestions": suggestions})
+                            
+                    except Exception as e:
+                        logger.error(f"Error completing ID for model {model}: {str(e)}")
+                        return MCPResponse.error(f"Error completing ID: {str(e)}")
+            
+            # If we get here, we don't support this type of completion
+            return MCPResponse.success({"suggestions": []})
+            
+        except Exception as e:
+            logger.error(f"Error handling completion/complete request: {str(e)}")
+            return MCPResponse.error(str(e))
+
     async def start(self) -> None:
         """Start the MCP server."""
         try:
@@ -1380,7 +1453,8 @@ class OdooMCPServer:
                 'resources/read',   # Add resources/read as public method
                 'resources_read',   # Add alternative format
                 'resources/templates/list',  # Add templates list method
-                'resources_templates_list'   # Add alternative format
+                'resources_templates_list',   # Add alternative format
+                'completion/complete'  # Add completion method
             }
             
             # Ensure request.id is never None
@@ -1430,6 +1504,8 @@ class OdooMCPServer:
                 elif request.method in ['resources/templates/list', 'resources_templates_list']:
                     # Handle resources templates list request
                     response = await self._handle_resource_templates_list(request)
+                elif request.method == 'completion/complete':
+                    response = await self._handle_completion_complete(request)
                 else:
                     logger.error(f"Unhandled public method: {request.method}")
                     return {
