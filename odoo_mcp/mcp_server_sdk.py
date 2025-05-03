@@ -1028,6 +1028,10 @@ class OdooMCPServer:
                         # Process the request
                         response = await self._process_mcp_request(mcp_request)
                         
+                        # If response is None (e.g., for notifications), don't send a response
+                        if response is None:
+                            continue
+                        
                         # Validate response structure
                         if not isinstance(response, dict):
                             print(f"[StdioHandler] Invalid response type: {type(response)}", file=sys.stderr, flush=True)
@@ -1152,11 +1156,18 @@ class OdooMCPServer:
                 'list_prompts',
                 'get_prompt',
                 'create_session',
-                'login'
+                'login',
+                'notifications/initialized'  # Add notifications/initialized to no_auth_methods
             }
             
             # Ensure request.id is never None
             request_id = request.id if request.id is not None else 0
+            
+            # Handle notifications (they don't require authentication and don't need a response)
+            if request.method.startswith('notifications/'):
+                logger.info(f"Handling notification: {request.method}")
+                # For notifications, we don't need to send a response
+                return None
             
             # Route the request based on method type
             if request.method in no_auth_methods:
@@ -1246,6 +1257,10 @@ class OdooMCPServer:
                         },
                         'id': request_id
                     }
+            
+            # If response is None (e.g., for notifications), don't send a response
+            if response is None:
+                return None
             
             # Convert MCPResponse to JSON-RPC response
             response_dict = {
