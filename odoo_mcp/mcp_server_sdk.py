@@ -1149,7 +1149,7 @@ class OdooMCPServer:
             
             return MCPResponse(
                 success=True,
-                data={"templates": templates}
+                data={"resourceTemplates": templates}
             )
         except Exception as e:
             logger.error(f"Error handling resource templates list request: {str(e)}")
