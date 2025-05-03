@@ -33,6 +33,7 @@ class Tool:
     description: str
     operations: List[str]
     parameters: Optional[Dict[str, Any]] = None
+    inputSchema: Optional[Dict[str, Any]] = None
 
 @dataclass
 class Prompt:
@@ -129,7 +130,7 @@ class CapabilitiesManager:
             }
         ))
         
-        # Register tools
+        # Register tools with proper inputSchema
         self.register_tool(Tool(
             name="odoo_execute_kw",
             description="Execute an arbitrary method on an Odoo model",
@@ -139,6 +140,32 @@ class CapabilitiesManager:
                 "method": "string",
                 "args": "array",
                 "kwargs": "object"
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the Odoo model"
+                    },
+                    "method": {
+                        "type": "string",
+                        "description": "Name of the method to execute"
+                    },
+                    "args": {
+                        "type": "array",
+                        "description": "Positional arguments for the method",
+                        "items": {
+                            "type": "any"
+                        }
+                    },
+                    "kwargs": {
+                        "type": "object",
+                        "description": "Keyword arguments for the method",
+                        "additionalProperties": true
+                    }
+                },
+                "required": ["model", "method"]
             }
         ))
 
@@ -151,9 +178,38 @@ class CapabilitiesManager:
                 "ids": "array",
                 "fields": "array",
                 "format": "string"
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the Odoo model"
+                    },
+                    "ids": {
+                        "type": "array",
+                        "description": "List of record IDs to export",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "fields": {
+                        "type": "array",
+                        "description": "List of fields to export",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "format": {
+                        "type": "string",
+                        "description": "Export format",
+                        "enum": ["csv", "excel", "json", "xml"]
+                    }
+                },
+                "required": ["model", "format"]
             }
         ))
-        
+
         self.register_tool(Tool(
             name="data_import",
             description="Import data into Odoo",
@@ -162,6 +218,25 @@ class CapabilitiesManager:
                 "model": "string",
                 "data": "string",
                 "format": "string"
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the Odoo model"
+                    },
+                    "data": {
+                        "type": "string",
+                        "description": "Data to import in the specified format"
+                    },
+                    "format": {
+                        "type": "string",
+                        "description": "Import format",
+                        "enum": ["csv", "excel", "json", "xml"]
+                    }
+                },
+                "required": ["model", "data", "format"]
             }
         ))
 
@@ -173,6 +248,28 @@ class CapabilitiesManager:
                 "report_name": "string",
                 "ids": "array",
                 "format": "string"
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "report_name": {
+                        "type": "string",
+                        "description": "Name of the report to generate"
+                    },
+                    "ids": {
+                        "type": "array",
+                        "description": "List of record IDs to include in the report",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "format": {
+                        "type": "string",
+                        "description": "Report format",
+                        "enum": ["pdf", "html"]
+                    }
+                },
+                "required": ["report_name", "ids", "format"]
             }
         ))
 
@@ -183,6 +280,21 @@ class CapabilitiesManager:
             parameters={
                 "model": "string",
                 "values": "object"
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the Odoo model"
+                    },
+                    "values": {
+                        "type": "object",
+                        "description": "Field values for the new record",
+                        "additionalProperties": true
+                    }
+                },
+                "required": ["model", "values"]
             }
         ))
 
@@ -194,6 +306,25 @@ class CapabilitiesManager:
                 "model": "string",
                 "id": "integer",
                 "values": "object"
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the Odoo model"
+                    },
+                    "id": {
+                        "type": "integer",
+                        "description": "ID of the record to update"
+                    },
+                    "values": {
+                        "type": "object",
+                        "description": "Field values to update",
+                        "additionalProperties": true
+                    }
+                },
+                "required": ["model", "id", "values"]
             }
         ))
 
@@ -204,6 +335,20 @@ class CapabilitiesManager:
             parameters={
                 "model": "string",
                 "id": "integer"
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the Odoo model"
+                    },
+                    "id": {
+                        "type": "integer",
+                        "description": "ID of the record to delete"
+                    }
+                },
+                "required": ["model", "id"]
             }
         ))
 
@@ -216,6 +361,34 @@ class CapabilitiesManager:
                 "domain": "array",
                 "fields": "array",
                 "limit": "integer"
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the Odoo model"
+                    },
+                    "domain": {
+                        "type": "array",
+                        "description": "Search domain",
+                        "items": {
+                            "type": "any"
+                        }
+                    },
+                    "fields": {
+                        "type": "array",
+                        "description": "Fields to return",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of records to return"
+                    }
+                },
+                "required": ["model"]
             }
         ))
         
@@ -396,7 +569,8 @@ class CapabilitiesManager:
                 "name": str,
                 "description": str,
                 "operations": List[str],
-                "parameters": Optional[Dict[str, Any]]
+                "parameters": Optional[Dict[str, Any]],
+                "inputSchema": Dict[str, Any]
             }
         """
         return [
@@ -404,7 +578,12 @@ class CapabilitiesManager:
                 "name": tool.name,
                 "description": tool.description,
                 "operations": tool.operations,
-                "parameters": tool.parameters or {}
+                "parameters": tool.parameters or {},
+                "inputSchema": tool.inputSchema or {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
             }
             for tool in self.tools.values()
         ]
