@@ -623,7 +623,7 @@ class CapabilitiesManager:
                 "description": str,
                 "operations": List[str],
                 "parameters": Optional[Dict[str, Any]],
-                "uri_template": str
+                "uriTemplate": str
             }
         """
         return [
@@ -633,7 +633,7 @@ class CapabilitiesManager:
                 "description": resource.description,
                 "operations": resource.operations,
                 "parameters": resource.parameters or {},
-                "uri_template": resource.parameters.get("uri_template", f"odoo://{resource.name}")
+                "uriTemplate": resource.parameters.get("uri_template", f"odoo://{resource.name}")
             }
             for resource in self.resources.values()
         ]
