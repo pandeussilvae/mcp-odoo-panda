@@ -162,7 +162,7 @@ class CapabilitiesManager:
                     "kwargs": {
                         "type": "object",
                         "description": "Keyword arguments for the method",
-                        "additionalProperties": true
+                        "additionalProperties": True
                     }
                 },
                 "required": ["model", "method"]
@@ -291,7 +291,7 @@ class CapabilitiesManager:
                     "values": {
                         "type": "object",
                         "description": "Field values for the new record",
-                        "additionalProperties": true
+                        "additionalProperties": True
                     }
                 },
                 "required": ["model", "values"]
@@ -321,7 +321,7 @@ class CapabilitiesManager:
                     "values": {
                         "type": "object",
                         "description": "Field values to update",
-                        "additionalProperties": true
+                        "additionalProperties": True
                     }
                 },
                 "required": ["model", "id", "values"]
@@ -652,14 +652,14 @@ class CapabilitiesManager:
             {
                 "logging": {},
                 "prompts": {
-                    "listChanged": true
+                    "listChanged": True
                 },
                 "resources": {
-                    "subscribe": true,
-                    "listChanged": true
+                    "subscribe": True,
+                    "listChanged": True
                 },
                 "tools": {
-                    "listChanged": true
+                    "listChanged": True
                 }
             }
         """
