@@ -1277,59 +1277,78 @@ class OdooMCPServer:
             return MCPResponse.error(str(e))
 
     async def _handle_tool_call(self, request: MCPRequest) -> MCPResponse:
-        """Handle tools/call request."""
+        """Handle tool call requests."""
         try:
             # Extract tool call parameters
-            tool_name = request.parameters.get('name')
-            arguments = request.parameters.get('arguments', {})
-            meta = request.parameters.get('_meta', {})
-            
-            if not tool_name:
-                return MCPResponse.error("Tool name is required")
-            
-            # Get tool from capabilities manager
-            tool = self.capabilities_manager.get_tool(tool_name)
-            if not tool:
-                return MCPResponse.error(f"Tool not found: {tool_name}")
-            
+            params = request.parameters
+            tool_name = params.get('name')
+            arguments = params.get('arguments', {})
+            meta = params.get('_meta', {})
+
+            # Validate tool exists
+            if not self.capabilities_manager.has_tool(tool_name):
+                raise ToolError(f"Unsupported tool: {tool_name}")
+
             # Execute tool operation
-            try:
-                # Use async with for proper connection management
-                async with self.connection_pool.get_connection() as connection:
-                    # Execute the tool operation
-                    if tool_name == 'odoo_search_records':
-                        result = await connection.execute_kw(
-                            model=arguments.get('model'),
-                            method='search_read',
-                            args=[arguments.get('domain', [])],
-                            kwargs={
-                                'fields': arguments.get('fields', []),
-                                'limit': arguments.get('limit', 10)
-                            }
-                        )
-                    elif tool_name == 'odoo_create_record':
-                        # Create a new record
-                        result = await connection.execute_kw(
-                            model=arguments.get('model'),
-                            method='create',
-                            args=[arguments.get('values', {})],
-                            kwargs={}
-                        )
-                    else:
-                        return MCPResponse.error(f"Unsupported tool: {tool_name}")
+            async with self.connection_pool.acquire() as conn:
+                if tool_name == 'odoo_search_records':
+                    # Handle search records tool
+                    model = arguments.get('model')
+                    domain = arguments.get('domain', [])
+                    fields = arguments.get('fields', [])
+                    limit = arguments.get('limit', 10)
+                    offset = arguments.get('offset', 0)
+                    order = arguments.get('order', '')
                     
-                    return MCPResponse.success({
-                        "result": result,
-                        "meta": meta
-                    })
+                    result = await conn.execute_kw(
+                        model, 'search_read',
+                        [domain],
+                        {
+                            'fields': fields,
+                            'limit': limit,
+                            'offset': offset,
+                            'order': order
+                        }
+                    )
+                    return {
+                        'result': result,
+                        '_meta': meta
+                    }
+                elif tool_name == 'odoo_create_record':
+                    # Handle create record tool
+                    model = arguments.get('model')
+                    values = arguments.get('values', {})
                     
-            except Exception as e:
-                logger.error(f"Error executing tool {tool_name}: {str(e)}")
-                return MCPResponse.error(f"Error executing tool: {str(e)}")
-            
+                    # Special handling for res.partner with partner_firstname module
+                    if model == 'res.partner' and 'name' in values:
+                        # Split name into firstname and lastname
+                        name_parts = values['name'].split(' ', 1)
+                        if len(name_parts) > 1:
+                            values['firstname'] = name_parts[0]
+                            values['lastname'] = name_parts[1]
+                        else:
+                            values['firstname'] = name_parts[0]
+                            values['lastname'] = ''
+                        del values['name']
+                    
+                    result = await conn.execute_kw(
+                        model, 'create',
+                        [values]
+                    )
+                    return {
+                        'result': result,
+                        '_meta': meta
+                    }
+                else:
+                    # Handle other tools
+                    result = await conn.execute_tool(tool_name, arguments)
+                    return {
+                        'result': result,
+                        '_meta': meta
+                    }
+
         except Exception as e:
-            logger.error(f"Error handling tools/call request: {str(e)}")
-            return MCPResponse.error(str(e))
+            raise ToolError(f"Error executing tool: {str(e)}", original_exception=e)
 
     async def start(self) -> None:
         """Start the MCP server."""
