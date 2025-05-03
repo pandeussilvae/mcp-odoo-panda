@@ -990,7 +990,10 @@ class OdooMCPServer:
                 "type": "string",
                 "data": string,
                 "mimeType": "string",
-                "metadata": object
+                "metadata": object,
+                "text": string  # Required if type is "text"
+                # OR
+                "blob": string  # Required if type is "binary"
               }
             ]
           },
@@ -1032,7 +1035,8 @@ class OdooMCPServer:
                                 "model": model,
                                 "type": "schema",
                                 "last_modified": datetime.now().isoformat()
-                            }
+                            },
+                            "text": json.dumps(fields)  # Add text field for text type
                         }
                     elif len(parts) == 2 and parts[1] == "list":
                         # List records request (e.g., odoo://res.partner/list)
@@ -1052,7 +1056,8 @@ class OdooMCPServer:
                                 "type": "list",
                                 "count": len(records),
                                 "last_modified": datetime.now().isoformat()
-                            }
+                            },
+                            "text": json.dumps(records)  # Add text field for text type
                         }
                     elif len(parts) == 2:
                         # Single record request (e.g., odoo://res.partner/1)
@@ -1081,7 +1086,8 @@ class OdooMCPServer:
                                 "type": "record",
                                 "id": record_id,
                                 "last_modified": datetime.now().isoformat()
-                            }
+                            },
+                            "text": json.dumps(record[0])  # Add text field for text type
                         }
                     else:
                         return MCPResponse.error(f"Invalid URI format: {uri}")
