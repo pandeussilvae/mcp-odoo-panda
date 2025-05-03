@@ -670,44 +670,44 @@ Example of complete configuration:
 
 ## Server Startup
 
-Il server può essere avviato in two modes: stdio (default) and streamable_http. The configuration file is optional and, if not specified, the server will automatically look for the file in `odoo_mcp/config/config.json`.
+The server can be started in two modes: stdio (default) and streamable_http. The configuration file is optional and, if not specified, the server will automatically look for the file in `odoo_mcp/config/config.json`.
 
-### Modalità stdio (default)
+### stdio Mode (default)
 
 ```bash
-# Avvia il server in modalità stdio senza specificare il file di configurazione
+# Start the server in stdio mode without specifying the configuration file
 python -m odoo_mcp.server
 
-# Avvia il server in modalità stdio con un file di configurazione specifico
+# Start the server in stdio mode with a specific configuration file
 python -m odoo_mcp.server /path/to/config.json
 ```
 
-### Modalità streamable_http
+### streamable_http Mode
 
 ```bash
-# Avvia il server in modalità streamable_http senza specificare il file di configurazione
+# Start the server in streamable_http mode without specifying the configuration file
 python -m odoo_mcp.server streamable_http
 
-# Avvia il server in modalità streamable_http con un file di configurazione specifico
+# Start the server in streamable_http mode with a specific configuration file
 python -m odoo_mcp.server streamable_http /path/to/config.json
 ```
 
 ## Server Verification
 
-### Modalità stdio
+### stdio Mode
 
 ```bash
-# Test di una richiesta senza specificare il file di configurazione
+# Test a request without specifying the configuration file
 echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server
 
-# Test di una richiesta con un file di configurazione specifico
+# Test a request with a specific configuration file
 echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server /path/to/config.json
 ```
 
-### Modalità streamable_http
+### streamable_http Mode
 
 ```bash
-# Test della connessione streamable_http
+# Test streamable_http connection
 curl -X POST http://localhost:8080/ \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}'
@@ -717,7 +717,6 @@ curl -X POST http://localhost:8080/ \
 
 ### stdio Connection
 
-```
 ```python
 import asyncio
 from mcp import Client
@@ -726,7 +725,7 @@ async def main():
     client = Client(connection_type="stdio")
     await client.initialize()
     
-    # Esempio: Leggi un record
+    # Example: Read a record
     resource = await client.get_resource("odoo://res.partner/1")
     print(resource.data)
 
@@ -734,7 +733,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Connessione streamable_http
+### streamable_http Connection
 
 ```python
 import asyncio
@@ -744,7 +743,7 @@ async def main():
     client = Client(connection_type="streamable_http")
     await client.initialize()
     
-    # Esempio: Leggi un record
+    # Example: Read a record
     resource = await client.get_resource("odoo://res.partner/1")
     print(resource.data)
 
@@ -752,74 +751,74 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-## Documentazione
+## Documentation
 
-La documentazione completa è disponibile nella directory `docs/`:
+Complete documentation is available in the `docs/` directory:
 
-- `mcp_protocol.md`: Documentazione del protocollo MCP
-- `odoo_server.md`: Documentazione del server Odoo
-- `server_usage.md`: Guida all'utilizzo del server
+- `mcp_protocol.md`: MCP protocol documentation
+- `odoo_server.md`: Odoo server documentation
+- `server_usage.md`: Server usage guide
 
-## Contribuire
+## Contributing
 
-1. Fork il repository
-2. Crea un branch per la tua feature (`git checkout -b feature/amazing-feature`)
-3. Commit le tue modifiche (`git commit -m 'Add amazing feature'`)
-4. Push al branch (`git push origin feature/amazing-feature`)
-5. Apri una Pull Request
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## Licenza
+## License
 
-Questo progetto è rilasciato sotto la licenza MIT. Vedi il file `LICENSE` per i dettagli.
+This project is released under the MIT License. See the `LICENSE` file for details.
 
-## Aggiornamento
+## Update
 
-### Aggiornamento da Source
+### Update from Source
 ```bash
-# Aggiorna il repository
+# Update repository
 git pull origin main
 
-# Reinstalla il pacchetto
+# Reinstall package
 pip install --upgrade .
 
-# Riavvia il server
+# Restart server
 systemctl restart odoo-mcp-server
 ```
 
-### Aggiornamento con Docker
+### Update with Docker
 ```bash
-# Aggiorna le immagini
+# Update images
 docker-compose pull
 
-# Riavvia i container
+# Restart containers
 docker-compose up -d
 ```
 
-## Disinstallazione
+## Uninstallation
 
-### Disinstallazione da Source
+### Uninstall from Source
 ```bash
-# Disinstalla il pacchetto
+# Uninstall package
 pip uninstall odoo-mcp-server
 
-# Rimuovi i file di configurazione
+# Remove configuration files
 rm -rf ~/.odoo-mcp-server
 ```
 
-### Disinstallazione con Docker
+### Uninstall with Docker
 ```bash
-# Ferma e rimuovi i container
+# Stop and remove containers
 docker-compose down
 
-# Rimuovi le immagini
+# Remove images
 docker-compose rm -f
 ```
 
-## Configurazione Avanzata
+## Advanced Configuration
 
-### Configurazione per Ambienti
+### Environment Configuration
 
-#### Sviluppo
+#### Development
 ```json
 {
     "protocol": "xmlrpc",
@@ -841,7 +840,7 @@ docker-compose rm -f
 }
 ```
 
-#### Produzione
+#### Production
 ```json
 {
     "protocol": "jsonrpc",
@@ -868,18 +867,18 @@ docker-compose rm -f
 }
 ```
 
-### Backup della Configurazione
+### Configuration Backup
 ```bash
-# Backup configurazione
+# Backup configuration
 cp odoo_mcp/config/config.json odoo_mcp/config/config.json.backup
 
-# Ripristino configurazione
+# Restore configuration
 cp odoo_mcp/config/config.json.backup odoo_mcp/config/config.json
 ```
 
-## Utilizzo Avanzato
+## Advanced Usage
 
-### Gestione degli Errori
+### Error Handling
 ```python
 from odoo_mcp.error_handling.exceptions import (
     AuthError, NetworkError, ProtocolError
@@ -888,28 +887,28 @@ from odoo_mcp.error_handling.exceptions import (
 try:
     await client.get_resource("odoo://res.partner/1")
 except AuthError as e:
-    logger.error(f"Errore di autenticazione: {e}")
-    # Gestione errore
+    logger.error(f"Authentication error: {e}")
+    # Error handling
 except NetworkError as e:
-    logger.error(f"Errore di rete: {e}")
-    # Gestione errore
+    logger.error(f"Network error: {e}")
+    # Error handling
 except ProtocolError as e:
-    logger.error(f"Errore di protocollo: {e}")
-    # Gestione errore
+    logger.error(f"Protocol error: {e}")
+    # Error handling
 ```
 
 ### Best Practices
 
-1. **Gestione delle Connessioni**:
+1. **Connection Management**:
    ```python
    async with Client() as client:
        await client.initialize()
-       # Operazioni
+       # Operations
    ```
 
-2. **Gestione della Cache**:
+2. **Cache Management**:
    ```python
-   # Configurazione cache
+   # Cache configuration
    cache_config = {
        'enabled': True,
        'ttl': 300,
@@ -917,14 +916,14 @@ except ProtocolError as e:
    }
    ```
 
-3. **Gestione delle Sessioni**:
+3. **Session Management**:
    ```python
-   # Creazione sessione
+   # Create session
    session = await client.create_session()
    
-   # Validazione sessione
+   # Validate session
    if await client.validate_session(session_id):
-       # Operazioni
+       # Operations
    ```
 
 ## Troubleshooting
