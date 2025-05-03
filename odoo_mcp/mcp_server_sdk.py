@@ -985,7 +985,7 @@ class OdooMCPServer:
                         mcp_request = MCPRequest(
                             method=request_data.get('method'),
                             parameters=params,
-                            id=request_data.get('id'),
+                            id=request_data.get('id', 0),  # Default to 0 if no id provided
                             headers={'X-Session-ID': session_id} if session_id else {}
                         )
                         
@@ -1001,7 +1001,7 @@ class OdooMCPServer:
                                     'code': -32603,
                                     'message': 'Internal error: Invalid response format'
                                 },
-                                'id': request_data.get('id')
+                                'id': request_data.get('id', 0)
                             }
                         
                         # Validate response structure
@@ -1013,7 +1013,7 @@ class OdooMCPServer:
                                     'code': -32603,
                                     'message': 'Internal error: Invalid response format'
                                 },
-                                'id': request_data.get('id')
+                                'id': request_data.get('id', 0)
                             }
                         
                         if 'id' not in response:
@@ -1024,7 +1024,7 @@ class OdooMCPServer:
                                     'code': -32603,
                                     'message': 'Internal error: Missing response ID'
                                 },
-                                'id': None
+                                'id': 0
                             }
                         
                         if 'result' not in response and 'error' not in response:
@@ -1035,7 +1035,7 @@ class OdooMCPServer:
                                     'code': -32603,
                                     'message': 'Internal error: Missing result/error field'
                                 },
-                                'id': response.get('id')
+                                'id': response.get('id', 0)
                             }
                         
                         # Prepare the response string with minimal separators and single newline
@@ -1061,7 +1061,7 @@ class OdooMCPServer:
                                 'code': -32700,
                                 'message': 'Parse error: Invalid JSON'
                             },
-                            'id': None
+                            'id': 0
                         }
                         error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
                         print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
@@ -1085,7 +1085,7 @@ class OdooMCPServer:
                             'code': -32603,
                             'message': str(e)
                         },
-                        'id': None
+                        'id': 0
                     }
                     error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
                     print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
@@ -1132,7 +1132,7 @@ class OdooMCPServer:
                                 'code': -32603,
                                 'message': 'Server not properly initialized'
                             },
-                            'id': request.id
+                            'id': request.id if request.id is not None else 0
                         }
                     response = await self._handle_initialize(request)
                 elif request.method == 'list_resources':
@@ -1159,7 +1159,7 @@ class OdooMCPServer:
                             'code': -32001,
                             'message': 'No session ID provided'
                         },
-                        'id': request.id
+                        'id': request.id if request.id is not None else 0
                     }
                 
                 try:
@@ -1173,7 +1173,7 @@ class OdooMCPServer:
                                 'code': -32001,
                                 'message': 'Invalid session'
                             },
-                            'id': request.id
+                            'id': request.id if request.id is not None else 0
                         }
                     
                     # Add session to request parameters
@@ -1195,7 +1195,7 @@ class OdooMCPServer:
                             'code': -32001,
                             'message': str(e)
                         },
-                        'id': request.id
+                        'id': request.id if request.id is not None else 0
                     }
                 except Exception as e:
                     logger.error(f"Error handling authenticated request: {str(e)}")
@@ -1205,13 +1205,13 @@ class OdooMCPServer:
                             'code': -32603,
                             'message': str(e)
                         },
-                        'id': request.id
+                        'id': request.id if request.id is not None else 0
                     }
             
             # Convert MCPResponse to JSON-RPC response
             response_dict = {
                 'jsonrpc': '2.0',
-                'id': request.id
+                'id': request.id if request.id is not None else 0
             }
             
             if response.success:
@@ -1233,7 +1233,7 @@ class OdooMCPServer:
                     'code': -32603,
                     'message': str(e)
                 },
-                'id': request.id
+                'id': request.id if request.id is not None else 0
             }
 
     async def stop(self) -> None:
