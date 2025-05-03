@@ -3,14 +3,50 @@ Odoo MCP Server SDK implementation.
 This module provides the main server implementation for Odoo MCP.
 """
 
+import sys
+import os
+import json
+
+# --- DEBUG STDIO PRECOCE: START ---
+# Logga un marker su stderr per indicare che il debug precoce è attivo
+try:
+    sys.stderr.buffer.write(b"[DEBUG_START_STDIO]\n")
+    sys.stderr.buffer.flush()
+
+    # Sostituisce temporaneamente sys.stdout.buffer.write per loggare ogni scrittura
+    original_stdout_buffer_write = sys.stdout.buffer.write
+    def debug_early_stdout_write(data):
+        try:
+            # Logga su stderr i byte esatti che stanno per essere scritti su stdout
+            sys.stderr.buffer.write(b"[DEBUG_EARLY_STDOUT] Writing bytes: ")
+            sys.stderr.buffer.write(repr(data).encode('utf-8')) # Usa repr per mostrare \n, ecc.
+            sys.stderr.buffer.write(b"\n")
+            sys.stderr.buffer.flush()
+        except Exception as e:
+            # Se loggare su stderr fallisce, usa sys.__stderr__
+            sys.__stderr__.write(f"[DEBUG_EARLY_STDOUT_ERROR] Failed to log early write: {e}\n".encode('utf-8'))
+            sys.__stderr__.flush()
+
+        # Scrivi i dati originali sul vero stdout
+        return original_stdout_buffer_write(data)
+
+    sys.stdout.buffer.write = debug_early_stdout_write
+
+    sys.stderr.buffer.write(b"[DEBUG_START_STDIO] stdout buffer monkeypatched.\n")
+    sys.stderr.buffer.flush()
+
+except Exception as e:
+    # Se il setup iniziale fallisce, stampa un errore critico usando il sys.stderr originale
+    sys.__stderr__.write(f"[DEBUG_START_STDIO_CRITICAL_ERROR] Failed early debug setup: {e}\n".encode('utf-8'))
+    sys.__stderr__.flush()
+# --- DEBUG STDIO PRECOCE: END ---
+
 import logging
 import asyncio
 from typing import Dict, Any, Optional, List, Union, Callable
 from fastmcp import FastMCP, MCPRequest, MCPResponse
 from fastmcp.decorators import mcp_handler, mcp_resource, mcp_tool
 from aiohttp import web
-import json
-import sys
 import io
 import contextlib
 
