@@ -560,7 +560,9 @@ class OdooMCPServer:
                 'create_session',
                 'login',
                 'resources/read',   # Add resources/read as public method
-                'resources_read'    # Add alternative format
+                'resources_read',   # Add alternative format
+                'resources/templates/list',  # Add templates list method
+                'resources_templates_list'   # Add alternative format
             }
             
             # Create MCP request object with all headers
@@ -1343,7 +1345,9 @@ class OdooMCPServer:
                 'create_session',
                 'login',
                 'resources/read',   # Add resources/read as public method
-                'resources_read'    # Add alternative format
+                'resources_read',   # Add alternative format
+                'resources/templates/list',  # Add templates list method
+                'resources_templates_list'   # Add alternative format
             }
             
             # Ensure request.id is never None
