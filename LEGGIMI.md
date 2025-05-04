@@ -185,6 +185,28 @@ Esempio di configurazione completa:
 }
 ```
 
+### Configurazione
+
+Puoi configurare il server tramite variabili d'ambiente in un file `.env` o direttamente in `docker-compose.yml`.
+
+**Nota:** Le variabili d'ambiente (da `.env` o dall'ambiente del container) hanno sempre la precedenza sui valori presenti in `config.json`.
+
+Variabili principali:
+- `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` (connessione Odoo)
+- `PROTOCOL`, `CONNECTION_TYPE`, `LOGGING_LEVEL` (server MCP)
+- `REQUESTS_PER_MINUTE`, `SSE_QUEUE_MAXSIZE`, `ALLOWED_ORIGINS` (avanzate)
+
+Esempio `.env`:
+```
+ODOO_URL=http://host.docker.internal:8069
+ODOO_DB=odoo
+ODOO_USER=admin
+ODOO_PASSWORD=admin
+PROTOCOL=xmlrpc
+CONNECTION_TYPE=streamable_http
+LOGGING_LEVEL=INFO
+```
+
 ## Avvio del Server
 
 Il server può essere avviato in due modalità: stdio (default) e streamable_http. Il file di configurazione è opzionale e, se non specificato, il server cercherà automaticamente il file in `odoo_mcp/config/config.json`.
@@ -638,3 +660,57 @@ Per supporto tecnico:
 1. Controlla la [documentazione](docs/)
 2. Apri una [issue](https://github.com/pandeussilvae/mcp-odoo-panda/issues)
 3. Contatta [support@techlab.it](mailto:support@techlab.it) 
+
+## Esecuzione con Docker
+
+Puoi eseguire il Server Odoo MCP in un container Docker usando i file `Dockerfile` e `docker-compose.yml` forniti.
+
+### Avvio rapido
+
+```bash
+docker-compose up -d
+```
+
+Questo comando:
+- Costruisce l'immagine dal Dockerfile.
+- Avvia il server MCP sulla porta 8080 (default).
+- Salva i log nella cartella `./logs`.
+
+### Configurazione
+
+Puoi configurare il server tramite variabili d'ambiente in un file `.env` o direttamente in `docker-compose.yml`.
+
+Variabili principali:
+- `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` (connessione Odoo)
+- `PROTOCOL`, `CONNECTION_TYPE`, `LOGGING_LEVEL` (server MCP)
+- `REQUESTS_PER_MINUTE`, `SSE_QUEUE_MAXSIZE`, `ALLOWED_ORIGINS` (avanzate)
+
+Esempio `.env`:
+```
+ODOO_URL=http://host.docker.internal:8069
+ODOO_DB=odoo
+ODOO_USER=admin
+ODOO_PASSWORD=admin
+PROTOCOL=xmlrpc
+CONNECTION_TYPE=streamable_http
+LOGGING_LEVEL=INFO
+```
+
+#### File di configurazione personalizzato
+
+Puoi montare il tuo file di configurazione:
+```yaml
+volumes:
+  - ./odoo_mcp/config/config.json:/app/odoo_mcp/config/config.json
+```
+
+#### Accesso al server
+
+- HTTP streaming: `POST http://localhost:8080/mcp`
+- SSE: `GET http://localhost:8080/sse`
+
+#### Stop del server
+
+```bash
+docker-compose down
+``` 

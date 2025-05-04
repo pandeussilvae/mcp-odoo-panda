@@ -185,6 +185,28 @@ Example of complete configuration:
 }
 ```
 
+### Configuration
+
+You can configure the server via environment variables in your `.env` file or directly in `docker-compose.yml`.
+
+**Note:** Environment variables (from `.env` or the container environment) always take precedence over values in `config.json`.
+
+Main variables:
+- `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` (Odoo connection)
+- `PROTOCOL`, `CONNECTION_TYPE`, `LOGGING_LEVEL` (MCP server)
+- `REQUESTS_PER_MINUTE`, `SSE_QUEUE_MAXSIZE`, `ALLOWED_ORIGINS` (advanced)
+
+Example `.env`:
+```
+ODOO_URL=http://host.docker.internal:8069
+ODOO_DB=odoo
+ODOO_USER=admin
+ODOO_PASSWORD=admin
+PROTOCOL=xmlrpc
+CONNECTION_TYPE=streamable_http
+LOGGING_LEVEL=INFO
+```
+
 ## Starting the Server
 
 The server can be started in two modes: stdio (default) and streamable_http. The configuration file is optional and, if not specified, the server will automatically look for the file in `odoo_mcp/config/config.json`.
@@ -638,4 +660,58 @@ For technical support:
 1. Check the [documentation](docs/)
 2. Open an [issue](https://github.com/pandeussilvae/mcp-odoo-panda/issues)
 3. Contact [support@techlab.it](mailto:support@techlab.it)
+
+## Running with Docker
+
+You can run the Odoo MCP Server in a Docker container using the provided `Dockerfile` and `docker-compose.yml`.
+
+### Quick Start
+
+```bash
+docker-compose up -d
+```
+
+This will:
+- Build the image from the Dockerfile.
+- Start the MCP server on port 8080 (default).
+- Persist logs in the `./logs` directory.
+
+### Configuration
+
+You can configure the server via environment variables in your `.env` file or directly in `docker-compose.yml`.
+
+Main variables:
+- `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` (Odoo connection)
+- `PROTOCOL`, `CONNECTION_TYPE`, `LOGGING_LEVEL` (MCP server)
+- `REQUESTS_PER_MINUTE`, `SSE_QUEUE_MAXSIZE`, `ALLOWED_ORIGINS` (advanced)
+
+Example `.env`:
+```
+ODOO_URL=http://host.docker.internal:8069
+ODOO_DB=odoo
+ODOO_USER=admin
+ODOO_PASSWORD=admin
+PROTOCOL=xmlrpc
+CONNECTION_TYPE=streamable_http
+LOGGING_LEVEL=INFO
+```
+
+#### Custom Configuration File
+
+You can mount your own config file:
+```yaml
+volumes:
+  - ./odoo_mcp/config/config.json:/app/odoo_mcp/config/config.json
+```
+
+#### Accessing the Server
+
+- HTTP streaming: `POST http://localhost:8080/mcp`
+- SSE: `GET http://localhost:8080/sse`
+
+#### Stopping the Server
+
+```bash
+docker-compose down
+```
 

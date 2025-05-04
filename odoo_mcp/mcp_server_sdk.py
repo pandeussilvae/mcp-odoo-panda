@@ -2134,6 +2134,42 @@ async def run_server(config: Dict[str, Any]) -> None:
             logger.info("Shutting down server...")
             await server.stop()
 
+def override_config_with_env(config):
+    env_map = {
+        'odoo_url': 'ODOO_URL',
+        'database': 'ODOO_DB',
+        'username': 'ODOO_USER',
+        'api_key': 'ODOO_PASSWORD',
+        'protocol': 'PROTOCOL',
+        'connection_type': 'CONNECTION_TYPE',
+        'log_level': 'LOGGING_LEVEL',
+        'requests_per_minute': 'REQUESTS_PER_MINUTE',
+        'rate_limit_max_wait_seconds': 'RATE_LIMIT_MAX_WAIT_SECONDS',
+        'pool_size': 'POOL_SIZE',
+        'timeout': 'TIMEOUT',
+        'session_timeout_minutes': 'SESSION_TIMEOUT_MINUTES',
+    }
+    for key, env_var in env_map.items():
+        if env_var in os.environ:
+            value = os.environ[env_var]
+            if key in ['requests_per_minute', 'rate_limit_max_wait_seconds', 'pool_size', 'timeout', 'session_timeout_minutes']:
+                try:
+                    value = int(value)
+                except Exception:
+                    pass
+            config[key] = value
+    # Override nested http config
+    if 'http' not in config:
+        config['http'] = {}
+    if 'HTTP_HOST' in os.environ:
+        config['http']['host'] = os.environ['HTTP_HOST']
+    if 'HTTP_PORT' in os.environ:
+        try:
+            config['http']['port'] = int(os.environ['HTTP_PORT'])
+        except Exception:
+            config['http']['port'] = os.environ['HTTP_PORT']
+    return config
+
 if __name__ == "__main__":
     import json
     import sys
@@ -2176,6 +2212,9 @@ if __name__ == "__main__":
     # Set MCP protocol in config if specified
     if mcp_protocol:
         config['connection_type'] = mcp_protocol
+    
+    # OVERRIDE: aggiorna config con variabili d'ambiente
+    config = override_config_with_env(config)
     
     # Now we can use logger for the rest of the operations
     logger = logging.getLogger(__name__)
