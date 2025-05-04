@@ -196,6 +196,18 @@ class StdoutMonitor:
         if self.debug_mode:
             print("[DEBUG_STDOUT_WRITE] Monitor enabled", file=sys.stderr, flush=True)
 
+# Utility per risposta errore JSON-RPC con id corretto
+
+def make_jsonrpc_error(id, code, message):
+    return {
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {
+            "code": code,
+            "message": message
+        }
+    }
+
 class OdooMCPServer:
     """Main Odoo MCP Server implementation."""
 
@@ -537,14 +549,7 @@ class OdooMCPServer:
             
             if not method:
                 logger.error("No method specified in request")
-                return web.json_response({
-                    'jsonrpc': '2.0',
-                    'error': {
-                        'code': -32600,
-                        'message': 'Invalid request: method is required'
-                    },
-                    'id': request_id
-                }, status=400)
+                return web.json_response(make_jsonrpc_error(request_id, -32600, 'Invalid request: method is required'), status=400)
             
             # Log the incoming request
             logger.info(f"Received request - Method: {method}, ID: {request_id}")
@@ -590,14 +595,7 @@ class OdooMCPServer:
                 if method == 'initialize':
                     if not hasattr(self, 'capabilities_manager'):
                         logger.error("CapabilitiesManager not initialized")
-                        return web.json_response({
-                            'jsonrpc': '2.0',
-                            'error': {
-                                'code': -32603,
-                                'message': 'Server not properly initialized'
-                            },
-                            'id': request_id
-                        }, status=500)
+                        return web.json_response(make_jsonrpc_error(request_id, -32603, 'Server not properly initialized'), status=500)
                     response = await self._handle_initialize(mcp_request)
                 elif method in ['list_resources', 'resources/list']:
                     response = await self._handle_list_resources(mcp_request)
@@ -623,14 +621,7 @@ class OdooMCPServer:
                     response = await self._handle_completion_complete(mcp_request)
                 else:
                     logger.error(f"Unhandled public method: {method}")
-                    return web.json_response({
-                        'jsonrpc': '2.0',
-                        'error': {
-                            'code': -32601,
-                            'message': f'Method not found: {method}'
-                        },
-                        'id': request_id
-                    }, status=404)
+                    return web.json_response(make_jsonrpc_error(request_id, -32601, f'Method not found: {method}'), status=404)
             else:
                 logger.info(f"Handling authenticated method: {method} (auth required)")
                 
@@ -640,28 +631,14 @@ class OdooMCPServer:
                 
                 if not session_id:
                     logger.warning(f"No session ID provided for authenticated method: {method}")
-                    return web.json_response({
-                        'jsonrpc': '2.0',
-                        'error': {
-                            'code': -32001,
-                            'message': 'No session ID provided'
-                        },
-                        'id': request_id
-                    }, status=401)
+                    return web.json_response(make_jsonrpc_error(request_id, -32001, 'No session ID provided'), status=401)
                 
                 try:
                     # Validate session using session manager
                     session = await self.session_manager.validate_session(session_id)
                     if not session:
                         logger.warning(f"Invalid session for method: {method}")
-                        return web.json_response({
-                            'jsonrpc': '2.0',
-                            'error': {
-                                'code': -32001,
-                                'message': 'Invalid session'
-                            },
-                            'id': request_id
-                        }, status=401)
+                        return web.json_response(make_jsonrpc_error(request_id, -32001, 'Invalid session'), status=401)
                     
                     # Add session to request parameters
                     mcp_request.parameters['session'] = session
@@ -676,24 +653,10 @@ class OdooMCPServer:
                         
                 except AuthError as e:
                     logger.error(f"Authentication error for method {method}: {str(e)}")
-                    return web.json_response({
-                        'jsonrpc': '2.0',
-                        'error': {
-                            'code': -32001,
-                            'message': str(e)
-                        },
-                        'id': request_id
-                    }, status=401)
+                    return web.json_response(make_jsonrpc_error(request_id, -32001, str(e)), status=401)
                 except Exception as e:
                     logger.error(f"Error handling authenticated request: {str(e)}")
-                    return web.json_response({
-                        'jsonrpc': '2.0',
-                        'error': {
-                            'code': -32603,
-                            'message': str(e)
-                        },
-                        'id': request_id
-                    }, status=500)
+                    return web.json_response(make_jsonrpc_error(request_id, -32603, str(e)), status=500)
             
             # Convert MCPResponse to JSON-RPC response
             response_dict = {
@@ -714,24 +677,10 @@ class OdooMCPServer:
             
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in request body: {str(e)}")
-            return web.json_response({
-                'jsonrpc': '2.0',
-                'error': {
-                    'code': -32700,
-                    'message': 'Parse error: Invalid JSON'
-                },
-                'id': None
-            }, status=400)
+            return web.json_response(make_jsonrpc_error(None, -32700, 'Parse error: Invalid JSON'), status=400)
         except Exception as e:
             logger.error(f"Error handling HTTP request: {str(e)}")
-            return web.json_response({
-                'jsonrpc': '2.0',
-                'error': {
-                    'code': -32603,
-                    'message': str(e)
-                },
-                'id': None
-            }, status=500)
+            return web.json_response(make_jsonrpc_error(None, -32603, str(e)), status=500)
 
     async def _handle_initialize(self, request: MCPRequest) -> MCPResponse:
         """Handle initialize request."""
