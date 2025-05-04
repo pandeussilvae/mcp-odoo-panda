@@ -1430,7 +1430,7 @@ class OdooMCPServer:
         return response
 
     async def _handle_chunked_streaming(self, request):
-        """Handle HTTP streaming chunked (streamable_http) connections with real event support."""
+        """Handle HTTP streaming chunked (streamable_http) connections with real event support (multi-request per connessione)."""
         response = web.StreamResponse(
             status=200,
             reason='OK',
@@ -1448,89 +1448,83 @@ class OdooMCPServer:
         import aiohttp
         from datetime import datetime
 
-        try:
-            # Read the initial request
-            try:
-                data = await request.content.read()
-                if not data:
-                    logger.warning("Empty request body received")
-                    return response
-                
-                request_data = json.loads(data.decode())
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in request body: {str(e)}")
-                error_response = {
-                    "jsonrpc": "2.0",
-                    "error": {"code": -32700, "message": f"Parse error: {str(e)}"},
-                    "id": None
-                }
-                await response.write((json.dumps(error_response) + "\n").encode('utf-8'))
-                return response
-            except Exception as e:
-                logger.error(f"Error reading request: {str(e)}")
-                error_response = {
-                    "jsonrpc": "2.0",
-                    "error": {"code": -32603, "message": str(e)},
-                    "id": None
-                }
-                await response.write((json.dumps(error_response) + "\n").encode('utf-8'))
-                return response
+        buffer = b''
+        last_activity = datetime.now()
+        heartbeat_interval = 30  # seconds
+        max_idle = heartbeat_interval
+        decoder = json.JSONDecoder()
 
-            # Process the initial request
-            method = request_data.get('method')
-            request_id = request_data.get('id')
-            params = request_data.get('params', {})
-            
-            # Create MCP request
-            mcp_request = MCPRequest(
-                method=method,
-                parameters=params,
-                id=request_id,
-                headers=dict(request.headers)
-            )
-            
-            # Handle the request, passando i dati già letti
-            mcp_response = await self._handle_http_request(request, data=request_data)
-            
-            # Extract response JSON
-            if hasattr(mcp_response, 'text') and callable(mcp_response.text):
-                result_json = await mcp_response.text()
-            elif isinstance(mcp_response, str):
-                result_json = mcp_response
-            elif hasattr(mcp_response, 'body'):
-                result_json = mcp_response.body.decode() if isinstance(mcp_response.body, bytes) else str(mcp_response.body)
-            else:
-                result_json = json.dumps({
-                    "jsonrpc": "2.0",
-                    "error": {"code": -32603, "message": "Internal error"},
-                    "id": request_id
-                })
-            
-            # Send the response
-            await response.write((result_json.strip() + "\n").encode('utf-8'))
-            
-            # Start heartbeat loop
-            last_activity = datetime.now()
+        async def send_heartbeat():
+            heartbeat = {
+                "jsonrpc": "2.0",
+                "method": "heartbeat",
+                "params": {"timestamp": datetime.now().isoformat()}
+            }
+            await response.write((json.dumps(heartbeat) + "\n").encode('utf-8'))
+
+        try:
             while True:
                 try:
-                    # Send heartbeat every 30 seconds
-                    await asyncio.sleep(30)
-                    heartbeat = {
-                        "jsonrpc": "2.0",
-                        "method": "heartbeat",
-                        "params": {"timestamp": datetime.now().isoformat()}
-                    }
-                    await response.write((json.dumps(heartbeat) + "\n").encode('utf-8'))
-                    
+                    # Wait for data or timeout for heartbeat
+                    try:
+                        chunk = await asyncio.wait_for(request.content.read(4096), timeout=heartbeat_interval)
+                    except asyncio.TimeoutError:
+                        # Timeout: send heartbeat
+                        await send_heartbeat()
+                        continue
+
+                    if not chunk:
+                        # Client closed connection
+                        break
+                    buffer += chunk
+                    # Estraggo tutti gli oggetti JSON completi dal buffer
+                    while buffer:
+                        try:
+                            # Trova il primo oggetto JSON completo
+                            obj, idx = decoder.raw_decode(buffer.decode(errors='ignore'))
+                            # Processa la richiesta
+                            method = obj.get('method')
+                            request_id = obj.get('id')
+                            params = obj.get('params', {})
+                            mcp_request = MCPRequest(
+                                method=method,
+                                parameters=params,
+                                id=request_id,
+                                headers=dict(request.headers)
+                            )
+                            # Rispondi subito
+                            mcp_response = await self._handle_http_request(request, data=obj)
+                            if hasattr(mcp_response, 'text') and callable(mcp_response.text):
+                                result_json = await mcp_response.text()
+                            elif isinstance(mcp_response, str):
+                                result_json = mcp_response
+                            elif hasattr(mcp_response, 'body'):
+                                result_json = mcp_response.body.decode() if isinstance(mcp_response.body, bytes) else str(mcp_response.body)
+                            else:
+                                result_json = json.dumps({
+                                    "jsonrpc": "2.0",
+                                    "error": {"code": -32603, "message": "Internal error"},
+                                    "id": request_id
+                                })
+                            await response.write((result_json.strip() + "\n").encode('utf-8'))
+                            last_activity = datetime.now()
+                            # Rimuovi l'oggetto JSON processato dal buffer
+                            buffer = buffer[idx:]
+                            # Salta eventuali whitespace
+                            buffer = buffer.lstrip() if isinstance(buffer, bytes) else buffer.lstrip(b' \r\n\t')
+                        except json.JSONDecodeError:
+                            # Non c'è ancora un oggetto JSON completo
+                            break
                 except asyncio.CancelledError:
-                    logger.info("Heartbeat loop cancelled")
                     break
                 except Exception as e:
-                    logger.error(f"Error in heartbeat loop: {str(e)}")
-                    break
-                    
-        except asyncio.CancelledError:
-            logger.info("Stream handler cancelled")
+                    logger.error(f"Error in streaming handler: {str(e)}")
+                    error_response = {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32603, "message": str(e)},
+                        "id": None
+                    }
+                    await response.write((json.dumps(error_response) + "\n").encode('utf-8'))
         except Exception as e:
             logger.error(f"Error in stream handler: {str(e)}")
         finally:
@@ -1538,7 +1532,6 @@ class OdooMCPServer:
                 await response.write_eof()
             except aiohttp.ClientConnectionResetError:
                 logger.info("Client closed the connection before write_eof")
-            
         return response
 
     async def _handle_http_post(self, request):
