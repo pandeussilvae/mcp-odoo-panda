@@ -1468,8 +1468,12 @@ class OdooMCPServer:
             # Usa la stessa logica di _handle_http_request per ottenere la risposta MCP
             mcp_response = await self._handle_http_request(request)
             # mcp_response è una web.Response, estrai il JSON
-            if hasattr(mcp_response, 'text'):
+            if hasattr(mcp_response, 'text') and callable(mcp_response.text):
                 result_json = await mcp_response.text()
+            elif isinstance(mcp_response, str):
+                result_json = mcp_response
+            elif hasattr(mcp_response, 'body'):
+                result_json = mcp_response.body.decode() if isinstance(mcp_response.body, bytes) else str(mcp_response.body)
             else:
                 result_json = json.dumps({"jsonrpc": "2.0", "error": {"code": -32603, "message": "Internal error"}, "id": request_id})
             # Invia la risposta come evento reale
