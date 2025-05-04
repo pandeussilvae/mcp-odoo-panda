@@ -199,6 +199,9 @@ class StdoutMonitor:
 # Utility per risposta errore JSON-RPC con id corretto
 
 def make_jsonrpc_error(id, code, message):
+    # Ensure id is never None
+    if id is None:
+        id = 0
     return {
         "jsonrpc": "2.0",
         "id": id,
@@ -544,7 +547,7 @@ class OdooMCPServer:
             
             # Extract MCP request details
             method = data.get('method')
-            request_id = data.get('id')
+            request_id = data.get('id', 0)  # Default to 0 if no id
             params = data.get('params', {})  # Standard JSON-RPC uses 'params'
             
             if not method:
@@ -677,10 +680,10 @@ class OdooMCPServer:
             
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in request body: {str(e)}")
-            return web.json_response(make_jsonrpc_error(None, -32700, 'Parse error: Invalid JSON'), status=400)
+            return web.json_response(make_jsonrpc_error(0, -32700, 'Parse error: Invalid JSON'), status=400)
         except Exception as e:
             logger.error(f"Error handling HTTP request: {str(e)}")
-            return web.json_response(make_jsonrpc_error(None, -32603, str(e)), status=500)
+            return web.json_response(make_jsonrpc_error(0, -32603, str(e)), status=500)
 
     async def _handle_initialize(self, request: MCPRequest) -> MCPResponse:
         """Handle initialize request."""
@@ -1546,7 +1549,7 @@ class OdooMCPServer:
                             obj, idx = decoder.raw_decode(buffer.decode(errors='ignore'))
                             # Processa la richiesta
                             method = obj.get('method')
-                            request_id = obj.get('id')
+                            request_id = obj.get('id', 0)  # Default to 0 if no id
                             params = obj.get('params', {})
                             mcp_request = MCPRequest(
                                 method=method,
@@ -1586,7 +1589,7 @@ class OdooMCPServer:
                     error_response = {
                         "jsonrpc": "2.0",
                         "error": {"code": -32603, "message": str(e)},
-                        "id": None
+                        "id": request_id if 'request_id' in locals() else 0
                     }
                     await response.write((json.dumps(error_response) + "\n").encode('utf-8'))
                     await response.write(b"")
@@ -1604,6 +1607,7 @@ class OdooMCPServer:
         """Handle classic HTTP POST (stateless, single request/response)."""
         try:
             data = await request.json()
+            request_id = data.get('id', 0)  # Default to 0 if no id
             # Usa la stessa logica di _handle_http_request per processare la richiesta
             response = await self._handle_http_request(request)
             return response
@@ -1614,7 +1618,7 @@ class OdooMCPServer:
                     'code': -32603,
                     'message': str(e)
                 },
-                'id': None
+                'id': request_id if 'request_id' in locals() else 0
             }, status=500)
 
     async def start(self) -> None:
