@@ -1449,114 +1449,91 @@ class OdooMCPServer:
         from datetime import datetime
 
         try:
-            # Create a queue for incoming requests
-            request_queue = asyncio.Queue()
-            
-            # Start a task to read requests
-            async def read_requests():
-                try:
-                    while True:
-                        # Read the request body
-                        data = await request.content.read(8192)  # Read in chunks
-                        if not data:
-                            # No more data, but connection might still be open
-                            await asyncio.sleep(0.1)
-                            continue
-                            
-                        try:
-                            # Try to parse as JSON
-                            request_data = json.loads(data.decode())
-                            await request_queue.put(request_data)
-                        except json.JSONDecodeError:
-                            logger.warning("Invalid JSON received in stream")
-                            continue
-                except asyncio.CancelledError:
-                    logger.info("Request reader cancelled")
-                except Exception as e:
-                    logger.error(f"Error reading requests: {str(e)}")
+            # Read the initial request
+            try:
+                data = await request.content.read()
+                if not data:
+                    logger.warning("Empty request body received")
+                    return response
+                
+                request_data = json.loads(data.decode())
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in request body: {str(e)}")
+                error_response = {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32700, "message": f"Parse error: {str(e)}"},
+                    "id": None
+                }
+                await response.write((json.dumps(error_response) + "\n").encode('utf-8'))
+                return response
+            except Exception as e:
+                logger.error(f"Error reading request: {str(e)}")
+                error_response = {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32603, "message": str(e)},
+                    "id": None
+                }
+                await response.write((json.dumps(error_response) + "\n").encode('utf-8'))
+                return response
 
-            # Start the request reader
-            reader_task = asyncio.create_task(read_requests())
+            # Process the initial request
+            method = request_data.get('method')
+            request_id = request_data.get('id')
+            params = request_data.get('params', {})
             
-            # Process requests and send responses
+            # Create MCP request
+            mcp_request = MCPRequest(
+                method=method,
+                parameters=params,
+                id=request_id,
+                headers=dict(request.headers)
+            )
+            
+            # Handle the request
+            mcp_response = await self._handle_http_request(request)
+            
+            # Extract response JSON
+            if hasattr(mcp_response, 'text') and callable(mcp_response.text):
+                result_json = await mcp_response.text()
+            elif isinstance(mcp_response, str):
+                result_json = mcp_response
+            elif hasattr(mcp_response, 'body'):
+                result_json = mcp_response.body.decode() if isinstance(mcp_response.body, bytes) else str(mcp_response.body)
+            else:
+                result_json = json.dumps({
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32603, "message": "Internal error"},
+                    "id": request_id
+                })
+            
+            # Send the response
+            await response.write((result_json.strip() + "\n").encode('utf-8'))
+            
+            # Start heartbeat loop
             last_activity = datetime.now()
             while True:
                 try:
-                    # Wait for a request with timeout
-                    try:
-                        request_data = await asyncio.wait_for(request_queue.get(), timeout=30)
-                        last_activity = datetime.now()
-                    except asyncio.TimeoutError:
-                        # No request received, send heartbeat
-                        heartbeat = {
-                            "jsonrpc": "2.0",
-                            "method": "heartbeat",
-                            "params": {"timestamp": datetime.now().isoformat()}
-                        }
-                        await response.write((json.dumps(heartbeat) + "\n").encode('utf-8'))
-                        await response.drain()
-                        continue
-
-                    # Process the request
-                    method = request_data.get('method')
-                    request_id = request_data.get('id')
-                    params = request_data.get('params', {})
-                    
-                    # Create MCP request
-                    mcp_request = MCPRequest(
-                        method=method,
-                        parameters=params,
-                        id=request_id,
-                        headers=dict(request.headers)
-                    )
-                    
-                    # Handle the request
-                    mcp_response = await self._handle_http_request(request)
-                    
-                    # Extract response JSON
-                    if hasattr(mcp_response, 'text') and callable(mcp_response.text):
-                        result_json = await mcp_response.text()
-                    elif isinstance(mcp_response, str):
-                        result_json = mcp_response
-                    elif hasattr(mcp_response, 'body'):
-                        result_json = mcp_response.body.decode() if isinstance(mcp_response.body, bytes) else str(mcp_response.body)
-                    else:
-                        result_json = json.dumps({
-                            "jsonrpc": "2.0",
-                            "error": {"code": -32603, "message": "Internal error"},
-                            "id": request_id
-                        })
-                    
-                    # Send the response
-                    await response.write((result_json.strip() + "\n").encode('utf-8'))
-                    await response.drain()
+                    # Send heartbeat every 30 seconds
+                    await asyncio.sleep(30)
+                    heartbeat = {
+                        "jsonrpc": "2.0",
+                        "method": "heartbeat",
+                        "params": {"timestamp": datetime.now().isoformat()}
+                    }
+                    await response.write((json.dumps(heartbeat) + "\n").encode('utf-8'))
                     
                 except asyncio.CancelledError:
-                    logger.info("Request processor cancelled")
+                    logger.info("Heartbeat loop cancelled")
                     break
                 except Exception as e:
-                    logger.error(f"Error processing request: {str(e)}")
-                    error_response = {
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32603, "message": str(e)},
-                        "id": request_data.get('id') if 'request_data' in locals() else None
-                    }
-                    await response.write((json.dumps(error_response) + "\n").encode('utf-8'))
-                    await response.drain()
+                    logger.error(f"Error in heartbeat loop: {str(e)}")
+                    break
                     
         except asyncio.CancelledError:
             logger.info("Stream handler cancelled")
         except Exception as e:
             logger.error(f"Error in stream handler: {str(e)}")
         finally:
-            # Clean up
-            if 'reader_task' in locals():
-                reader_task.cancel()
-                try:
-                    await reader_task
-                except asyncio.CancelledError:
-                    pass
-            
             try:
                 await response.write_eof()
             except aiohttp.ClientConnectionResetError:
