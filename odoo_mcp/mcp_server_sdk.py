@@ -1493,8 +1493,29 @@ class OdooMCPServer:
             session = mcp_request.parameters.get('session')
             if session and isinstance(session, dict):
                 session_id = session.get('id')
+        # Se la richiesta è 'initialize', broadcast a tutte le code SSE
+        if mcp_request and getattr(mcp_request, 'method', None) == 'initialize':
+            if mcp_response is not None:
+                if hasattr(mcp_response, 'success') and mcp_response.success:
+                    event = {
+                        "jsonrpc": "2.0",
+                        "id": getattr(mcp_request, 'id', None),
+                        "result": getattr(mcp_response, 'data', None)
+                    }
+                else:
+                    event = {
+                        "jsonrpc": "2.0",
+                        "id": getattr(mcp_request, 'id', None),
+                        "error": {
+                            "code": -32000,
+                            "message": getattr(mcp_response, 'error', 'Unknown error')
+                        }
+                    }
+                for queue in self._sse_queues.values():
+                    await queue.put(event)
+            return
+        # Altrimenti, normale invio per sessione
         if session_id:
-            # Prepara evento JSON-RPC 2.0
             if mcp_response is not None:
                 if hasattr(mcp_response, 'success') and mcp_response.success:
                     event = {
