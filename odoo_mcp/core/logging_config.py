@@ -124,6 +124,28 @@ def setup_logging(level: str = 'INFO', protocol: str = 'stdio') -> None:
 
     logging.info("Logging setup complete.")
 
+def setup_logging_from_config(logging_config: dict):
+    """
+    Set up logging configuration from a logging config dictionary (as in config.json).
+    Supports multiple handlers (StreamHandler, FileHandler) and custom formats.
+    """
+    import logging
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging_config.get('level', 'INFO').upper())
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    for handler_cfg in logging_config.get('handlers', []):
+        if handler_cfg['type'] == 'StreamHandler':
+            handler = logging.StreamHandler()
+        elif handler_cfg['type'] == 'FileHandler':
+            handler = logging.FileHandler(handler_cfg['filename'])
+        else:
+            continue
+        handler.setLevel(handler_cfg['level'].upper())
+        formatter = logging.Formatter(logging_config.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+
 # Example usage:
 if __name__ == "__main__":
     example_config_console = {

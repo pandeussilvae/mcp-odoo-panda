@@ -70,7 +70,7 @@ from odoo_mcp.error_handling.exceptions import (
     RateLimitError, ResourceError, ToolError, PromptError,
     CacheError, BusError
 )
-from odoo_mcp.core.logging_config import setup_logging
+from odoo_mcp.core.logging_config import setup_logging, setup_logging_from_config
 
 # Constants
 SERVER_NAME = "odoo-mcp-server"
@@ -1825,6 +1825,12 @@ async def run_server(config: Dict[str, Any]) -> None:
         logger.info("Starting server...")
         await server.start()
         
+        # Now that we have the config, import and setup logging
+        if 'logging' in config:
+            setup_logging_from_config(config['logging'])
+        else:
+            setup_logging(config.get('log_level', 'INFO'), config.get('connection_type', 'stdio'))
+        
         # Keep the server running until interrupted
         if server.mcp_protocol == 'streamable_http':
             if not hasattr(server, '_started_mcp_server_instance') or server._started_mcp_server_instance is None:
@@ -1899,10 +1905,6 @@ if __name__ == "__main__":
     # Set MCP protocol in config if specified
     if mcp_protocol:
         config['connection_type'] = mcp_protocol
-    
-    # Now that we have the config, import and setup logging
-    from odoo_mcp.core.logging_config import setup_logging
-    setup_logging(config.get('log_level', 'INFO'), config.get('connection_type', 'stdio'))
     
     # Now we can use logger for the rest of the operations
     logger = logging.getLogger(__name__)

@@ -502,39 +502,32 @@ except ProtocolError as e:
 
 ### Log di Errore
 
-I log vengono scritti in base alla configurazione nel file `config.json`. Per default:
+**Nota importante:** Nella versione attuale, il server Odoo MCP può scrivere i log in più destinazioni a seconda della configurazione:
 
-1. **Log su Console**:
-   - Tutti i log vengono scritti su stderr
-   - In modalità stdio, i log non vengono scritti su stdout per evitare interferenze con il protocollo
+- Se nella sezione `logging` di `config.json` è presente un handler di tipo `StreamHandler`, i log vengono scritti sulla **console** (stderr).
+- Se è presente un handler di tipo `FileHandler`, i log vengono scritti anche su **file** nel percorso specificato dal campo `filename`.
+- Se non esiste la sezione `logging`, i log vengono scritti solo su stderr (console).
 
-2. **Log su File**:
-   - I log vengono scritti nel file specificato nella configurazione
-   - Esempio di configurazione logging:
-   ```json
-   "logging": {
-       "level": "INFO",
-       "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-       "handlers": [
-           {
-               "type": "StreamHandler",
-               "level": "INFO"
-           },
-           {
-               "type": "FileHandler",
-               "filename": "server.log",
-               "level": "DEBUG"
-           }
-       ]
-   }
-   ```
-
-3. **Livelli di Log**:
-   - DEBUG: Informazioni dettagliate per il debug
-   - INFO: Informazioni generali sul funzionamento
-   - WARNING: Avvisi su potenziali problemi
-   - ERROR: Errori che non impediscono il funzionamento
-   - CRITICAL: Errori critici che impediscono il funzionamento
+**Esempio:**
+```json
+"logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "handlers": [
+        {
+            "type": "StreamHandler",
+            "level": "INFO"
+        },
+        {
+            "type": "FileHandler",
+            "filename": "server.log",
+            "level": "DEBUG"
+        }
+    ]
+}
+```
+- In questo esempio, i log vanno sia sulla console che nel file `server.log` nella cartella da cui avvii il server.
+- Puoi cambiare il percorso del file modificando il campo `filename` (es: `"filename": "logs/dev.log"` o un percorso assoluto).
 
 ### Supporto
 
@@ -1034,39 +1027,32 @@ except ProtocolError as e:
 
 ### Error Logs
 
-Logs are written according to the configuration in the `config.json`. By default:
+**Important note:** In the current version, the Odoo MCP server can write logs to multiple destinations depending on configuration:
 
-1. **Console Logs**:
-   - All logs are written to stderr
-   - In stdio mode, logs are not written to stdout to avoid protocol interference
+- If the `logging` section in `config.json` includes a `StreamHandler`, logs are written to the **console** (stderr).
+- If a `FileHandler` is present, logs are also written to a **file** at the path specified by `filename`.
+- If there is no `logging` section, logs are written only to stderr (console).
 
-2. **File Logs**:
-   - Logs are written to the file specified in the configuration
-   - Example logging configuration:
-   ```json
-   "logging": {
-       "level": "INFO",
-       "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-       "handlers": [
-           {
-               "type": "StreamHandler",
-               "level": "INFO"
-           },
-           {
-               "type": "FileHandler",
-               "filename": "server.log",
-               "level": "DEBUG"
-           }
-       ]
-   }
-   ```
-
-3. **Log Levels**:
-   - DEBUG: Detailed information for debugging
-   - INFO: General information about operation
-   - WARNING: Warnings about potential issues
-   - ERROR: Errors that don't prevent operation
-   - CRITICAL: Critical errors that prevent operation
+**Example:**
+```json
+"logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "handlers": [
+        {
+            "type": "StreamHandler",
+            "level": "INFO"
+        },
+        {
+            "type": "FileHandler",
+            "filename": "server.log",
+            "level": "DEBUG"
+        }
+    ]
+}
+```
+- In this example, logs go both to the console and to the file `server.log` in the directory where you start the server.
+- You can change the log file path by editing the `filename` field (e.g., `"filename": "logs/dev.log"` or an absolute path).
 
 ### Support
 
