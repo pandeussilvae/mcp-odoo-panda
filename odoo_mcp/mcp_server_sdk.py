@@ -1430,7 +1430,7 @@ class OdooMCPServer:
         return response
 
     async def _handle_chunked_streaming(self, request):
-        """Handle HTTP streaming chunked (streamable_http) connections."""
+        """Handle HTTP streaming chunked (streamable_http) connections with real event support."""
         response = web.StreamResponse(
             status=200,
             reason='OK',
@@ -1446,14 +1446,40 @@ class OdooMCPServer:
         import asyncio
         import json
         try:
-            # Esempio: invia 5 messaggi JSON, uno ogni 2 secondi
-            for i in range(5):
-                message = {"event": "update", "count": i}
-                chunk = json.dumps(message) + "\n"
-                await response.write(chunk.encode('utf-8'))
-                await response.drain()
-                await asyncio.sleep(2)
-            # Qui puoi inserire la logica per inviare eventi reali
+            # Leggi la richiesta iniziale JSON-RPC
+            try:
+                data = await request.json()
+            except Exception as e:
+                error = {"jsonrpc": "2.0", "error": {"code": -32700, "message": f"Parse error: {str(e)}"}, "id": None}
+                await response.write((json.dumps(error) + "\n").encode('utf-8'))
+                await response.write_eof()
+                return response
+
+            # Processa la richiesta come fa _handle_http_request
+            method = data.get('method')
+            request_id = data.get('id')
+            params = data.get('params', {})
+            mcp_request = MCPRequest(
+                method=method,
+                parameters=params,
+                id=request_id,
+                headers=dict(request.headers)
+            )
+            # Usa la stessa logica di _handle_http_request per ottenere la risposta MCP
+            mcp_response = await self._handle_http_request(request)
+            # mcp_response è una web.Response, estrai il JSON
+            if hasattr(mcp_response, 'text'):
+                result_json = await mcp_response.text()
+            else:
+                result_json = json.dumps({"jsonrpc": "2.0", "error": {"code": -32603, "message": "Internal error"}, "id": request_id})
+            # Invia la risposta come evento reale
+            await response.write((result_json.strip() + "\n").encode('utf-8'))
+
+            # Ciclo heartbeat: invia un messaggio ogni 30 secondi
+            while True:
+                await asyncio.sleep(30)
+                heartbeat = {"jsonrpc": "2.0", "method": "heartbeat"}
+                await response.write((json.dumps(heartbeat) + "\n").encode('utf-8'))
         except asyncio.CancelledError:
             pass
         finally:
