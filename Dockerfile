@@ -18,7 +18,16 @@ COPY LICENSE ./
 # Install Python dependencies
 RUN pip install --upgrade pip && \
     pip install .[caching] && \
-    pip install pytest pytest-asyncio flake8 mypy aiohttp fastmcp
+    pip install \
+    fastmcp \
+    aiohttp \
+    httpx \
+    pydantic \
+    cachetools \
+    pytest \
+    pytest-asyncio \
+    flake8 \
+    mypy
 
 # Copy application source code
 COPY ./odoo_mcp ./odoo_mcp

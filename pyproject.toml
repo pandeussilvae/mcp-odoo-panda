@@ -27,6 +27,7 @@ classifiers = [
 keywords = ["odoo", "mcp", "erp", "integration", "rpc", "model-context-protocol"]
 
 dependencies = [
+    "fastmcp>=0.1.0",
     "requests>=2.20.0",
     "httpx>=0.20.0",
     "PyYAML>=5.4",
@@ -34,9 +35,10 @@ dependencies = [
     "aiohttp>=3.8.0",
     "aiohttp-sse>=2.1.0",
     "websockets>=10.0",
+    "cachetools>=4.2",
 ]
 
-# Optional dependencies allow installing cachetools explicitly
+# Optional dependencies
 [project.optional-dependencies]
 caching = ["cachetools>=4.2"]
 dev = [
@@ -56,8 +58,7 @@ Documentation = "https://github.com/pandeussilvae/mcp-odoo-panda/tree/main/docs"
 Repository = "https://github.com/pandeussilvae/mcp-odoo-panda.git"
 Issues = "https://github.com/pandeussilvae/mcp-odoo-panda/issues"
 
-# Entry point to run the server (optional)
-# This allows running 'odoo-mcp-server' from command line after installation
+# Entry point to run the server
 [project.scripts]
 odoo-mcp-server = "odoo_mcp.core.mcp_server:main_cli"
 
