@@ -1401,8 +1401,29 @@ class OdooMCPServer:
         except Exception as e:
             raise ToolError(f"Error executing tool: {str(e)}", original_exception=e)
 
+    # --- SSE Event Queues per sessione ---
+    _sse_queues = {}  # session_id -> asyncio.Queue
+
+    @classmethod
+    def _get_sse_queue(cls, session_id):
+        import asyncio
+        if session_id not in cls._sse_queues:
+            cls._sse_queues[session_id] = asyncio.Queue()
+        return cls._sse_queues[session_id]
+
+    @classmethod
+    def _remove_sse_queue(cls, session_id):
+        if session_id in cls._sse_queues:
+            del cls._sse_queues[session_id]
+
+    @classmethod
+    async def _publish_sse_event(cls, session_id, event):
+        queue = cls._sse_queues.get(session_id)
+        if queue:
+            await queue.put(event)
+
     async def _handle_sse_request(self, request):
-        """Handle SSE (Server-Sent Events) connections with JSON-RPC 2.0 heartbeat messages only."""
+        """Handle SSE (Server-Sent Events) connections with JSON-RPC 2.0 heartbeat and real MCP events."""
         response = web.StreamResponse(
             status=200,
             reason='OK',
@@ -1418,26 +1439,102 @@ class OdooMCPServer:
         import asyncio
         import json
         from datetime import datetime
+
+        # Ricava session_id dalla query string o header
+        session_id = request.query.get('session_id') or request.headers.get('X-Session-ID')
+        if not session_id:
+            # Genera una sessione temporanea per test/debug
+            import uuid
+            session_id = str(uuid.uuid4())
+        queue = self._get_sse_queue(session_id)
+        logger.info(f"SSE client connected: session_id={session_id}")
+
         try:
             while True:
-                # JSON-RPC 2.0 heartbeat
-                payload = {
-                    "jsonrpc": "2.0",
-                    "method": "heartbeat",
-                    "params": {"timestamp": datetime.now().isoformat()}
-                }
-                data = f'data: {json.dumps(payload)}\n\n'
-                await response.write(data.encode('utf-8'))
-                await response.write(b"")
+                sent_event = False
+                # Invia tutti gli eventi reali in coda
+                while not queue.empty():
+                    event = await queue.get()
+                    data = f'data: {json.dumps(event)}\n\n'
+                    await response.write(data.encode('utf-8'))
+                    await response.write(b"")
+                    logger.debug(f"Sent SSE event to {session_id}: {event}")
+                    sent_event = True
+                if not sent_event:
+                    # Heartbeat JSON-RPC
+                    payload = {
+                        "jsonrpc": "2.0",
+                        "method": "heartbeat",
+                        "params": {"timestamp": datetime.now().isoformat()}
+                    }
+                    data = f'data: {json.dumps(payload)}\n\n'
+                    await response.write(data.encode('utf-8'))
+                    await response.write(b"")
+                    logger.debug(f"Sent SSE heartbeat to {session_id}")
                 await asyncio.sleep(5)
         except asyncio.CancelledError:
             pass
         finally:
+            self._remove_sse_queue(session_id)
             try:
                 await response.write_eof()
             except Exception:
                 pass
+            logger.info(f"SSE client disconnected: session_id={session_id}")
         return response
+
+    # Bridge: pubblica risposte MCP nella coda SSE se session_id presente
+    async def _maybe_publish_sse(self, mcp_request, mcp_response):
+        session_id = None
+        # Cerca session_id in vari punti
+        if hasattr(mcp_request, 'headers') and mcp_request.headers:
+            session_id = mcp_request.headers.get('X-Session-ID')
+        if not session_id and hasattr(mcp_request, 'parameters') and isinstance(mcp_request.parameters, dict):
+            session = mcp_request.parameters.get('session')
+            if session and isinstance(session, dict):
+                session_id = session.get('id')
+        if session_id:
+            # Prepara evento JSON-RPC 2.0
+            if mcp_response is not None:
+                if hasattr(mcp_response, 'success') and mcp_response.success:
+                    event = {
+                        "jsonrpc": "2.0",
+                        "id": getattr(mcp_request, 'id', None),
+                        "result": getattr(mcp_response, 'data', None)
+                    }
+                else:
+                    event = {
+                        "jsonrpc": "2.0",
+                        "id": getattr(mcp_request, 'id', None),
+                        "error": {
+                            "code": -32000,
+                            "message": getattr(mcp_response, 'error', 'Unknown error')
+                        }
+                    }
+                await self._publish_sse_event(session_id, event)
+
+    # Patcha _handle_http_request per bridge SSE
+    orig_handle_http_request = _handle_http_request
+    async def _handle_http_request(self, request: web.Request, data=None):
+        mcp_request = None
+        mcp_response = None
+        try:
+            # Usa la logica originale
+            mcp_response = await self.orig_handle_http_request(request, data)
+            # Ricostruisci MCPRequest per bridge SSE
+            if data is not None:
+                from fastmcp import MCPRequest
+                mcp_request = MCPRequest(
+                    method=data.get('method'),
+                    parameters=data.get('params', {}),
+                    id=data.get('id'),
+                    headers=dict(request.headers)
+                )
+            # Pubblica su SSE se serve
+            await self._maybe_publish_sse(mcp_request, mcp_response)
+            return mcp_response
+        except Exception as e:
+            return mcp_response
 
     async def _handle_chunked_streaming(self, request):
         """Handle HTTP streaming chunked (streamable_http) connections with real event support (multi-request per connessione)."""
