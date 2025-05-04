@@ -1422,6 +1422,59 @@ class OdooMCPServer:
         if queue:
             await queue.put(event)
 
+    _last_initialize_event = None
+
+    async def _maybe_publish_sse(self, mcp_request, mcp_response):
+        session_id = None
+        # Cerca session_id in vari punti
+        if hasattr(mcp_request, 'headers') and mcp_request.headers:
+            session_id = mcp_request.headers.get('X-Session-ID')
+        if not session_id and hasattr(mcp_request, 'parameters') and isinstance(mcp_request.parameters, dict):
+            session = mcp_request.parameters.get('session')
+            if session and isinstance(session, dict):
+                session_id = session.get('id')
+        # Se la richiesta è 'initialize', broadcast a tutte le code SSE e bufferizza
+        if mcp_request and getattr(mcp_request, 'method', None) == 'initialize':
+            if mcp_response is not None:
+                if hasattr(mcp_response, 'success') and mcp_response.success:
+                    event = {
+                        "jsonrpc": "2.0",
+                        "id": getattr(mcp_request, 'id', None),
+                        "result": getattr(mcp_response, 'data', None)
+                    }
+                else:
+                    event = {
+                        "jsonrpc": "2.0",
+                        "id": getattr(mcp_request, 'id', None),
+                        "error": {
+                            "code": -32000,
+                            "message": getattr(mcp_response, 'error', 'Unknown error')
+                        }
+                    }
+                self._last_initialize_event = event  # Bufferizza
+                for queue in self._sse_queues.values():
+                    await queue.put(event)
+            return
+        # Altrimenti, normale invio per sessione
+        if session_id:
+            if mcp_response is not None:
+                if hasattr(mcp_response, 'success') and mcp_response.success:
+                    event = {
+                        "jsonrpc": "2.0",
+                        "id": getattr(mcp_request, 'id', None),
+                        "result": getattr(mcp_response, 'data', None)
+                    }
+                else:
+                    event = {
+                        "jsonrpc": "2.0",
+                        "id": getattr(mcp_request, 'id', None),
+                        "error": {
+                            "code": -32000,
+                            "message": getattr(mcp_response, 'error', 'Unknown error')
+                        }
+                    }
+                await self._publish_sse_event(session_id, event)
+
     async def _handle_sse_request(self, request):
         """Handle SSE (Server-Sent Events) connections with JSON-RPC 2.0 heartbeat and real MCP events."""
         response = web.StreamResponse(
@@ -1448,6 +1501,10 @@ class OdooMCPServer:
             session_id = str(uuid.uuid4())
         queue = self._get_sse_queue(session_id)
         logger.info(f"SSE client connected: session_id={session_id}")
+
+        # Invia subito l'ultimo initialize se esiste
+        if self._last_initialize_event:
+            await queue.put(self._last_initialize_event)
 
         try:
             while True:
@@ -1482,80 +1539,6 @@ class OdooMCPServer:
                 pass
             logger.info(f"SSE client disconnected: session_id={session_id}")
         return response
-
-    # Bridge: pubblica risposte MCP nella coda SSE se session_id presente
-    async def _maybe_publish_sse(self, mcp_request, mcp_response):
-        session_id = None
-        # Cerca session_id in vari punti
-        if hasattr(mcp_request, 'headers') and mcp_request.headers:
-            session_id = mcp_request.headers.get('X-Session-ID')
-        if not session_id and hasattr(mcp_request, 'parameters') and isinstance(mcp_request.parameters, dict):
-            session = mcp_request.parameters.get('session')
-            if session and isinstance(session, dict):
-                session_id = session.get('id')
-        # Se la richiesta è 'initialize', broadcast a tutte le code SSE
-        if mcp_request and getattr(mcp_request, 'method', None) == 'initialize':
-            if mcp_response is not None:
-                if hasattr(mcp_response, 'success') and mcp_response.success:
-                    event = {
-                        "jsonrpc": "2.0",
-                        "id": getattr(mcp_request, 'id', None),
-                        "result": getattr(mcp_response, 'data', None)
-                    }
-                else:
-                    event = {
-                        "jsonrpc": "2.0",
-                        "id": getattr(mcp_request, 'id', None),
-                        "error": {
-                            "code": -32000,
-                            "message": getattr(mcp_response, 'error', 'Unknown error')
-                        }
-                    }
-                for queue in self._sse_queues.values():
-                    await queue.put(event)
-            return
-        # Altrimenti, normale invio per sessione
-        if session_id:
-            if mcp_response is not None:
-                if hasattr(mcp_response, 'success') and mcp_response.success:
-                    event = {
-                        "jsonrpc": "2.0",
-                        "id": getattr(mcp_request, 'id', None),
-                        "result": getattr(mcp_response, 'data', None)
-                    }
-                else:
-                    event = {
-                        "jsonrpc": "2.0",
-                        "id": getattr(mcp_request, 'id', None),
-                        "error": {
-                            "code": -32000,
-                            "message": getattr(mcp_response, 'error', 'Unknown error')
-                        }
-                    }
-                await self._publish_sse_event(session_id, event)
-
-    # Patcha _handle_http_request per bridge SSE
-    orig_handle_http_request = _handle_http_request
-    async def _handle_http_request(self, request: web.Request, data=None):
-        mcp_request = None
-        mcp_response = None
-        try:
-            # Usa la logica originale
-            mcp_response = await self.orig_handle_http_request(request, data)
-            # Ricostruisci MCPRequest per bridge SSE
-            if data is not None:
-                from fastmcp import MCPRequest
-                mcp_request = MCPRequest(
-                    method=data.get('method'),
-                    parameters=data.get('params', {}),
-                    id=data.get('id'),
-                    headers=dict(request.headers)
-                )
-            # Pubblica su SSE se serve
-            await self._maybe_publish_sse(mcp_request, mcp_response)
-            return mcp_response
-        except Exception as e:
-            return mcp_response
 
     async def _handle_chunked_streaming(self, request):
         """Handle HTTP streaming chunked (streamable_http) connections with real event support (multi-request per connessione)."""
