@@ -245,6 +245,34 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### Connessione di Claude Desktop al server Odoo MCP (stdio)
+
+Per collegare Claude Desktop al server Odoo MCP tramite protocollo stdio:
+
+1. Assicurati che il server Odoo MCP sia installato e funzionante.
+2. Apri le impostazioni di Claude Desktop (menu Claude → Settings → Developer → Edit Config).
+3. Inserisci la seguente configurazione nella sezione `mcpServers` del file `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "odoo-mcp": {
+      "command": "python",
+      "args": [
+        "-m",
+        "odoo_mcp.server",
+        "C:/percorso/assoluto/al/tuo/config.json"
+      ]
+    }
+  }
+}
+```
+> Sostituisci `C:/percorso/assoluto/al/tuo/config.json` con il percorso reale del tuo file di configurazione.
+
+4. Salva e riavvia Claude Desktop. Dovresti vedere gli strumenti MCP disponibili.
+
+**Nota:** Claude Desktop comunica solo tramite stdio. Non usare `streamable_http` per la connessione con Claude Desktop.
+
 ## Documentazione
 
 La documentazione completa è disponibile nella directory `docs/`:
@@ -515,8 +543,6 @@ Per supporto tecnico:
 2. Apri una [issue](https://github.com/pandeussilvae/mcp-odoo-panda/issues)
 3. Contatta [support@techlab.it](mailto:support@techlab.it)
 
----
-
 # Odoo MCP Server
 
 <div align="center">
@@ -751,6 +777,34 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### Connecting Claude Desktop to the Odoo MCP server (stdio)
+
+To connect Claude Desktop to the Odoo MCP server using the stdio protocol:
+
+1. Make sure the Odoo MCP server is installed and working.
+2. Open Claude Desktop settings (Claude menu → Settings → Developer → Edit Config).
+3. Add the following configuration to the `mcpServers` section of your `claude_desktop_config.json` file:
+
+```json
+{
+  "mcpServers": {
+    "odoo-mcp": {
+      "command": "python",
+      "args": [
+        "-m",
+        "odoo_mcp.server",
+        "C:/absolute/path/to/your/config.json"
+      ]
+    }
+  }
+}
+```
+> Replace `C:/absolute/path/to/your/config.json` with the actual path to your configuration file.
+
+4. Save and restart Claude Desktop. You should see the MCP tools available.
+
+**Note:** Claude Desktop only communicates via stdio. Do not use `streamable_http` for connecting with Claude Desktop.
+
 ## Documentation
 
 Complete documentation is available in the `docs/` directory:
@@ -980,7 +1034,7 @@ except ProtocolError as e:
 
 ### Error Logs
 
-Logs are written according to the configuration in the `config.json` file. By default:
+Logs are written according to the configuration in the `config.json`. By default:
 
 1. **Console Logs**:
    - All logs are written to stderr
@@ -1020,3 +1074,4 @@ For technical support:
 1. Check the [documentation](docs/)
 2. Open an [issue](https://github.com/pandeussilvae/mcp-odoo-panda/issues)
 3. Contact [support@techlab.it](mailto:support@techlab.it)
+
