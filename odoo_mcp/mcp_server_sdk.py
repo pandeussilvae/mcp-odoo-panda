@@ -1445,6 +1445,7 @@ class OdooMCPServer:
 
         import asyncio
         import json
+        import aiohttp
         try:
             # Leggi la richiesta iniziale JSON-RPC
             try:
@@ -1480,14 +1481,22 @@ class OdooMCPServer:
             await response.write((result_json.strip() + "\n").encode('utf-8'))
 
             # Ciclo heartbeat: invia un messaggio ogni 30 secondi
-            while True:
-                await asyncio.sleep(30)
-                heartbeat = {"jsonrpc": "2.0", "method": "heartbeat"}
-                await response.write((json.dumps(heartbeat) + "\n").encode('utf-8'))
-        except asyncio.CancelledError:
-            pass
+            try:
+                while True:
+                    await asyncio.sleep(30)
+                    heartbeat = {"jsonrpc": "2.0", "method": "heartbeat"}
+                    try:
+                        await response.write((json.dumps(heartbeat) + "\n").encode('utf-8'))
+                    except aiohttp.ClientConnectionResetError:
+                        logger.info("Client closed the connection during heartbeat.")
+                        break
+            except asyncio.CancelledError:
+                pass
         finally:
-            await response.write_eof()
+            try:
+                await response.write_eof()
+            except aiohttp.ClientConnectionResetError:
+                logger.info("Client closed the connection before write_eof.")
         return response
 
     async def _handle_http_post(self, request):
