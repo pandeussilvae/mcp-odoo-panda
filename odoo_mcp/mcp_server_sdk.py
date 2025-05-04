@@ -1402,7 +1402,7 @@ class OdooMCPServer:
             raise ToolError(f"Error executing tool: {str(e)}", original_exception=e)
 
     async def _handle_sse_request(self, request):
-        """Handle SSE (Server-Sent Events) connections."""
+        """Handle SSE (Server-Sent Events) connections with JSON-RPC 2.0 heartbeat messages only."""
         response = web.StreamResponse(
             status=200,
             reason='OK',
@@ -1416,17 +1416,27 @@ class OdooMCPServer:
         await response.prepare(request)
 
         import asyncio
+        import json
         from datetime import datetime
         try:
             while True:
-                data = 'data: {"event": "ping", "timestamp": "%s"}\n\n' % datetime.now().isoformat()
+                # JSON-RPC 2.0 heartbeat
+                payload = {
+                    "jsonrpc": "2.0",
+                    "method": "heartbeat",
+                    "params": {"timestamp": datetime.now().isoformat()}
+                }
+                data = f'data: {json.dumps(payload)}\n\n'
                 await response.write(data.encode('utf-8'))
                 await response.write(b"")
                 await asyncio.sleep(5)
         except asyncio.CancelledError:
             pass
         finally:
-            await response.write_eof()
+            try:
+                await response.write_eof()
+            except Exception:
+                pass
         return response
 
     async def _handle_chunked_streaming(self, request):
