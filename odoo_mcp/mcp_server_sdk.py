@@ -230,12 +230,15 @@ class OdooMCPServer:
         if self.mcp_protocol == 'streamable_http':
             self.config['http'] = self.config.get('http', {})
             self.config['http']['streamable'] = True
-            # Initialize aiohttp app for HTTP server
             self.web_app = web.Application()
-            # Add routes for both root and /streamable paths
             self.web_app.router.add_post('/', self._handle_http_request)
-            self.web_app.router.add_post('/streamable', self._handle_http_request)
-            self.web_app.router.add_get('/sse', self._handle_sse_request)  # PATCH: SSE endpoint
+            self.web_app.router.add_post('/mcp', self._handle_chunked_streaming)
+            self.web_app.router.add_get('/sse', self._handle_sse_request)
+        elif self.mcp_protocol == 'http':
+            self.config['http'] = self.config.get('http', {})
+            self.web_app = web.Application()
+            self.web_app.router.add_post('/', self._handle_http_request)
+            self.web_app.router.add_post('/mcp', self._handle_http_post)
         
         # Select handler class based on Odoo protocol
         handler_class = XMLRPCHandler if self.odoo_protocol == 'xmlrpc' else JSONRPCHandler
@@ -1425,6 +1428,54 @@ class OdooMCPServer:
         finally:
             await response.write_eof()
         return response
+
+    async def _handle_chunked_streaming(self, request):
+        """Handle HTTP streaming chunked (streamable_http) connections."""
+        response = web.StreamResponse(
+            status=200,
+            reason='OK',
+            headers={
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*'
+            }
+        )
+        await response.prepare(request)
+
+        import asyncio
+        import json
+        try:
+            # Esempio: invia 5 messaggi JSON, uno ogni 2 secondi
+            for i in range(5):
+                message = {"event": "update", "count": i}
+                chunk = json.dumps(message) + "\n"
+                await response.write(chunk.encode('utf-8'))
+                await response.drain()
+                await asyncio.sleep(2)
+            # Qui puoi inserire la logica per inviare eventi reali
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await response.write_eof()
+        return response
+
+    async def _handle_http_post(self, request):
+        """Handle classic HTTP POST (stateless, single request/response)."""
+        try:
+            data = await request.json()
+            # Usa la stessa logica di _handle_http_request per processare la richiesta
+            response = await self._handle_http_request(request)
+            return response
+        except Exception as e:
+            return web.json_response({
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                },
+                'id': None
+            }, status=500)
 
     async def start(self) -> None:
         """Start the MCP server."""
