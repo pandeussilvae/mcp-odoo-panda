@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-odoo-panda"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Model Context Protocol (MCP) server for Odoo ERP integration."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -23,8 +23,10 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Systems Administration",
+    "Framework :: AsyncIO",
+    "Framework :: aiohttp",
 ]
-keywords = ["odoo", "mcp", "erp", "integration", "rpc", "model-context-protocol"]
+keywords = ["odoo", "mcp", "erp", "integration", "rpc", "model-context-protocol", "async", "asyncio"]
 
 dependencies = [
     "fastmcp>=0.1.0",
@@ -36,20 +38,31 @@ dependencies = [
     "aiohttp-sse>=2.1.0",
     "websockets>=10.0",
     "cachetools>=4.2",
+    "python-json-logger>=2.0.0",
+    "structlog>=23.0.0",
+    "tenacity>=8.0.0",
 ]
 
 # Optional dependencies
 [project.optional-dependencies]
-caching = ["cachetools>=4.2"]
+caching = [
+    "cachetools>=4.2",
+    "redis>=4.0.0",
+]
 dev = [
     "pytest>=6.0",
     "pytest-asyncio",
+    "pytest-cov",
+    "pytest-mock",
     "flake8",
     "mypy",
     "types-PyYAML",
     "types-requests",
     "types-cachetools",
     "respx",
+    "black",
+    "isort",
+    "pre-commit",
 ]
 
 [project.urls]
@@ -73,6 +86,7 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true
+plugins = ["pydantic.mypy"]
 
 [tool.flake8]
 max-line-length = 100
@@ -80,3 +94,13 @@ exclude = [".git", "__pycache__", "build", "dist"]
 per-file-ignores = [
     "__init__.py:F401",
 ]
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
