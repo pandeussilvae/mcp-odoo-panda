@@ -1461,6 +1461,8 @@ class OdooMCPServer:
                 "params": {"timestamp": datetime.now().isoformat()}
             }
             await response.write((json.dumps(heartbeat) + "\n").encode('utf-8'))
+            await response.drain()
+            logger.debug("Sent heartbeat")
 
         try:
             while True:
@@ -1507,6 +1509,8 @@ class OdooMCPServer:
                                     "id": request_id
                                 })
                             await response.write((result_json.strip() + "\n").encode('utf-8'))
+                            await response.drain()
+                            logger.debug(f"Sent streaming response: {result_json.strip()}")
                             last_activity = datetime.now()
                             # Rimuovi l'oggetto JSON processato dal buffer
                             buffer = buffer[idx:]
@@ -1525,6 +1529,8 @@ class OdooMCPServer:
                         "id": None
                     }
                     await response.write((json.dumps(error_response) + "\n").encode('utf-8'))
+                    await response.drain()
+                    logger.debug(f"Sent error response: {error_response}")
         except Exception as e:
             logger.error(f"Error in stream handler: {str(e)}")
         finally:
