@@ -235,6 +235,7 @@ class OdooMCPServer:
             # Add routes for both root and /streamable paths
             self.web_app.router.add_post('/', self._handle_http_request)
             self.web_app.router.add_post('/streamable', self._handle_http_request)
+            self.web_app.router.add_get('/sse', self._handle_sse_request)  # PATCH: SSE endpoint
         
         # Select handler class based on Odoo protocol
         handler_class = XMLRPCHandler if self.odoo_protocol == 'xmlrpc' else JSONRPCHandler
@@ -1396,6 +1397,34 @@ class OdooMCPServer:
 
         except Exception as e:
             raise ToolError(f"Error executing tool: {str(e)}", original_exception=e)
+
+    async def _handle_sse_request(self, request):
+        """Handle SSE (Server-Sent Events) connections."""
+        response = web.StreamResponse(
+            status=200,
+            reason='OK',
+            headers={
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*'
+            }
+        )
+        await response.prepare(request)
+
+        import asyncio
+        from datetime import datetime
+        try:
+            while True:
+                data = 'data: {"event": "ping", "timestamp": "%s"}\n\n' % datetime.now().isoformat()
+                await response.write(data.encode('utf-8'))
+                await response.drain()
+                await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await response.write_eof()
+        return response
 
     async def start(self) -> None:
         """Start the MCP server."""
