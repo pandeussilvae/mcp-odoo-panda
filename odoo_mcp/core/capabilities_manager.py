@@ -165,7 +165,7 @@ class CapabilitiesManager:
                         "additionalProperties": True
                     }
                 },
-                "required": ["model", "method"]
+                "required": ["model", "method", "args", "kwargs"]
             }
         ))
 

@@ -1255,6 +1255,9 @@ class OdooMCPServer:
                     args = arguments.get('args', [])
                     kwargs = arguments.get('kwargs', {})
                     
+                    if not model or not method:
+                        raise ToolError("Model and method are required for odoo_execute_kw")
+                    
                     try:
                         result = await connection.execute_kw(
                             model=model,
