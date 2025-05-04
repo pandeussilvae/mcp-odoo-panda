@@ -1248,7 +1248,28 @@ class OdooMCPServer:
 
             # Execute tool operation using async context manager
             async with self.connection_pool.get_connection() as connection:
-                if tool_name == 'odoo_search_records':
+                if tool_name == 'odoo_execute_kw':
+                    # Handle execute_kw tool
+                    model = arguments.get('model')
+                    method = arguments.get('method')
+                    args = arguments.get('args', [])
+                    kwargs = arguments.get('kwargs', {})
+                    
+                    try:
+                        result = await connection.execute_kw(
+                            model=model,
+                            method=method,
+                            args=args,
+                            kwargs=kwargs
+                        )
+                        return MCPResponse.success({
+                            'result': result,
+                            '_meta': meta
+                        })
+                    except Exception as e:
+                        logger.error(f"Error executing odoo_execute_kw: {str(e)}")
+                        raise ToolError(f"Error executing method {method} on model {model}: {str(e)}")
+                elif tool_name == 'odoo_search_records':
                     # Handle search records tool
                     model = arguments.get('model')
                     domain = arguments.get('domain', [])
@@ -1257,21 +1278,25 @@ class OdooMCPServer:
                     offset = arguments.get('offset', 0)
                     order = arguments.get('order', '')
                     
-                    result = await connection.execute_kw(
-                        model=model,
-                        method='search_read',
-                        args=[domain],
-                        kwargs={
-                            'fields': fields,
-                            'limit': limit,
-                            'offset': offset,
-                            'order': order
-                        }
-                    )
-                    return MCPResponse.success({
-                        'result': result,
-                        '_meta': meta
-                    })
+                    try:
+                        result = await connection.execute_kw(
+                            model=model,
+                            method='search_read',
+                            args=[domain],
+                            kwargs={
+                                'fields': fields,
+                                'limit': limit,
+                                'offset': offset,
+                                'order': order
+                            }
+                        )
+                        return MCPResponse.success({
+                            'result': result,
+                            '_meta': meta
+                        })
+                    except Exception as e:
+                        logger.error(f"Error executing odoo_search_records: {str(e)}")
+                        raise ToolError(f"Error searching records in model {model}: {str(e)}")
                 elif tool_name == 'odoo_create_record':
                     # Handle create record tool
                     model = arguments.get('model')
