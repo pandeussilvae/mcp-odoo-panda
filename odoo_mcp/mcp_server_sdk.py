@@ -522,12 +522,12 @@ class OdooMCPServer:
                 id=request.id
             )
 
-    async def _handle_http_request(self, request: web.Request) -> web.Response:
-        """Handle HTTP requests."""
+    async def _handle_http_request(self, request: web.Request, data=None) -> web.Response:
         logger.debug(f"_handle_http_request called. Self: {self}, Type: {type(self)}, CapabilitiesManager: {getattr(self, 'capabilities_manager', None)}")
         try:
-            # Parse request body as JSON
-            data = await request.json()
+            # Usa i dati passati se presenti, altrimenti leggi dal body
+            if data is None:
+                data = await request.json()
             logger.debug(f"Received request data: {json.dumps(data, indent=2)}")
             
             # Extract MCP request details
@@ -1489,8 +1489,8 @@ class OdooMCPServer:
                 headers=dict(request.headers)
             )
             
-            # Handle the request
-            mcp_response = await self._handle_http_request(request)
+            # Handle the request, passando i dati già letti
+            mcp_response = await self._handle_http_request(request, data=request_data)
             
             # Extract response JSON
             if hasattr(mcp_response, 'text') and callable(mcp_response.text):
