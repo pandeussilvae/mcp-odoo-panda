@@ -670,12 +670,23 @@ class OdooMCPServer:
                 'id': request_id
             }
             
-            if response.success:
-                response_dict['result'] = response.data
+            if isinstance(response, dict):
+                # If response is already a dictionary, use it directly
+                response_dict.update(response)
+            elif hasattr(response, 'success'):
+                # If response is an MCPResponse object
+                if response.success:
+                    response_dict['result'] = response.data
+                else:
+                    response_dict['error'] = {
+                        'code': -32000,
+                        'message': response.error
+                    }
             else:
+                # If response is neither, treat it as an error
                 response_dict['error'] = {
-                    'code': -32000,
-                    'message': response.error
+                    'code': -32603,
+                    'message': 'Invalid response format'
                 }
             
             logger.debug(f"Sending response: {json.dumps(response_dict, indent=2)}")
@@ -2018,16 +2029,27 @@ class OdooMCPServer:
                 'id': request_id
             }
             
-            if response.success:
-                response_dict['result'] = response.data
+            if isinstance(response, dict):
+                # If response is already a dictionary, use it directly
+                response_dict.update(response)
+            elif hasattr(response, 'success'):
+                # If response is an MCPResponse object
+                if response.success:
+                    response_dict['result'] = response.data
+                else:
+                    response_dict['error'] = {
+                        'code': -32000,
+                        'message': response.error
+                    }
             else:
+                # If response is neither, treat it as an error
                 response_dict['error'] = {
-                    'code': -32000,
-                    'message': response.error
+                    'code': -32603,
+                    'message': 'Invalid response format'
                 }
             
-            logger.debug(f"Processed request successfully: {json.dumps(response_dict, indent=2)}")
-            return response_dict
+            logger.debug(f"Sending response: {json.dumps(response_dict, indent=2)}")
+            return web.json_response(response_dict)
             
         except Exception as e:
             logger.error(f"Error processing MCP request: {str(e)}")
