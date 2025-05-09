@@ -577,7 +577,8 @@ class OdooMCPServer:
                 'resources_read',   # Add alternative format
                 'resources/templates/list',  # Add templates list method
                 'resources_templates_list',   # Add alternative format
-                'completion/complete'  # Add completion method
+                'completion/complete',  # Add completion method
+                'notifications/initialized'  # Add notifications/initialized as public method
             }
             
             # Create MCP request object with all headers
@@ -622,6 +623,8 @@ class OdooMCPServer:
                     response = await self._handle_resource_templates_list(mcp_request)
                 elif method == 'completion/complete':
                     response = await self._handle_completion_complete(mcp_request)
+                elif method == 'notifications/initialized':
+                    response = await self._handle_initialized_notification(mcp_request)
                 else:
                     logger.error(f"Unhandled public method: {method}")
                     return web.json_response(make_jsonrpc_error(request_id, -32601, f'Method not found: {method}'), status=404)
@@ -1877,7 +1880,8 @@ class OdooMCPServer:
                 'resources_read',   # Add alternative format
                 'resources/templates/list',  # Add templates list method
                 'resources_templates_list',   # Add alternative format
-                'completion/complete'  # Add completion method
+                'completion/complete',  # Add completion method
+                'notifications/initialized'  # Add notifications/initialized as public method
             }
             
             # Ensure request.id is never None
@@ -1931,6 +1935,8 @@ class OdooMCPServer:
                     response = await self._handle_resource_templates_list(request)
                 elif request.method == 'completion/complete':
                     response = await self._handle_completion_complete(request)
+                elif request.method == 'notifications/initialized':
+                    response = await self._handle_initialized_notification(request)
                 else:
                     logger.error(f"Unhandled public method: {request.method}")
                     return {
@@ -2049,6 +2055,29 @@ class OdooMCPServer:
         except Exception as e:
             logger.error(f"Error stopping server: {str(e)}")
             raise
+
+    async def _handle_initialized_notification(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle the notifications/initialized method."""
+        try:
+            # For notifications/initialized, we just need to acknowledge receipt
+            return {
+                'jsonrpc': '2.0',
+                'result': {
+                    'status': 'ok',
+                    'message': 'Notification received'
+                },
+                'id': request.id if request.id is not None else 0
+            }
+        except Exception as e:
+            logger.error(f"Error handling initialized notification: {e}")
+            return {
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32603,
+                    'message': f'Internal error: {str(e)}'
+                },
+                'id': request.id if request.id is not None else 0
+            }
 
 def create_server(config: Dict[str, Any]) -> OdooMCPServer:
     """
