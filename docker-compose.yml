@@ -15,13 +15,7 @@ services:
       - ODOO_DB=${ODOO_DB:-odoo}
       - ODOO_USER=${ODOO_USER:-admin}
       - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
-      # Configurazione Server MCP
-      - PROTOCOL=${PROTOCOL:-xmlrpc}
-      - CONNECTION_TYPE=${CONNECTION_TYPE:-stdio}
-      - LOGGING_LEVEL=${LOGGING_LEVEL:-INFO}
-      - REQUESTS_PER_MINUTE=${REQUESTS_PER_MINUTE:-120}
-      - SSE_QUEUE_MAXSIZE=${SSE_QUEUE_MAXSIZE:-1000}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-["*"]}
+      - CONNECTION_TYPE=sse
     networks:
       - mcp-network
 
@@ -39,7 +33,7 @@ services:
       - NODE_ENV=production
       - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
       # Configurazione Client MCP
-      - MCP_SERVERS={"odoo-docker":{"command":"python","args":["-m","odoo_mcp.core.mcp_server"],"env":{"ODOO_URL":"${ODOO_URL}","ODOO_DB":"${ODOO_DB}","ODOO_USER":"${ODOO_USER}","ODOO_PASSWORD":"${ODOO_PASSWORD}","PROTOCOL":"${PROTOCOL:-xmlrpc}","CONNECTION_TYPE":"stdio","LOGGING_LEVEL":"${LOGGING_LEVEL:-INFO}"},"enable":true,"autoApprove":[]}}
+      - MCP_SERVERS={"odoo-docker":{"url":"http://odoo-mcp-server:8080","enable":true,"autoApprove":[]}}
     volumes:
       - n8n_data:/home/node/.n8n
     depends_on:

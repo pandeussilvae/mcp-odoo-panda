@@ -15,8 +15,8 @@
     "database": "your_db",
     "username": "your_user",
     "api_key": "your_password",
-    "protocol": "xmlrpc",
-    "connection_type": "stdio",
+    "protocol": "jsonrpc",
+    "connection_type": "streamable_http",
     "log_level": "INFO",
     "requests_per_minute": 120,
     "rate_limit_max_wait_seconds": 60,
@@ -25,7 +25,8 @@
     "session_timeout_minutes": 60,
     "http": {
         "host": "0.0.0.0",
-        "port": 8080
+        "port": 8080,
+        "streamable": true
     },
     "logging": {
         "level": "INFO",

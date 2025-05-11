@@ -8,6 +8,7 @@ import logging
 import ssl # Import ssl module
 import sys
 from functools import wraps
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -156,16 +157,25 @@ class XMLRPCHandler:
             Any: Method result
         """
         try:
-            with ServerProxy(f"{self.odoo_url}/xmlrpc/2/object") as proxy:
-                return proxy.execute_kw(
-                    self.database,
-                    self.global_uid,
-                    self.global_password,
-                    model,
-                    method,
-                    args or [],
-                    kwargs or {}
+            # Run the synchronous XML-RPC call in a thread pool
+            loop = asyncio.get_event_loop()
+            proxy = ServerProxy(f"{self.odoo_url}/xmlrpc/2/object")
+            try:
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: proxy.execute_kw(
+                        self.database,
+                        self.global_uid,
+                        self.global_password,
+                        model,
+                        method,
+                        args or [],
+                        kwargs or {}
+                    )
                 )
+                return result
+            finally:
+                proxy.close()
         except Fault as e:
             logger.error(f"XML-RPC Fault: {str(e)}")
             raise ProtocolError(f"XML-RPC Fault: {str(e)}")

@@ -222,6 +222,7 @@ class OdooMCPServer:
             config: Configuration dictionary
         """
         self.config = config
+        self._initialized = False
         
         # Get Odoo protocol (xmlrpc/jsonrpc)
         self.odoo_protocol = config.get('protocol', 'xmlrpc').lower()
@@ -256,7 +257,7 @@ class OdooMCPServer:
             self.web_app.router.add_post('/mcp', self._handle_http_post)
         
         # Select handler class based on Odoo protocol
-        handler_class = XMLRPCHandler if self.odoo_protocol == 'xmlrpc' else JSONRPCHandler
+        handler_class = JSONRPCHandler if self.odoo_protocol == 'jsonrpc' else XMLRPCHandler
         
         # Initialize components
         try:
@@ -537,175 +538,170 @@ class OdooMCPServer:
                 id=request.id
             )
 
+    def _serialize_response(self, response: Any, request_id: Union[str, int]) -> Dict[str, Any]:
+        """Serialize a response to a JSON-RPC compatible dictionary."""
+        response_dict = {
+            'jsonrpc': '2.0',
+            'id': request_id if request_id is not None else 0,
+            'method': 'response'  # Add method field as required by Zod schema
+        }
+        
+        if isinstance(response, dict):
+            # If response is already a dictionary, use it directly
+            if 'jsonrpc' in response:
+                response_dict.update(response)
+            else:
+                response_dict['result'] = response
+        elif hasattr(response, 'success'):
+            # If response is an MCPResponse object
+            if response.success:
+                response_dict['result'] = response.data
+            else:
+                response_dict['error'] = {
+                    'code': -32000,
+                    'message': response.error
+                }
+        elif hasattr(response, 'model_dump'):
+            # If response is a Pydantic model
+            response_dict['result'] = response.model_dump()
+        elif hasattr(response, 'jsonrpc'):
+            # If response is a JsonRpcResponse
+            response_dict.update({
+                'id': response.id if response.id is not None else request_id,
+                'method': response.method if hasattr(response, 'method') else 'response'
+            })
+            if hasattr(response, 'result'):
+                response_dict['result'] = response.result
+            if hasattr(response, 'error'):
+                response_dict['error'] = response.error
+        else:
+            # If response is neither, treat it as an error
+            response_dict['error'] = {
+                'code': -32603,
+                'message': 'Invalid response format'
+            }
+        
+        return response_dict
+
     async def _handle_http_request(self, request: web.Request, data=None) -> web.Response:
-        logger.debug(f"_handle_http_request called. Self: {self}, Type: {type(self)}, CapabilitiesManager: {getattr(self, 'capabilities_manager', None)}")
+        """Handle HTTP requests."""
         try:
-            # Usa i dati passati se presenti, altrimenti leggi dal body
+            # Parse request data
             if data is None:
                 data = await request.json()
-            logger.debug(f"Received request data: {json.dumps(data, indent=2)}")
             
-            # Extract MCP request details
+            # Extract request details
             method = data.get('method')
             request_id = data.get('id', 0)  # Default to 0 if no id
-            params = data.get('params', {})  # Standard JSON-RPC uses 'params'
+            params = data.get('params', {})
             
-            if not method:
-                logger.error("No method specified in request")
-                return web.json_response(make_jsonrpc_error(request_id, -32600, 'Invalid request: method is required'), status=400)
-            
-            # Log the incoming request
-            logger.info(f"Received request - Method: {method}, ID: {request_id}")
-            logger.debug(f"Request parameters: {json.dumps(params, indent=2)}")
-            logger.debug(f"Request headers: {dict(request.headers)}")
-            
-            # List of methods that don't require authentication
-            no_auth_methods = {
-                'initialize',
-                'list_resources',
-                'resources/list',  # Add both formats
-                'list_tools',
-                'tools/list',      # Add both formats
-                'tools/call',      # Add tools/call as public method
-                'list_prompts',
-                'prompts/list',    # Add both formats
-                'get_prompt',
-                'prompts/get',     # Add prompts/get as public method
-                'create_session',
-                'login',
-                'resources/read',   # Add resources/read as public method
-                'resources_read',   # Add alternative format
-                'resources/templates/list',  # Add templates list method
-                'resources_templates_list',   # Add alternative format
-                'completion/complete',  # Add completion method
-                'notifications/initialized'  # Add notifications/initialized as public method
-            }
-            
-            # Create MCP request object with all headers
+            # Create MCP request
             mcp_request = MCPRequest(
                 method=method,
                 parameters=params,
                 id=request_id,
-                headers=dict(request.headers)  # Pass all headers to MCPRequest
+                headers=dict(request.headers)
             )
             
-            # Log all request headers for debugging
-            logger.debug(f"Request headers: {dict(request.headers)}")
+            # Process request
+            response = await self._process_mcp_request(mcp_request)
             
-            # Route the request based on method type
-            if method in no_auth_methods:
-                logger.info(f"Handling public method: {method} (no auth required)")
-                # Handle methods that don't require authentication
-                if method == 'initialize':
-                    if not hasattr(self, 'capabilities_manager'):
-                        logger.error("CapabilitiesManager not initialized")
-                        return web.json_response(make_jsonrpc_error(request_id, -32603, 'Server not properly initialized'), status=500)
-                    response = await self._handle_initialize(mcp_request)
-                elif method in ['list_resources', 'resources/list']:
-                    response = await self._handle_list_resources(mcp_request)
-                elif method in ['list_tools', 'tools/list']:
-                    response = await self._handle_list_tools(mcp_request)
-                elif method == 'tools/call':
-                    response = await self._handle_tool_call(mcp_request)
-                elif method in ['list_prompts', 'prompts/list']:
-                    response = await self._handle_list_prompts(mcp_request)
-                elif method in ['get_prompt', 'prompts/get']:
-                    response = await self._handle_get_prompt(mcp_request)
-                elif method == 'create_session':
-                    response = await self._handle_create_session(mcp_request)
-                elif method == 'login':
-                    response = await self._handle_login(mcp_request)
-                elif method in ['resources/read', 'resources_read']:
-                    # Handle resources/read as a public method
-                    response = await self._handle_resource_read(mcp_request)
-                elif method in ['resources/templates/list', 'resources_templates_list']:
-                    # Handle resources templates list request
-                    response = await self._handle_resource_templates_list(mcp_request)
-                elif method == 'completion/complete':
-                    response = await self._handle_completion_complete(mcp_request)
-                elif method == 'notifications/initialized':
-                    response = await self._handle_initialized_notification(mcp_request)
-                else:
-                    logger.error(f"Unhandled public method: {method}")
-                    return web.json_response(make_jsonrpc_error(request_id, -32601, f'Method not found: {method}'), status=404)
-            else:
-                logger.info(f"Handling authenticated method: {method} (auth required)")
-                
-                # Check for session ID header
-                session_id = request.headers.get('X-Session-ID')
-                logger.debug(f"Session ID from headers: {session_id}")
-                
-                if not session_id:
-                    logger.warning(f"No session ID provided for authenticated method: {method}")
-                    return web.json_response(make_jsonrpc_error(request_id, -32001, 'No session ID provided'), status=401)
-                
-                try:
-                    # Validate session using session manager
-                    session = await self.session_manager.validate_session(session_id)
-                    if not session:
-                        logger.warning(f"Invalid session for method: {method}")
-                        return web.json_response(make_jsonrpc_error(request_id, -32001, 'Invalid session'), status=401)
-                    
-                    # Add session to request parameters
-                    mcp_request.parameters['session'] = session
-                    
-                    # Route to appropriate handler based on request type
-                    if hasattr(mcp_request, 'resource') and mcp_request.resource:
-                        response = await self.handle_resource(mcp_request)
-                    elif hasattr(mcp_request, 'tool') and mcp_request.tool:
-                        response = await self.handle_tool(mcp_request)
-                    else:
-                        response = await self.handle_default(mcp_request)
-                        
-                except AuthError as e:
-                    logger.error(f"Authentication error for method {method}: {str(e)}")
-                    return web.json_response(make_jsonrpc_error(request_id, -32001, str(e)), status=401)
-                except Exception as e:
-                    logger.error(f"Error handling authenticated request: {str(e)}")
-                    return web.json_response(make_jsonrpc_error(request_id, -32603, str(e)), status=500)
+            # Serialize response
+            response_dict = self._serialize_response(response, request_id)
             
-            # Convert MCPResponse to JSON-RPC response
-            response_dict = {
-                'jsonrpc': '2.0',
-                'id': request_id
-            }
-            
-            if isinstance(response, dict):
-                # If response is already a dictionary, use it directly
-                response_dict.update(response)
-            elif hasattr(response, 'success'):
-                # If response is an MCPResponse object
-                if response.success:
-                    response_dict['result'] = response.data
-                else:
-                    response_dict['error'] = {
-                        'code': -32000,
-                        'message': response.error
-                    }
-            else:
-                # If response is neither, treat it as an error
-                response_dict['error'] = {
-                    'code': -32603,
-                    'message': 'Invalid response format'
-                }
-            
-            logger.debug(f"Sending response: {json.dumps(response_dict, indent=2)}")
+            # Return JSON response
             return web.json_response(response_dict)
             
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in request body: {str(e)}")
-            return web.json_response(make_jsonrpc_error(0, -32700, 'Parse error: Invalid JSON'), status=400)
+            logger.error(f"Invalid JSON in request: {str(e)}")
+            return web.json_response({
+                'jsonrpc': '2.0',
+                'id': request_id if 'request_id' in locals() else 0,
+                'method': 'error',
+                'error': {
+                    'code': -32700,
+                    'message': 'Parse error: Invalid JSON'
+                }
+            }, status=400)
         except Exception as e:
-            logger.error(f"Error handling HTTP request: {str(e)}")
-            return web.json_response(make_jsonrpc_error(0, -32603, str(e)), status=500)
+            logger.error(f"Error handling request: {str(e)}")
+            return web.json_response({
+                'jsonrpc': '2.0',
+                'id': request_id if 'request_id' in locals() else 0,
+                'method': 'error',
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                }
+            }, status=500)
 
-    async def _handle_initialize(self, request: MCPRequest) -> MCPResponse:
+    async def initialize(self) -> None:
+        """Initialize the server and its components."""
+        if self._initialized:
+            return
+
+        try:
+            # Initialize FastMCP
+            await self.app.initialize()
+            
+            # Initialize capabilities manager if not already initialized
+            if not hasattr(self, 'capabilities_manager'):
+                self.capabilities_manager = CapabilitiesManager(self.config)
+            
+            self._initialized = True
+            logger.info("Server initialized successfully")
+                except Exception as e:
+            logger.error(f"Error initializing server: {str(e)}")
+            raise
+
+    async def start(self) -> None:
+        """Start the server."""
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            if self.mcp_protocol == 'streamable_http':
+                runner = web.AppRunner(self.web_app)
+                await runner.setup()
+                site = web.TCPSite(runner, self.config.get('http', {}).get('host', '0.0.0.0'),
+                                 self.config.get('http', {}).get('port', 8080))
+                await site.start()
+                self._started_mcp_server_instance = runner
+                logger.info(f"HTTP server started on {self.config.get('http', {}).get('host', '0.0.0.0')}:{self.config.get('http', {}).get('port', 8080)}")
+            else:
+                # Start FastMCP server
+                await self.app.start()
+                logger.info("FastMCP server started")
+        except Exception as e:
+            logger.error(f"Error starting server: {str(e)}")
+            raise
+
+    async def stop(self) -> None:
+        """Stop the server."""
+        try:
+            if self.mcp_protocol == 'streamable_http' and hasattr(self, '_started_mcp_server_instance'):
+                await self._started_mcp_server_instance.cleanup()
+            else:
+                await self.app.stop()
+            logger.info("Server stopped successfully")
+        except Exception as e:
+            logger.error(f"Error stopping server: {str(e)}")
+            raise
+
+    async def _handle_initialize(self, request: MCPRequest) -> Dict[str, Any]:
         """Handle initialize request."""
         logger.debug(f"_handle_initialize called. Self: {self}, Type: {type(self)}, CapabilitiesManager: {getattr(self, 'capabilities_manager', None)}")
         try:
             if not hasattr(self, 'capabilities_manager'):
                 logger.error("CapabilitiesManager not initialized in _handle_initialize")
-                return MCPResponse.error("Server not properly initialized")
+                return {
+                    'jsonrpc': '2.0',
+                    'error': {
+                        'code': -32603,
+                        'message': 'Server not properly initialized'
+                    },
+                    'id': request.id if request.id is not None else 0
+                }
             
             # Get server capabilities following MCP 2025-03-26 specification
             capabilities = self.capabilities_manager.get_capabilities()
@@ -725,24 +721,25 @@ class OdooMCPServer:
             # Log the complete response structure for debugging
             logger.info(f"Initialize response data structure: {json.dumps(response_data, indent=2)}")
             
-            # Create MCPResponse with the data
-            response = MCPResponse.success(response_data)
-            
-            # Log the complete JSON-RPC response that will be sent
-            json_rpc_response = {
+            # Return the response data directly as a dictionary
+            return {
                 'jsonrpc': '2.0',
-                'id': request.id,
+                'id': request.id if request.id is not None else 0,
                 'result': response_data
             }
-            logger.info(f"Complete JSON-RPC initialize response: {json.dumps(json_rpc_response, indent=2)}")
-            
-            return response
             
         except Exception as e:
             logger.error(f"Error handling initialize request: {str(e)}")
-            return MCPResponse.error(str(e))
+            return {
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                },
+                'id': request.id if request.id is not None else 0
+            }
 
-    async def _handle_list_resources(self, request: MCPRequest) -> MCPResponse:
+    async def _handle_list_resources(self, request: MCPRequest) -> Dict[str, Any]:
         """Handle list_resources request."""
         try:
             # Get list of resources from capabilities manager
@@ -751,46 +748,26 @@ class OdooMCPServer:
             # Log the response for debugging
             logger.debug(f"List resources response: {json.dumps(resources, indent=2)}")
             
-            return MCPResponse(
-                success=True,
-                data={"resources": resources}
-            )
+            # Return a properly formatted JSON-RPC response
+            return {
+                'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
+                'result': {
+                    'resources': resources
+                }
+            }
         except Exception as e:
             logger.error(f"Error listing resources: {str(e)}")
-            return MCPResponse(
-                success=False,
-                error=f"Failed to list resources: {str(e)}"
-            )
+            return {
+                'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                }
+            }
 
-    async def _handle_list_tools(self, request: MCPRequest) -> MCPResponse:
-        """Handle list_tools request."""
-        try:
-            # Get list of tools from capabilities manager
-            tools = self.capabilities_manager.list_tools()
-            
-            # Log the response for debugging
-            logger.debug(f"List tools response: {json.dumps(tools, indent=2)}")
-            
-            # Ensure each tool has the required fields
-            for tool in tools:
-                if not isinstance(tool, dict):
-                    logger.error(f"Invalid tool format: {tool}")
-                    continue
-                
-                required_fields = ['name', 'description', 'operations', 'parameters']
-                missing_fields = [field for field in required_fields if field not in tool]
-                if missing_fields:
-                    logger.error(f"Tool {tool.get('name', 'unknown')} missing required fields: {missing_fields}")
-            
-            return MCPResponse(
-                success=True,
-                data={"tools": tools}
-            )
-        except Exception as e:
-            logger.error(f"Error handling list_tools request: {str(e)}")
-            return MCPResponse.error(str(e))
-
-    async def _handle_list_prompts(self, request: MCPRequest) -> MCPResponse:
+    async def _handle_list_prompts(self, request: MCPRequest) -> Dict[str, Any]:
         """Handle list_prompts request."""
         try:
             # Get list of prompts from capabilities manager
@@ -799,15 +776,26 @@ class OdooMCPServer:
             # Log the response for debugging
             logger.debug(f"List prompts response: {json.dumps(prompts, indent=2)}")
             
-            return MCPResponse(
-                success=True,
-                data={"prompts": prompts}
-            )
+            # Return a properly formatted JSON-RPC response
+            return {
+                'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
+                'result': {
+                    'prompts': prompts
+                }
+            }
         except Exception as e:
             logger.error(f"Error handling list_prompts request: {str(e)}")
-            return MCPResponse.error(str(e))
+            return {
+                'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                }
+            }
 
-    async def _handle_get_prompt(self, request: MCPRequest) -> MCPResponse:
+    async def _handle_get_prompt(self, request: MCPRequest) -> Dict[str, Any]:
         """Handle get_prompt request."""
         try:
             name = request.parameters.get('name')
@@ -815,7 +803,14 @@ class OdooMCPServer:
             
             prompt = self.capabilities_manager.get_prompt(name)
             if not prompt:
-                return MCPResponse.error(f"Prompt not found: {name}")
+                return {
+                    'jsonrpc': '2.0',
+                    'id': request.id if request.id is not None else 0,
+                    'error': {
+                        'code': -32602,
+                        'message': f'Prompt not found: {name}'
+                    }
+                }
             
             # Convert Prompt object to dictionary
             prompt_dict = {
@@ -826,1279 +821,197 @@ class OdooMCPServer:
             }
             
             # Create response with required messages array
-            response_data = {
+            return {
+                'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
+                'result': {
                 "prompt": prompt_dict,
                 "messages": []  # Add empty messages array as required
             }
-            
-            return MCPResponse.success(response_data)
+            }
         except Exception as e:
             logger.error(f"Error handling get_prompt request: {str(e)}")
-            return MCPResponse.error(str(e))
+            return {
+                'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                }
+            }
 
-    async def _handle_create_session(self, request: MCPRequest) -> MCPResponse:
-        """
-        Handle create_session request.
-        
-        Expected request format:
-        {
-            "jsonrpc": "2.0",
-            "method": "create_session",
-            "params": {
-                "credentials": {
-                    "username": "user",
-                    "password": "pass",
-                    "database": "db"
-                }
-            },
-            "id": 1
-        }
-        
-        Successful response format:
-        {
-            "jsonrpc": "2.0",
-            "result": {
-                "session": {
-                    "id": "session_id",
-                    "expires_at": "timestamp"
-                }
-            },
-            "id": 1
-        }
-        """
+    async def _handle_create_session(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle create_session request."""
         try:
-            logger.info("Handling create_session request")
+            # Create a new session
+            session = await self.session_manager.create_session()
             
-            # Extract credentials from parameters
-            credentials = request.parameters.get('credentials', {})
-            if not credentials:
-                logger.error("No credentials provided in create_session request")
-                return MCPResponse.error("No credentials provided")
-            
-            # Validate required credential fields
-            required_fields = ['username', 'password', 'database']
-            missing_fields = [field for field in required_fields if field not in credentials]
-            if missing_fields:
-                logger.error(f"Missing required credential fields: {missing_fields}")
-                return MCPResponse.error(f"Missing required credential fields: {', '.join(missing_fields)}")
-            
-            # Authenticate with Odoo
-            try:
-                auth_result = await self.authenticator.authenticate(credentials)
-                if not auth_result:
-                    logger.error("Authentication failed in create_session")
-                    return MCPResponse.error("Authentication failed")
-            except AuthError as e:
-                logger.error(f"Authentication error in create_session: {str(e)}")
-                return MCPResponse.error(str(e))
-            
-            # Create MCP session
-            try:
-                session = await self.session_manager.create_session(credentials)
-                if not session:
-                    logger.error("Failed to create session")
-                    return MCPResponse.error("Failed to create session")
-                
-                logger.info(f"Session created successfully: {session['id']}")
-                
-                # Return session information
-                return MCPResponse.success({
-                    'session': {
-                        'id': session['id'],
-                        'expires_at': session['expires_at']
-                    }
-                })
+            # Return a properly formatted JSON-RPC response
+            return {
+                'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
+                'result': {
+                    'session_id': session.id
+                }
+            }
             except Exception as e:
                 logger.error(f"Error creating session: {str(e)}")
-                return MCPResponse.error(f"Failed to create session: {str(e)}")
-                
-        except Exception as e:
-            logger.error(f"Unexpected error in create_session: {str(e)}")
-            return MCPResponse.error(f"Unexpected error: {str(e)}")
+            return {
+                'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
+                'error': {
+                    'code': -32603,
+                    'message': str(e)
+                }
+            }
 
-    async def _handle_login(self, request: MCPRequest) -> MCPResponse:
-        """
-        Handle login request.
-        
-        Expected request format:
-        {
-            "jsonrpc": "2.0",
-            "method": "login",
-            "params": {
-                "credentials": {
-                    "username": "user",
-                    "password": "pass",
-                    "database": "db"
-                }
-            },
-            "id": 1
-        }
-        
-        Successful response format:
-        {
-            "jsonrpc": "2.0",
-            "result": {
-                "session": {
-                    "id": "session_id",
-                    "expires_at": "timestamp"
-                }
-            },
-            "id": 1
-        }
-        """
+    async def _handle_login(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle login request."""
         try:
-            logger.info("Handling login request")
-            
             # Extract credentials from parameters
             credentials = request.parameters.get('credentials', {})
             if not credentials:
                 logger.error("No credentials provided in login request")
-                return MCPResponse.error("No credentials provided")
+                return {
+                    'jsonrpc': '2.0',
+                    'id': request.id if request.id is not None else 0,
+                    'error': {
+                        'code': -32602,
+                        'message': "No credentials provided"
+                    }
+                }
             
             # Validate required credential fields
             required_fields = ['username', 'password', 'database']
             missing_fields = [field for field in required_fields if field not in credentials]
             if missing_fields:
                 logger.error(f"Missing required credential fields: {missing_fields}")
-                return MCPResponse.error(f"Missing required credential fields: {', '.join(missing_fields)}")
+                return {
+                    'jsonrpc': '2.0',
+                    'id': request.id if request.id is not None else 0,
+                    'error': {
+                        'code': -32602,
+                        'message': f"Missing required credential fields: {', '.join(missing_fields)}"
+                    }
+                }
             
             # Authenticate with Odoo
             try:
                 auth_result = await self.authenticator.authenticate(credentials)
                 if not auth_result:
                     logger.error("Authentication failed in login")
-                    return MCPResponse.error("Authentication failed")
+                    return {
+                        'jsonrpc': '2.0',
+                        'id': request.id if request.id is not None else 0,
+                        'error': {
+                            'code': -32603,
+                            'message': "Authentication failed"
+                        }
+                    }
             except AuthError as e:
                 logger.error(f"Authentication error in login: {str(e)}")
-                return MCPResponse.error(str(e))
+                return {
+                    'jsonrpc': '2.0',
+                    'id': request.id if request.id is not None else 0,
+                    'error': {
+                        'code': -32603,
+                        'message': str(e)
+                    }
+                }
             
             # Create MCP session
             try:
                 session = await self.session_manager.create_session(credentials)
                 if not session:
                     logger.error("Failed to create session after login")
-                    return MCPResponse.error("Failed to create session")
-                
+                    return {
+                        'jsonrpc': '2.0',
+                        'id': request.id if request.id is not None else 0,
+                        'error': {
+                            'code': -32603,
+                            'message': "Failed to create session"
+                        }
+                    }
                 logger.info(f"Login successful, session created: {session['id']}")
-                
                 # Return session information
-                return MCPResponse.success({
+                return {
+                    'jsonrpc': '2.0',
+                    'id': request.id if request.id is not None else 0,
+                    'result': {
                     'session': {
                         'id': session['id'],
                         'expires_at': session['expires_at']
                     }
-                })
-            except Exception as e:
-                logger.error(f"Error creating session after login: {str(e)}")
-                return MCPResponse.error(f"Failed to create session: {str(e)}")
-                
-        except Exception as e:
-            logger.error(f"Unexpected error in login: {str(e)}")
-            return MCPResponse.error(f"Unexpected error: {str(e)}")
-
-    async def _handle_resource_read(self, request: MCPRequest) -> MCPResponse:
-        """Handle resource read request.
-        
-        According to MCP 2025-03-26 specification, the response should have this structure:
-        {
-          "jsonrpc": "2.0",
-          "result": {
-            "contents": [
-              {
-                "uri": "string",
-                "type": "string",
-                "data": string,
-                "mimeType": "string",
-                "metadata": object,
-                "text": string  # Required if type is "text"
-                # OR
-                "blob": string  # Required if type is "binary"
-              }
-            ]
-          },
-          "id": number
-        }
-        """
-        try:
-            # Extract URI from parameters
-            uri = request.parameters.get('uri')
-            if not uri:
-                return MCPResponse.error("No URI provided")
-            
-            # Extract resource name from URI (format: odoo://res.partner)
-            if not uri.startswith('odoo://'):
-                return MCPResponse.error("Invalid URI format")
-            
-            # Parse URI parts
-            parts = uri[7:].split('/')  # Remove 'odoo://' prefix and split
-            model = parts[0]
-            
-            try:
-                # Use async with for proper connection management
-                async with self.connection_pool.get_connection() as connection:
-                    # Determine content type based on URI format
-                    if len(parts) == 1:
-                        # Model schema request (e.g., odoo://res.partner)
-                        fields = await connection.execute_kw(
-                            model=model,
-                            method='fields_get',
-                            args=[],
-                            kwargs={'attributes': ['string', 'type', 'required', 'readonly', 'selection']}
-                        )
-                        content = {
-                            "uri": uri,
-                            "type": "text",
-                            "data": json.dumps(fields),
-                            "mimeType": "application/json",
-                            "metadata": {
-                                "model": model,
-                                "type": "schema",
-                                "last_modified": datetime.now().isoformat()
-                            },
-                            "text": json.dumps(fields)  # Add text field for text type
-                        }
-                    elif len(parts) == 2 and parts[1] == "list":
-                        # List records request (e.g., odoo://res.partner/list)
-                        records = await connection.execute_kw(
-                            model=model,
-                            method='search_read',
-                            args=[[], ["id", "name"]],
-                            kwargs={"limit": 100}
-                        )
-                        content = {
-                            "uri": uri,
-                            "type": "text",
-                            "data": json.dumps(records),
-                            "mimeType": "application/json",
-                            "metadata": {
-                                "model": model,
-                                "type": "list",
-                                "count": len(records),
-                                "last_modified": datetime.now().isoformat()
-                            },
-                            "text": json.dumps(records)  # Add text field for text type
-                        }
-                    elif len(parts) == 2:
-                        # Single record request (e.g., odoo://res.partner/1)
-                        try:
-                            record_id = int(parts[1])
-                        except ValueError:
-                            return MCPResponse.error(f"Invalid record ID in URI: {uri}")
-                        
-                        record = await connection.execute_kw(
-                            model=model,
-                            method='read',
-                            args=[[record_id]],
-                            kwargs={}
-                        )
-                        
-                        if not record:
-                            return MCPResponse.error(f"Record not found: {uri}")
-                        
-                        content = {
-                            "uri": uri,
-                            "type": "text",
-                            "data": json.dumps(record[0]),
-                            "mimeType": "application/json",
-                            "metadata": {
-                                "model": model,
-                                "type": "record",
-                                "id": record_id,
-                                "last_modified": datetime.now().isoformat()
-                            },
-                            "text": json.dumps(record[0])  # Add text field for text type
-                        }
-                    else:
-                        return MCPResponse.error(f"Invalid URI format: {uri}")
-                    
-                    # Format response according to MCP specification
-                    response_data = {
-                        "contents": [content]
                     }
-                    
-                    return MCPResponse.success(response_data)
-                    
-            except PoolTimeoutError:
-                logger.error("Connection pool timeout while handling resource read request")
-                return MCPResponse.error("Connection pool timeout")
-            except ConnectionError as e:
-                logger.error(f"Connection error while handling resource read request: {str(e)}")
-                return MCPResponse.error(f"Connection error: {str(e)}")
-            
-        except Exception as e:
-            logger.error(f"Error handling resource read request: {str(e)}")
-            return MCPResponse.error(str(e))
-
-    async def _handle_resource_templates_list(self, request: MCPRequest) -> MCPResponse:
-        """Handle resource templates list request."""
-        try:
-            # Get list of resource templates from capabilities manager
-            templates = self.capabilities_manager.list_resource_templates()
-            
-            # Log the response for debugging
-            logger.debug(f"Resource templates list response: {json.dumps(templates, indent=2)}")
-            
-            return MCPResponse(
-                success=True,
-                data={"resourceTemplates": templates}
-            )
-        except Exception as e:
-            logger.error(f"Error handling resource templates list request: {str(e)}")
-            return MCPResponse.error(str(e))
-
-    async def _handle_completion_complete(self, request: MCPRequest) -> MCPResponse:
-        """Handle completion/complete request."""
-        try:
-            params = request.parameters
-            argument = params.get('argument', {})
-            ref = params.get('ref', {})
-            
-            # Log request details for debugging
-            logger.debug(f"Completion request - Argument: {argument}, Ref: {ref}")
-            
-            # Handle resource reference completion
-            if ref.get('type') == 'ref/resource':
-                uri_template = ref.get('uri', '')
-                arg_name = argument.get('name', '')
-                arg_value = argument.get('value', '')
-                
-                # Get list of resources from capabilities manager
-                resources = self.capabilities_manager.list_resources()
-                
-                if arg_name == 'model':
-                    # Complete model names - return just the model names as strings
-                    values = [
-                        resource['name']
-                        for resource in resources
-                        if resource['name'].startswith(arg_value)
-                    ]
-                    return MCPResponse.success({
-                        "completion": {
-                            "values": values
-                        }
-                    })
-                
-                elif arg_name == 'id':
-                    # For ID completion, we need a valid model
-                    # Try to get model from different possible locations
-                    model = None
-                    
-                    # First try direct model parameter
-                    if 'model' in params:
-                        model = params['model']
-                    # Then try to extract from URI template
-                    elif uri_template:
-                        # Extract model from URI template (e.g., odoo://{model}/{id})
-                        try:
-                            # Remove protocol prefix if present
-                            if uri_template.startswith('odoo://'):
-                                uri_template = uri_template[7:]
-                            
-                            # Split by / and get the model part
-                            parts = uri_template.split('/')
-                            if len(parts) >= 1:
-                                # Remove any { } brackets from the model part
-                                model = parts[0].strip('{}')
-                        except Exception as e:
-                            logger.error(f"Error extracting model from URI template: {str(e)}")
-                    
-                    if not model:
-                        return MCPResponse.error("Model name required for ID completion")
-                    
-                    try:
-                        # Get connection from pool
-                        connection = await self.connection_pool.get_connection()
-                        try:
-                            # Search for records matching the partial ID
-                            records = await connection.execute_kw(
-                                model=model,
-                                method='search_read',
-                                args=[[('id', 'like', arg_value)]],
-                                kwargs={'fields': ['id', 'name'], 'limit': 10}
-                            )
-                            
-                            # Return just the ID values as strings
-                            values = [
-                                str(record['id'])
-                                for record in records
-                            ]
-                            return MCPResponse.success({
-                                "completion": {
-                                    "values": values
-                                }
-                            })
-                        finally:
-                            # Always release the connection
-                            await self.connection_pool.release_connection(connection)
-                            
-                    except Exception as e:
-                        logger.error(f"Error completing ID for model {model}: {str(e)}")
-                        return MCPResponse.error(f"Error completing ID: {str(e)}")
-            
-            # If we get here, we don't support this type of completion
-            return MCPResponse.success({
-                "completion": {
-                    "values": []
                 }
-            })
-            
         except Exception as e:
-            logger.error(f"Error handling completion/complete request: {str(e)}")
-            return MCPResponse.error(str(e))
-
-    async def _handle_tool_call(self, request: MCPRequest) -> MCPResponse:
-        """Handle tool call requests."""
-        try:
-            # Extract tool call parameters
-            params = request.parameters
-            tool_name = params.get('name')
-            arguments = params.get('arguments', {})
-            meta = params.get('_meta', {})
-
-            # Validate tool exists
-            tools = self.capabilities_manager.list_tools()
-            if not any(tool.get('name') == tool_name for tool in tools):
-                raise ToolError(f"Unsupported tool: {tool_name}")
-
-            # Execute tool operation using async context manager
-            async with self.connection_pool.get_connection() as connection:
-                if tool_name == 'odoo_execute_kw':
-                    # Handle execute_kw tool
-                    model = arguments.get('model')
-                    method = arguments.get('method')
-                    args = arguments.get('args', [])
-                    kwargs = arguments.get('kwargs', {})
-                    
-                    if not model or not method:
-                        raise ToolError("Model and method are required for odoo_execute_kw")
-                    
-                    try:
-                        result = await connection.execute_kw(
-                            model=model,
-                            method=method,
-                            args=args,
-                            kwargs=kwargs
-                        )
-                        return MCPResponse.success({
-                            'result': result,
-                            '_meta': meta
-                        })
-                    except Exception as e:
-                        logger.error(f"Error executing odoo_execute_kw: {str(e)}")
-                        raise ToolError(f"Error executing method {method} on model {model}: {str(e)}")
-                elif tool_name == 'odoo_search_records':
-                    # Handle search records tool
-                    model = arguments.get('model')
-                    domain = arguments.get('domain', [])
-                    fields = arguments.get('fields', [])
-                    limit = arguments.get('limit', 10)
-                    offset = arguments.get('offset', 0)
-                    order = arguments.get('order', '')
-                    
-                    try:
-                        result = await connection.execute_kw(
-                            model=model,
-                            method='search_read',
-                            args=[domain],
-                            kwargs={
-                                'fields': fields,
-                                'limit': limit,
-                                'offset': offset,
-                                'order': order
-                            }
-                        )
-                        return MCPResponse.success({
-                            'result': result,
-                            '_meta': meta
-                        })
-                    except Exception as e:
-                        logger.error(f"Error executing odoo_search_records: {str(e)}")
-                        raise ToolError(f"Error searching records in model {model}: {str(e)}")
-                elif tool_name == 'odoo_create_record':
-                    # Handle create record tool
-                    model = arguments.get('model')
-                    values = arguments.get('values', {})
-                    
-                    # Special handling for res.partner with partner_firstname module
-                    if model == 'res.partner':
-                        if 'name' in values:
-                            # Split name into firstname and lastname
-                            name_parts = values['name'].split(' ', 1)
-                            if len(name_parts) > 1:
-                                values['firstname'] = name_parts[0]
-                                values['lastname'] = name_parts[1]
-                            else:
-                                values['firstname'] = name_parts[0]
-                                values['lastname'] = ''
-                            del values['name']
-                        elif 'firstname' not in values and 'lastname' not in values:
-                            # If neither name nor firstname/lastname are provided, set a default
-                            values['firstname'] = 'New'
-                            values['lastname'] = 'Partner'
-                    
-                    result = await connection.execute_kw(
-                        model=model,
-                        method='create',
-                        args=[values],
-                        kwargs={}
-                    )
-                    return MCPResponse.success({
-                        'result': result,
-                        '_meta': meta
-                    })
-                elif tool_name == 'odoo_update_record':
-                    # Handle update record tool
-                    model = arguments.get('model')
-                    record_id = arguments.get('id')
-                    values = arguments.get('values', {})
-                    
-                    # Special handling for res.partner with partner_firstname module
-                    if model == 'res.partner' and 'name' in values:
-                        # Split name into firstname and lastname
-                        name_parts = values['name'].split(' ', 1)
-                        if len(name_parts) > 1:
-                            values['firstname'] = name_parts[0]
-                            values['lastname'] = name_parts[1]
-                        else:
-                            values['firstname'] = name_parts[0]
-                            values['lastname'] = ''
-                        del values['name']
-                    
-                    result = await connection.execute_kw(
-                        model=model,
-                        method='write',
-                        args=[[record_id], values],
-                        kwargs={}
-                    )
-                    return MCPResponse.success({
-                        'result': result,
-                        '_meta': meta
-                    })
-                elif tool_name == 'odoo_delete_record':
-                    # Handle delete record tool
-                    model = arguments.get('model')
-                    record_id = arguments.get('id')
-                    
-                    result = await connection.execute_kw(
-                        model=model,
-                        method='unlink',
-                        args=[[record_id]],
-                        kwargs={}
-                    )
-                    return MCPResponse.success({
-                        'result': result,
-                        '_meta': meta
-                    })
-                else:
-                    raise ToolError(f"Unsupported tool operation: {tool_name}")
-
-        except Exception as e:
-            raise ToolError(f"Error executing tool: {str(e)}", original_exception=e)
-
-    # --- SSE Event Queues per sessione ---
-    _sse_queues = {}  # session_id -> asyncio.Queue
-
-    @classmethod
-    def _get_sse_queue(cls, session_id):
-        import asyncio
-        if session_id not in cls._sse_queues:
-            cls._sse_queues[session_id] = asyncio.Queue()
-        return cls._sse_queues[session_id]
-
-    @classmethod
-    def _remove_sse_queue(cls, session_id):
-        if session_id in cls._sse_queues:
-            del cls._sse_queues[session_id]
-
-    @classmethod
-    async def _publish_sse_event(cls, session_id, event):
-        queue = cls._sse_queues.get(session_id)
-        if queue:
-            await queue.put(event)
-
-    _last_initialize_event = None
-
-    async def _maybe_publish_sse(self, mcp_request, mcp_response):
-        session_id = None
-        # Cerca session_id in vari punti
-        if hasattr(mcp_request, 'headers') and mcp_request.headers:
-            session_id = mcp_request.headers.get('X-Session-ID')
-        if not session_id and hasattr(mcp_request, 'parameters') and isinstance(mcp_request.parameters, dict):
-            session = mcp_request.parameters.get('session')
-            if session and isinstance(session, dict):
-                session_id = session.get('id')
-        # Se la richiesta è 'initialize', broadcast a tutte le code SSE e bufferizza
-        if mcp_request and getattr(mcp_request, 'method', None) == 'initialize':
-            if mcp_response is not None:
-                if hasattr(mcp_response, 'success') and mcp_response.success:
-                    event = {
-                        "jsonrpc": "2.0",
-                        "id": getattr(mcp_request, 'id', None),
-                        "result": getattr(mcp_response, 'data', None)
-                    }
-                else:
-                    event = {
-                        "jsonrpc": "2.0",
-                        "id": getattr(mcp_request, 'id', None),
-                        "error": {
-                            "code": -32000,
-                            "message": getattr(mcp_response, 'error', 'Unknown error')
-                        }
-                    }
-                self._last_initialize_event = event  # Bufferizza
-                for queue in self._sse_queues.values():
-                    await queue.put(event)
-            return
-        # Altrimenti, normale invio per sessione
-        if session_id:
-            if mcp_response is not None:
-                if hasattr(mcp_response, 'success') and mcp_response.success:
-                    event = {
-                        "jsonrpc": "2.0",
-                        "id": getattr(mcp_request, 'id', None),
-                        "result": getattr(mcp_response, 'data', None)
-                    }
-                else:
-                    event = {
-                        "jsonrpc": "2.0",
-                        "id": getattr(mcp_request, 'id', None),
-                        "error": {
-                            "code": -32000,
-                            "message": getattr(mcp_response, 'error', 'Unknown error')
-                        }
-                    }
-                await self._publish_sse_event(session_id, event)
-
-    async def _handle_sse_request(self, request):
-        """Handle SSE (Server-Sent Events) connections with JSON-RPC 2.0 heartbeat and real MCP events."""
-        response = web.StreamResponse(
-            status=200,
-            reason='OK',
-            headers={
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*'
-            }
-        )
-        await response.prepare(request)
-
-        import asyncio
-        import json
-        from datetime import datetime
-
-        # Ricava session_id dalla query string o header
-        session_id = request.query.get('session_id') or request.headers.get('X-Session-ID')
-        if not session_id:
-            # Genera una sessione temporanea per test/debug
-            import uuid
-            session_id = str(uuid.uuid4())
-        queue = self._get_sse_queue(session_id)
-        logger.info(f"SSE client connected: session_id={session_id}")
-
-        # Invia subito l'ultimo initialize se esiste
-        if self._last_initialize_event:
-            await queue.put(self._last_initialize_event)
-
-        try:
-            while True:
-                sent_event = False
-                # Invia tutti gli eventi reali in coda
-                while not queue.empty():
-                    event = await queue.get()
-                    data = f'data: {json.dumps(event)}\n\n'
-                    await response.write(data.encode('utf-8'))
-                    await response.write(b"")
-                    logger.debug(f"Sent SSE event to {session_id}: {event}")
-                    sent_event = True
-                if not sent_event:
-                    # Heartbeat JSON-RPC
-                    payload = {
-                        "jsonrpc": "2.0",
-                        "method": "heartbeat",
-                        "params": {"timestamp": datetime.now().isoformat()}
-                    }
-                    data = f'data: {json.dumps(payload)}\n\n'
-                    await response.write(data.encode('utf-8'))
-                    await response.write(b"")
-                    logger.debug(f"Sent SSE heartbeat to {session_id}")
-                await asyncio.sleep(5)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            self._remove_sse_queue(session_id)
-            try:
-                await response.write_eof()
-            except Exception:
-                pass
-            logger.info(f"SSE client disconnected: session_id={session_id}")
-        return response
-
-    async def _handle_chunked_streaming(self, request):
-        """Handle HTTP streaming chunked (streamable_http) connections with real event support (multi-request per connessione)."""
-        response = web.StreamResponse(
-            status=200,
-            reason='OK',
-            headers={
-                'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*'
-            }
-        )
-        await response.prepare(request)
-
-        import asyncio
-        import json
-        import aiohttp
-        from datetime import datetime
-
-        buffer = b''
-        last_activity = datetime.now()
-        heartbeat_interval = 30  # seconds
-        max_idle = heartbeat_interval
-        decoder = json.JSONDecoder()
-
-        async def send_heartbeat():
-            heartbeat = {
-                "jsonrpc": "2.0",
-                "method": "heartbeat",
-                "params": {"timestamp": datetime.now().isoformat()}
-            }
-            await response.write((json.dumps(heartbeat) + "\n").encode('utf-8'))
-            await response.write(b"")
-            logger.debug("Sent heartbeat")
-
-        try:
-            while True:
-                try:
-                    # Wait for data or timeout for heartbeat
-                    try:
-                        chunk = await asyncio.wait_for(request.content.read(4096), timeout=heartbeat_interval)
-                    except asyncio.TimeoutError:
-                        # Timeout: send heartbeat
-                        await send_heartbeat()
-                        continue
-
-                    if not chunk:
-                        # Client closed connection
-                        break
-                    buffer += chunk
-                    # Estraggo tutti gli oggetti JSON completi dal buffer
-                    while buffer:
-                        try:
-                            # Trova il primo oggetto JSON completo
-                            obj, idx = decoder.raw_decode(buffer.decode(errors='ignore'))
-                            # Processa la richiesta
-                            method = obj.get('method')
-                            request_id = obj.get('id', 0)  # Default to 0 if no id
-                            params = obj.get('params', {})
-                            mcp_request = MCPRequest(
-                                method=method,
-                                parameters=params,
-                                id=request_id,
-                                headers=dict(request.headers)
-                            )
-                            # Rispondi subito
-                            mcp_response = await self._handle_http_request(request, data=obj)
-                            if hasattr(mcp_response, 'text') and callable(mcp_response.text):
-                                result_json = await mcp_response.text()
-                            elif isinstance(mcp_response, str):
-                                result_json = mcp_response
-                            elif hasattr(mcp_response, 'body'):
-                                result_json = mcp_response.body.decode() if isinstance(mcp_response.body, bytes) else str(mcp_response.body)
-                            else:
-                                result_json = json.dumps({
-                                    "jsonrpc": "2.0",
-                                    "error": {"code": -32603, "message": "Internal error"},
-                                    "id": request_id
-                                })
-                            await response.write((result_json.strip() + "\n").encode('utf-8'))
-                            await response.write(b"")
-                            logger.debug(f"Sent streaming response: {result_json.strip()}")
-                            last_activity = datetime.now()
-                            # Rimuovi l'oggetto JSON processato dal buffer
-                            buffer = buffer[idx:]
-                            # Salta eventuali whitespace
-                            buffer = buffer.lstrip() if isinstance(buffer, bytes) else buffer.lstrip(b' \r\n\t')
-                        except json.JSONDecodeError:
-                            # Non c'è ancora un oggetto JSON completo
-                            break
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    logger.error(f"Error in streaming handler: {str(e)}")
-                    error_response = {
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32603, "message": str(e)},
-                        "id": request_id if 'request_id' in locals() else 0
-                    }
-                    await response.write((json.dumps(error_response) + "\n").encode('utf-8'))
-                    await response.write(b"")
-                    logger.debug(f"Sent error response: {error_response}")
-        except Exception as e:
-            logger.error(f"Error in stream handler: {str(e)}")
-        finally:
-            try:
-                await response.write_eof()
-            except aiohttp.ClientConnectionResetError:
-                logger.info("Client closed the connection before write_eof")
-        return response
-
-    async def _handle_http_post(self, request):
-        """Handle classic HTTP POST (stateless, single request/response)."""
-        try:
-            data = await request.json()
-            request_id = data.get('id', 0)  # Default to 0 if no id
-            # Usa la stessa logica di _handle_http_request per processare la richiesta
-            response = await self._handle_http_request(request)
-            return response
-        except Exception as e:
-            return web.json_response({
+                logger.error(f"Error creating session after login: {str(e)}")
+                return {
                 'jsonrpc': '2.0',
+                    'id': request.id if request.id is not None else 0,
                 'error': {
                     'code': -32603,
-                    'message': str(e)
-                },
-                'id': request_id if 'request_id' in locals() else 0
-            }, status=500)
-
-    async def start(self) -> None:
-        """Start the MCP server."""
-        try:
-            # Get host and port from http config if using streamable_http
-            if self.mcp_protocol == 'streamable_http':
-                http_config = self.config.get('http', {})
-                host = http_config.get('host', '0.0.0.0')
-                port = http_config.get('port', 8080)
-            else:
-                host = self.config.get('host', 'localhost')
-                port = self.config.get('port', 8000)
-            
-            logger.info(f"Starting Odoo MCP Server on {host}:{port} with protocol {self.mcp_protocol}")
-            
-            # Start the server
-            if self.mcp_protocol == 'streamable_http':
-                # Start the HTTP server
-                runner = web.AppRunner(self.web_app)
-                await runner.setup()
-                self._started_mcp_server_instance = web.TCPSite(runner, host, port)
-                await self._started_mcp_server_instance.start()
-                logger.info(f"Odoo MCP Server started successfully on {host}:{port}")
-            else:
-                # For stdio protocol, start reading from stdin
-                logger.info("Starting stdio protocol handler")
-                await self._start_stdio_handler()
-                logger.info("Odoo MCP Server started successfully in stdio mode")
-            
-        except Exception as e:
-            logger.error(f"Error starting server: {str(e)}")
-            raise
-
-    async def _start_stdio_handler(self) -> None:
-        """Start the stdio protocol handler."""
-        try:
-            # Create a stream reader for stdin
-            loop = asyncio.get_event_loop()
-            reader = asyncio.StreamReader()
-            protocol = asyncio.StreamReaderProtocol(reader)
-            await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-            
-            print("[StdioHandler] Started reading from stdin", file=sys.stderr, flush=True)
-            
-            # Start the message processing loop
-            while True:
-                try:
-                    # Read a line from stdin (messages are delimited by newlines)
-                    data = await reader.readline()
-                    if not data:
-                        print("[StdioHandler] Received empty data from stdin", file=sys.stderr, flush=True)
-                        continue
-                    
-                    # Decode the data
-                    message = data.decode('utf-8').strip()
-                    print(f"[StdioHandler] Received message: {repr(message)}", file=sys.stderr, flush=True)
-                    
-                    try:
-                        # Parse the JSON-RPC message
-                        request_data = json.loads(message)
-                        print(f"[StdioHandler] Parsed JSON-RPC message: {json.dumps(request_data, indent=2)}", file=sys.stderr, flush=True)
-                        
-                        # Extract session ID from params for stdio protocol
-                        params = request_data.get('params', {})
-                        session_id = None
-                        
-                        # Try to get session ID from different possible locations in params
-                        if isinstance(params, dict):
-                            # Try direct session_id field
-                            session_id = params.get('session_id')
-                            # Try sessionId field
-                            if not session_id:
-                                session_id = params.get('sessionId')
-                            # Try context.session_id
-                            if not session_id and 'context' in params:
-                                context = params.get('context', {})
-                                session_id = context.get('session_id') or context.get('sessionId')
-                        
-                        print(f"[StdioHandler] Extracted session ID: {session_id}", file=sys.stderr, flush=True)
-                        
-                        # Create MCP request with session ID in headers for stdio protocol
-                        mcp_request = MCPRequest(
-                            method=request_data.get('method'),
-                            parameters=params,
-                            id=request_data.get('id', 0),  # Default to 0 if no id provided
-                            headers={'X-Session-ID': session_id} if session_id else {}
-                        )
-                        
-                        # Process the request
-                        response = await self._process_mcp_request(mcp_request)
-                        
-                        # If response is None (e.g., for notifications), don't send a response
-                        if response is None:
-                            continue
-                        
-                        # Validate response structure
-                        if not isinstance(response, dict):
-                            print(f"[StdioHandler] Invalid response type: {type(response)}", file=sys.stderr, flush=True)
-                            response = {
-                                'jsonrpc': '2.0',
-                                'error': {
-                                    'code': -32603,
-                                    'message': 'Internal error: Invalid response format'
-                                },
-                                'id': request_data.get('id', 0)
-                            }
-                        
-                        # Ensure response has required JSON-RPC 2.0 fields
-                        if 'jsonrpc' not in response or response['jsonrpc'] != '2.0':
-                            print(f"[StdioHandler] Invalid response: missing or invalid jsonrpc field", file=sys.stderr, flush=True)
-                            response = {
-                                'jsonrpc': '2.0',
-                                'error': {
-                                    'code': -32603,
-                                    'message': 'Internal error: Invalid response format'
-                                },
-                                'id': request_data.get('id', 0)
-                            }
-                        
-                        if 'id' not in response:
-                            print(f"[StdioHandler] Invalid response: missing id field", file=sys.stderr, flush=True)
-                            response = {
-                                'jsonrpc': '2.0',
-                                'error': {
-                                    'code': -32603,
-                                    'message': 'Internal error: Missing response ID'
-                                },
-                                'id': 0
-                            }
-                        
-                        if 'result' not in response and 'error' not in response:
-                            print(f"[StdioHandler] Invalid response: missing result/error field", file=sys.stderr, flush=True)
-                            response = {
-                                'jsonrpc': '2.0',
-                                'error': {
-                                    'code': -32603,
-                                    'message': 'Internal error: Missing result/error field'
-                                },
-                                'id': response.get('id', 0)
-                            }
-                        
-                        # Prepare the response string with minimal separators and single newline
-                        response_str = json.dumps(response, separators=(',', ':')) + '\n'
-                        print(f"[StdioHandler] Prepared response: {repr(response_str)}", file=sys.stderr, flush=True)
-                        print(f"[StdioHandler] Response bytes: {[ord(c) for c in response_str]}", file=sys.stderr, flush=True)
-                        
-                        # Mark start of JSON-RPC response
-                        self.stdout_monitor.start_jsonrpc_response()
-                        
-                        # Write the response to stdout
-                        sys.stdout.write(response_str)
-                        sys.stdout.flush()
-                        
-                        # Mark end of JSON-RPC response
-                        self.stdout_monitor.end_jsonrpc_response()
-                        
-                    except json.JSONDecodeError as e:
-                        print(f"[StdioHandler] Failed to parse JSON message: {str(e)}", file=sys.stderr, flush=True)
-                        error_response = {
-                            'jsonrpc': '2.0',
-                            'error': {
-                                'code': -32700,
-                                'message': 'Parse error: Invalid JSON'
-                            },
-                            'id': request_data.get('id', 0) if 'request_data' in locals() else 0
-                        }
-                        error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
-                        print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
-                        print(f"[StdioHandler] Error response bytes: {[ord(c) for c in error_str]}", file=sys.stderr, flush=True)
-                        
-                        # Mark start of JSON-RPC response
-                        self.stdout_monitor.start_jsonrpc_response()
-                        
-                        # Write error response
-                        sys.stdout.write(error_str)
-                        sys.stdout.flush()
-                        
-                        # Mark end of JSON-RPC response
-                        self.stdout_monitor.end_jsonrpc_response()
-                        
+                        'message': f"Failed to create session: {str(e)}"
+                    }
+                }
                 except Exception as e:
-                    print(f"[StdioHandler] Error processing stdin message: {str(e)}", file=sys.stderr, flush=True)
-                    error_response = {
+            logger.error(f"Unexpected error in login: {str(e)}")
+            return {
                         'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
                         'error': {
                             'code': -32603,
-                            'message': str(e)
-                        },
-                        'id': request_data.get('id', 0) if 'request_data' in locals() else 0
-                    }
-                    error_str = json.dumps(error_response, separators=(',', ':')) + '\n'
-                    print(f"[StdioHandler] Prepared error response: {repr(error_str)}", file=sys.stderr, flush=True)
-                    print(f"[StdioHandler] Error response bytes: {[ord(c) for c in error_str]}", file=sys.stderr, flush=True)
-                    
-                    # Mark start of JSON-RPC response
-                    self.stdout_monitor.start_jsonrpc_response()
-                    
-                    # Write error response
-                    sys.stdout.write(error_str)
-                    sys.stdout.flush()
-                    
-                    # Mark end of JSON-RPC response
-                    self.stdout_monitor.end_jsonrpc_response()
-                    
-        except Exception as e:
-            print(f"[StdioHandler] Error in stdio handler: {str(e)}", file=sys.stderr, flush=True)
-            raise
-
-    async def _process_mcp_request(self, request: MCPRequest) -> Dict[str, Any]:
-        """Process an MCP request and return the response."""
-        try:
-            # List of methods that don't require authentication
-            no_auth_methods = {
-                'initialize',
-                'list_resources',
-                'resources/list',  # Add both formats
-                'list_tools',
-                'tools/list',      # Add both formats
-                'tools/call',      # Add tools/call as public method
-                'list_prompts',
-                'prompts/list',    # Add both formats
-                'get_prompt',
-                'prompts/get',     # Add prompts/get as public method
-                'create_session',
-                'login',
-                'resources/read',   # Add resources/read as public method
-                'resources_read',   # Add alternative format
-                'resources/templates/list',  # Add templates list method
-                'resources_templates_list',   # Add alternative format
-                'completion/complete',  # Add completion method
-                'notifications/initialized'  # Add notifications/initialized as public method
+                    'message': f"Unexpected error: {str(e)}"
+                }
             }
-            
-            # Ensure request.id is never None
-            request_id = request.id if request.id is not None else 0
-            
-            # Log request details for debugging
-            logger.debug(f"Processing MCP request: method={request.method}, id={request_id}")
-            logger.debug(f"Request headers: {request.headers}")
-            
-            # Handle notifications (they don't require authentication and don't need a response)
-            if request.method.startswith('notifications/'):
-                logger.info(f"Handling notification: {request.method}")
-                # For notifications, we don't need to send a response
-                return None
-            
-            # Route the request based on method type
-            if request.method in no_auth_methods:
-                logger.info(f"Handling public method: {request.method} (no auth required)")
-                # Handle methods that don't require authentication
-                if request.method == 'initialize':
-                    if not hasattr(self, 'capabilities_manager'):
-                        logger.error("CapabilitiesManager not initialized")
+
+    async def handle_request(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle incoming MCP request."""
+        try:
+            # Get the appropriate handler for the request method
+            handler = self._get_handler(request.method)
+            if not handler:
                         return {
                             'jsonrpc': '2.0',
-                            'error': {
-                                'code': -32603,
-                                'message': 'Server not properly initialized'
-                            },
-                            'id': request_id
-                        }
-                    response = await self._handle_initialize(request)
-                elif request.method in ['list_resources', 'resources/list']:
-                    response = await self._handle_list_resources(request)
-                elif request.method in ['list_tools', 'tools/list']:
-                    response = await self._handle_list_tools(request)
-                elif request.method == 'tools/call':
-                    response = await self._handle_tool_call(request)
-                elif request.method in ['list_prompts', 'prompts/list']:
-                    response = await self._handle_list_prompts(request)
-                elif request.method in ['get_prompt', 'prompts/get']:
-                    response = await self._handle_get_prompt(request)
-                elif request.method == 'create_session':
-                    response = await self._handle_create_session(request)
-                elif request.method == 'login':
-                    response = await self._handle_login(request)
-                elif request.method in ['resources/read', 'resources_read']:
-                    # Handle resources/read as a public method
-                    response = await self._handle_resource_read(request)
-                elif request.method in ['resources/templates/list', 'resources_templates_list']:
-                    # Handle resources templates list request
-                    response = await self._handle_resource_templates_list(request)
-                elif request.method == 'completion/complete':
-                    response = await self._handle_completion_complete(request)
-                elif request.method == 'notifications/initialized':
-                    response = await self._handle_initialized_notification(request)
-                else:
-                    logger.error(f"Unhandled public method: {request.method}")
-                    return {
-                        'jsonrpc': '2.0',
+                    'id': request.id if request.id is not None else 0,
                         'error': {
                             'code': -32601,
                             'message': f'Method not found: {request.method}'
-                        },
-                        'id': request_id
                     }
-            else:
-                logger.info(f"Handling authenticated method: {request.method} (auth required)")
-                # For all other methods, validate session first
-                session_id = request.headers.get('X-Session-ID')
-                if not session_id:
-                    logger.warning(f"No session ID provided for method: {request.method}")
-                    return {
-                        'jsonrpc': '2.0',
-                        'error': {
-                            'code': -32001,
-                            'message': 'No session ID provided'
-                        },
-                        'id': request_id
-                    }
-                
-                try:
-                    # Validate session using session manager
-                    session = await self.session_manager.validate_session(session_id)
-                    if not session:
-                        logger.warning(f"Invalid session for method: {request.method}")
-                        return {
-                            'jsonrpc': '2.0',
-                            'error': {
-                                'code': -32001,
-                                'message': 'Invalid session'
-                            },
-                            'id': request_id
-                        }
-                    
-                    # Add session to request parameters
-                    request.parameters['session'] = session
-                    
-                    # Route to appropriate handler based on request type
-                    if hasattr(request, 'resource') and request.resource:
-                        response = await self.handle_resource(request)
-                    elif hasattr(request, 'tool') and request.tool:
-                        response = await self.handle_tool(request)
-                    else:
-                        response = await self.handle_default(request)
-                        
-                except AuthError as e:
-                    logger.error(f"Authentication error for method {request.method}: {str(e)}")
-                    return {
-                        'jsonrpc': '2.0',
-                        'error': {
-                            'code': -32001,
-                            'message': str(e)
-                        },
-                        'id': request_id
-                    }
-                except Exception as e:
-                    logger.error(f"Error handling authenticated request: {str(e)}")
-                    return {
-                        'jsonrpc': '2.0',
-                        'error': {
-                            'code': -32603,
-                            'message': str(e)
-                        },
-                        'id': request_id
-                    }
-            
-            # If response is None (e.g., for notifications), don't send a response
-            if response is None:
-                return None
-            
-            # Convert MCPResponse to JSON-RPC response
-            response_dict = {
-                'jsonrpc': '2.0',
-                'id': request_id
-            }
-            
-            if isinstance(response, dict):
-                # If response is already a dictionary, use it directly
-                response_dict.update(response)
-            elif hasattr(response, 'success'):
-                # If response is an MCPResponse object
-                if response.success:
-                    response_dict['result'] = response.data
-                else:
-                    response_dict['error'] = {
-                        'code': -32000,
-                        'message': response.error
-                    }
-            else:
-                # If response is neither, treat it as an error
-                response_dict['error'] = {
-                    'code': -32603,
-                    'message': 'Invalid response format'
                 }
             
-            logger.debug(f"Sending response: {json.dumps(response_dict, indent=2)}")
-            return web.json_response(response_dict)
+            # Call the handler
+            response = await handler(request)
             
+            # If response is already a dictionary, return it
+            if isinstance(response, dict):
+                return response
+            
+            # Otherwise, convert MCPResponse to dictionary
+            if response.success:
+                    return {
+                        'jsonrpc': '2.0',
+                    'id': request.id if request.id is not None else 0,
+                    'result': response.data
+                }
+            else:
+                    return {
+                        'jsonrpc': '2.0',
+                    'id': request.id if request.id is not None else 0,
+                        'error': {
+                            'code': -32603,
+                    'message': response.error
+                }
+                }
         except Exception as e:
-            logger.error(f"Error processing MCP request: {str(e)}")
+            logger.error(f"Error handling request: {str(e)}")
             return {
                 'jsonrpc': '2.0',
+                'id': request.id if request.id is not None else 0,
                 'error': {
                     'code': -32603,
                     'message': str(e)
-                },
-                'id': request.id if request.id is not None else 0
-            }
-
-    async def stop(self) -> None:
-        """Stop the MCP server."""
-        try:
-            logger.info("Stopping Odoo MCP Server...")
-            if hasattr(self, '_started_mcp_server_instance') and self._started_mcp_server_instance is not None:
-                await self._started_mcp_server_instance.stop()
-            
-            # Restore original stdout if using stdio protocol
-            if self.mcp_protocol == 'stdio' and hasattr(self, 'stdout_monitor'):
-                sys.stdout = self.stdout_monitor.original_stdout
-            
-            logger.info("Odoo MCP Server stopped")
-        except Exception as e:
-            logger.error(f"Error stopping server: {str(e)}")
-            raise
-
-    async def _handle_initialized_notification(self, request: MCPRequest) -> Dict[str, Any]:
-        """Handle the notifications/initialized method."""
-        try:
-            # For notifications/initialized, we just need to acknowledge receipt
-            return {
-                'jsonrpc': '2.0',
-                'result': {
-                    'status': 'ok',
-                    'message': 'Notification received'
-                },
-                'id': request.id if request.id is not None else 0
-            }
-        except Exception as e:
-            logger.error(f"Error handling initialized notification: {e}")
-            return {
-                'jsonrpc': '2.0',
-                'error': {
-                    'code': -32603,
-                    'message': f'Internal error: {str(e)}'
-                },
-                'id': request.id if request.id is not None else 0
+                }
             }
 
 def create_server(config: Dict[str, Any]) -> OdooMCPServer:
@@ -2125,7 +1038,9 @@ async def run_server(config: Dict[str, Any]) -> None:
         logger.info("Creating Odoo MCP Server instance...")
         server = create_server(config)
         
-        logger.info("Starting server...")
+        # Initialize and start server
+        logger.info("Initializing and starting server...")
+        await server.initialize()
         await server.start()
         
         # Now that we have the config, import and setup logging
@@ -2167,45 +1082,63 @@ async def run_server(config: Dict[str, Any]) -> None:
             await server.stop()
 
 def override_config_with_env(config):
-    env_map = {
-        'odoo_url': 'ODOO_URL',
-        'database': 'ODOO_DB',
-        'username': 'ODOO_USER',
-        'api_key': 'ODOO_PASSWORD',
-        'protocol': 'PROTOCOL',
-        'connection_type': 'CONNECTION_TYPE',
-        'log_level': 'LOGGING_LEVEL',
-        'requests_per_minute': 'REQUESTS_PER_MINUTE',
-        'rate_limit_max_wait_seconds': 'RATE_LIMIT_MAX_WAIT_SECONDS',
-        'pool_size': 'POOL_SIZE',
-        'timeout': 'TIMEOUT',
-        'session_timeout_minutes': 'SESSION_TIMEOUT_MINUTES',
-    }
-    for key, env_var in env_map.items():
-        if env_var in os.environ:
-            value = os.environ[env_var]
-            if key in ['requests_per_minute', 'rate_limit_max_wait_seconds', 'pool_size', 'timeout', 'session_timeout_minutes']:
-                try:
-                    value = int(value)
-                except Exception:
-                    pass
-            config[key] = value
-    # Override nested http config
+    """
+    Override configuration values with environment variables.
+    
+    Args:
+        config: The configuration dictionary to override
+        
+    Returns:
+        The updated configuration dictionary
+    """
+    # Odoo connection settings
+    if os.getenv('ODOO_URL'):
+        config['odoo_url'] = os.getenv('ODOO_URL')
+    if os.getenv('ODOO_DB'):
+        config['database'] = os.getenv('ODOO_DB')
+    if os.getenv('ODOO_USER'):
+        config['username'] = os.getenv('ODOO_USER')
+    if os.getenv('ODOO_PASSWORD'):
+        config['api_key'] = os.getenv('ODOO_PASSWORD')
+    
+    # MCP server settings
+    if os.getenv('PROTOCOL'):
+        config['protocol'] = os.getenv('PROTOCOL')
+    if os.getenv('CONNECTION_TYPE'):
+        config['connection_type'] = os.getenv('CONNECTION_TYPE')
+    if os.getenv('LOGGING_LEVEL'):
+        config['log_level'] = os.getenv('LOGGING_LEVEL')
+    
+    # Advanced settings
+    if os.getenv('REQUESTS_PER_MINUTE'):
+        config['requests_per_minute'] = int(os.getenv('REQUESTS_PER_MINUTE'))
+    if os.getenv('POOL_SIZE'):
+        config['pool_size'] = int(os.getenv('POOL_SIZE'))
+    if os.getenv('TIMEOUT'):
+        config['timeout'] = int(os.getenv('TIMEOUT'))
+    if os.getenv('SESSION_TIMEOUT_MINUTES'):
+        config['session_timeout_minutes'] = int(os.getenv('SESSION_TIMEOUT_MINUTES'))
+    
+    # HTTP settings
     if 'http' not in config:
         config['http'] = {}
-    if 'HTTP_HOST' in os.environ:
-        config['http']['host'] = os.environ['HTTP_HOST']
-    if 'HTTP_PORT' in os.environ:
-        try:
-            config['http']['port'] = int(os.environ['HTTP_PORT'])
-        except Exception:
-            config['http']['port'] = os.environ['HTTP_PORT']
+    if os.getenv('HTTP_HOST'):
+        config['http']['host'] = os.getenv('HTTP_HOST')
+    if os.getenv('HTTP_PORT'):
+        config['http']['port'] = int(os.getenv('HTTP_PORT'))
+    if os.getenv('HTTP_STREAMABLE'):
+        config['http']['streamable'] = os.getenv('HTTP_STREAMABLE').lower() == 'true'
+    
+    # Log the final config after override
+    logger.debug(f"Final config after override: {config}")
+    
     return config
 
 if __name__ == "__main__":
     import json
     import sys
     import os
+    import asyncio
     
     # Parse command line arguments first
     mcp_protocol = None
@@ -2251,10 +1184,41 @@ if __name__ == "__main__":
     # Now we can use logger for the rest of the operations
     logger = logging.getLogger(__name__)
     
+    async def main():
+        """Main async entry point."""
     try:
-        # Run server
+            # Create and run server
         logger.info("Initializing server...")
-        asyncio.run(run_server(config))
+            server = create_server(config)
+            
+            # Initialize server components
+            logger.info("Initializing server components...")
+            await server.initialize()
+            
+            # Start server
+            logger.info("Starting server...")
+            await server.start()
+            
+            # Keep the server running
+            try:
+                while True:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                logger.info("Server shutdown requested")
+            except KeyboardInterrupt:
+                logger.info("Server stopped by user")
+            
+        except Exception as e:
+            logger.error(f"Server error: {str(e)}")
+            sys.exit(1)
+        finally:
+            if 'server' in locals():
+                logger.info("Shutting down server...")
+                await server.stop()
+    
+    try:
+        # Run the async main function
+        asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
     except Exception as e:

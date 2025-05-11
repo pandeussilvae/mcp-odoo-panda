@@ -85,7 +85,8 @@ class ConnectionPool:
             config: The server configuration dictionary
             handler_class: The handler class to use (XMLRPCHandler or JSONRPCHandler)
         """
-        self.config = config
+        logger.info(f"Initializing connection pool with config: {config}")
+        self.config = config.copy()  # Make a copy of the config to avoid modifying the original
         self.handler_class = handler_class
         self.max_size = config.get('max_connections', 10)
         self.timeout = config.get('connection_timeout', 30)
@@ -93,6 +94,7 @@ class ConnectionPool:
         self.health_check_interval = config.get('health_check_interval', 300)  # 5 minutes
         self._lock = asyncio.Lock()
         self._cleanup_task = None
+        logger.info(f"Connection pool initialized with max_size={self.max_size}, timeout={self.timeout}")
 
     async def start(self):
         """Start the connection pool and health check task."""
@@ -110,61 +112,42 @@ class ConnectionPool:
         await self.close_all()
         logger.info("Connection pool stopped")
 
-    @asynccontextmanager
-    async def get_connection(self):
+    async def get_connection(self) -> ConnectionWrapper:
         """
-        Get a connection from the pool.
+        Get a connection from the pool or create a new one if needed.
 
-        Yields:
-            Union[XMLRPCHandler, JSONRPCHandler]: A connection handler
+        Returns:
+            ConnectionWrapper: A connection wrapper
 
         Raises:
             PoolTimeoutError: If no connection is available within the timeout
-            ConnectionError: If creating a new connection fails
+            NetworkError: If creating a new connection fails
         """
         async with self._lock:
             # Try to find an available connection
             for conn in self.connections:
                 if not conn.in_use:
-                    try:
-                        async with conn as connection:
-                            yield connection
-                        return
-                    except Exception as e:
-                        logger.error(f"Error using existing connection: {e}")
-                        self.connections.remove(conn)
-                        continue
+                    conn.in_use = True
+                    logger.debug(f"Reusing existing connection from pool")
+                    return conn
 
             # If we haven't reached max size, create a new connection
             if len(self.connections) < self.max_size:
                 try:
-                    connection = self.handler_class(self.config)
-                    wrapper = ConnectionWrapper(connection)
-                    self.connections.append(wrapper)
-                    async with wrapper as conn:
-                        yield conn
-                    return
+                    logger.info(f"Creating new connection with config: {self.config}")
+                    handler = self.handler_class(self.config)
+                    conn = ConnectionWrapper(handler)
+                    self.connections.append(conn)
+                    conn.in_use = True
+                    logger.info(f"Created new connection, pool size now {len(self.connections)}")
+                    return conn
                 except Exception as e:
                     logger.error(f"Error creating new connection: {e}")
-                    raise ConnectionError(f"Failed to create new connection: {e}")
+                    raise NetworkError(f"Failed to create new connection: {e}")
 
             # If we're at max size, wait for a connection to become available
-            try:
-                async with asyncio.timeout(self.timeout):
-                    while True:
-                        for conn in self.connections:
-                            if not conn.in_use:
-                                try:
-                                    async with conn as connection:
-                                        yield connection
-                                    return
-                                except Exception as e:
-                                    logger.error(f"Error using existing connection: {e}")
-                                    self.connections.remove(conn)
-                                    continue
-                        await asyncio.sleep(0.1)
-            except asyncio.TimeoutError:
-                raise PoolTimeoutError(f"No connection available within {self.timeout} seconds")
+            logger.warning("Connection pool at max size, waiting for available connection")
+            raise PoolTimeoutError("No connections available in pool")
 
     async def release_connection(self, connection: Union[XMLRPCHandler, JSONRPCHandler]):
         """
@@ -239,10 +222,10 @@ class ConnectionPool:
         Raises:
             NetworkError: If the execution fails
         """
-        handler = None
         try:
-            async with await self.get_connection() as handler:
-                return await handler.execute_kw(
+            connection = await self.get_connection()
+            try:
+                return await connection.connection.execute_kw(
                     model=model,
                     method=method,
                     args=args,
@@ -250,6 +233,8 @@ class ConnectionPool:
                     uid=uid,
                     password=password
                 )
+            finally:
+                await self.release_connection(connection.connection)
         except Exception as e:
             raise NetworkError(f"Failed to execute {method} on {model}: {str(e)}")
 

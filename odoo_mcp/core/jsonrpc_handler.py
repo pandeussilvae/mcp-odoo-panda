@@ -6,6 +6,9 @@ import ssl # Import ssl for context creation
 from typing import Dict, Any, Optional, Union, Tuple, List, Set # Added Union, Tuple, List, Set
 import aiohttp
 from functools import wraps
+import os
+from dataclasses import dataclass
+from datetime import datetime
 
 # Import specific exceptions for mapping
 from odoo_mcp.error_handling.exceptions import (
@@ -54,10 +57,30 @@ class JSONRPCHandler:
         Raises:
             ConfigurationError: If TLS configuration fails.
         """
+        logger.info(f"Initializing JSONRPCHandler with config: {config}")
         self.config = config
-        self.odoo_url = config.get('odoo_url')
+        
+        # Get Odoo URL from environment or config
+        self.odoo_url = os.getenv('ODOO_URL') or config.get('odoo_url')
+        logger.info(f"Got odoo_url: {self.odoo_url}")
+        
+        if not self.odoo_url:
+            logger.error("odoo_url is missing from config and environment")
+            raise ConfigurationError("odoo_url is required in configuration or environment")
+        
+        # Ensure odoo_url has the correct protocol
+        if not self.odoo_url.startswith(('http://', 'https://')):
+            logger.info(f"Adding https:// protocol to odoo_url: {self.odoo_url}")
+            self.odoo_url = f"https://{self.odoo_url}"
+        
         self.jsonrpc_url = f"{self.odoo_url}/jsonrpc"
-        self.database = config.get('database')
+        logger.info(f"Final jsonrpc_url: {self.jsonrpc_url}")
+        
+        # Get database from environment or config
+        self.database = os.getenv('ODOO_DB') or config.get('database')
+        if not self.database:
+            logger.error("database is missing from config and environment")
+            raise ConfigurationError("database is required in configuration or environment")
 
         # Initialize cache manager if not already initialized
         try:
@@ -89,62 +112,81 @@ class JSONRPCHandler:
                 cert = client_cert_path
                 logger.info(f"JSONRPC using client certificate (key assumed within): {client_cert_path}")
 
-            # Attempt to configure specific TLS version using SSLContext
-            # httpx allows passing an SSLContext directly to verify
+            # Configure TLS version
             try:
-                tls_version_str = config.get('tls_version', 'TLSv1.3').upper().replace('.', '_')
-                protocol_version = ssl.PROTOCOL_TLS_CLIENT
-                context = ssl.SSLContext(protocol_version)
+                # Create SSL context with default settings
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
                 context.check_hostname = True
-                # Load default CAs unless a custom one is specified
+                context.verify_mode = ssl.CERT_REQUIRED
+                
+                # Load certificates
                 if isinstance(verify, bool) and verify:
-                     context.load_default_certs(ssl.Purpose.SERVER_AUTH)
+                    context.load_default_certs(ssl.Purpose.SERVER_AUTH)
                 elif isinstance(verify, str):
-                     context.load_verify_locations(cafile=verify)
+                    context.load_verify_locations(cafile=verify)
 
-                # Set minimum TLS version (best effort)
-                min_version_set = False
-                if hasattr(ssl, 'TLSVersion') and hasattr(context, 'minimum_version'):
-                    min_version = getattr(ssl.TLSVersion, tls_version_str, None)
-                    if min_version:
-                        try:
-                            context.minimum_version = min_version
-                            logger.info(f"Set minimum TLS version to {min_version.name} for httpx.")
-                            min_version_set = True
-                        except (ValueError, OSError) as e:
-                            logger.warning(f"Could not set minimum TLS version {tls_version_str} via minimum_version: {e}")
-                    else:
-                        logger.warning(f"TLS version '{config.get('tls_version')}' not mappable to ssl.TLSVersion.")
+                # Set minimum TLS version using options
+                context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+                logger.info("Set minimum TLS version to TLSv1.2 using context options")
 
-                if not min_version_set:
-                    logger.info("Attempting to set TLS version using context options (fallback).")
-                    options = ssl.OP_NO_SSLv3
-                    if tls_version_str == 'TLSV1_3': options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2
-                    elif tls_version_str == 'TLSV1_2': options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-                    else: options = 0 # Rely on default
-                    if options != 0: context.options |= options
-
-                # Load client cert into context if specified
                 if cert:
-                     if isinstance(cert, tuple):
-                          context.load_cert_chain(certfile=cert[0], keyfile=cert[1])
-                     else:
-                          context.load_cert_chain(certfile=cert)
+                    if isinstance(cert, tuple):
+                        context.load_cert_chain(certfile=cert[0], keyfile=cert[1])
+                    else:
+                        context.load_cert_chain(certfile=cert)
 
                 ssl_context = context
-                verify = ssl_context # Use the configured context for verification
+                verify = ssl_context
                 logger.info("Using custom SSLContext for httpx TLS configuration.")
 
             except Exception as e:
-                 logger.error(f"Failed to create SSL context for httpx: {e}", exc_info=True)
-                 raise ConfigurationError(f"Failed to configure TLS for httpx: {e}", original_exception=e)
+                logger.error(f"Failed to create SSL context for httpx: {e}", exc_info=True)
+                raise ConfigurationError(f"Failed to configure TLS for httpx: {e}", original_exception=e)
 
-        # Create the AsyncClient
-        # Consider adding timeout configuration from self.config
-        request_timeout = self.config.get('timeout', 30)
+        # Create the AsyncClient with timeout from environment or config
+        request_timeout = int(os.getenv('TIMEOUT', config.get('timeout', 30)))
         self.async_client = httpx.AsyncClient(verify=verify, cert=cert, timeout=request_timeout)
         logger.info(f"httpx.AsyncClient initialized. Verify={type(verify)}, Cert={cert is not None}, Timeout={request_timeout}s")
 
+        # Store credentials for later use
+        self.username = os.getenv('ODOO_USERNAME')
+        self.password = os.getenv('ODOO_PASSWORD')
+        
+        # Se non troviamo le credenziali nell'ambiente, prova a prenderle dal config
+        if not self.username:
+            self.username = config.get('username')
+        if not self.password:
+            self.password = config.get('api_key')
+            
+        if not self.username or not self.password:
+            logger.error(f"Missing credentials. Username: {'present' if self.username else 'missing'}, Password: {'present' if self.password else 'missing'}")
+            raise ConfigurationError("Both username and password are required in environment or config")
+
+        # Initialize uid as None - will be set during first authentication
+        self.uid = None
+
+    async def ensure_authenticated(self):
+        """Ensure we have a valid uid by authenticating if needed."""
+        if self.uid is None:
+            try:
+                logger.info(f"Attempting authentication with database={self.database}, username={self.username}")
+                auth_result = await self.call(
+                    service='common',
+                    method='login',
+                    args=[self.database, self.username, self.password]
+                )
+                if not auth_result:
+                    logger.error(f"Authentication failed: server returned False for database={self.database}, username={self.username}")
+                    raise AuthError(f"Authentication failed: invalid credentials for database {self.database}")
+                
+                self.uid = auth_result
+                logger.info(f"Successfully authenticated with uid: {self.uid}")
+            except Exception as e:
+                logger.error(f"Failed to authenticate: {str(e)}")
+                if "Login failed" in str(e):
+                    raise AuthError(f"Login failed for database {self.database} and user {self.username}")
+                raise AuthError(f"Failed to authenticate: {str(e)}")
+        return self.uid
 
     def _prepare_payload(self, method: str, params: dict) -> dict:
         """Prepare the standard JSON-RPC 2.0 payload structure."""
@@ -212,7 +254,21 @@ class JSONRPCHandler:
          """
          if service == "object" and method == "execute_kw":
              # Per execute_kw, riorganizza gli argomenti
+             if len(args) < 6:
+                 raise ProtocolError("execute_kw requires at least 6 arguments: db, uid, password, model, method, args")
+             
              db, uid, password, model, method_name, *rest = args
+             
+             # Verifica che uid sia un intero
+             try:
+                 uid = int(uid) if uid is not None else None
+             except (ValueError, TypeError):
+                 raise ProtocolError(f"Invalid uid value: {uid}. Must be an integer.")
+             
+             # Verifica che password non sia None
+             if password is None:
+                 raise AuthError("Password cannot be None for execute_kw")
+             
              payload_params = {
                  "service": service,
                  "method": method,
@@ -299,41 +355,13 @@ class JSONRPCHandler:
         Raises:
             AuthError, NetworkError, ProtocolError, OdooMCPError, TypeError.
         """
-        # Determine authentication details
-        # First try to use provided credentials
-        call_uid = uid
-        call_password = password
+        # Ensure we have a valid uid
+        await self.ensure_authenticated()
+        
+        # Use stored credentials if not provided
+        call_uid = uid if uid is not None else self.uid
+        call_password = password if password is not None else self.password
 
-        # If not provided, try to use global credentials from config
-        if call_uid is None or call_password is None:
-            # Try to get global credentials from config
-            global_uid = self.config.get('uid')
-            global_password = self.config.get('api_key')
-            
-            if global_uid is not None and global_password is not None:
-                call_uid = global_uid
-                call_password = global_password
-            else:
-                # If still no credentials, try to authenticate with username/password from config
-                username = self.config.get('username')
-                api_key = self.config.get('api_key')
-                
-                if username and api_key:
-                    try:
-                        # Authenticate with Odoo to get uid
-                        auth_result = await self.call(
-                            service='common',
-                            method='login',
-                            args=[self.database, username, api_key]
-                        )
-                        if auth_result:
-                            call_uid = auth_result
-                            call_password = api_key
-                    except Exception as e:
-                        logger.error(f"Failed to authenticate with global credentials: {str(e)}")
-                        raise AuthError(f"Failed to authenticate with global credentials: {str(e)}")
-
-        # If still no credentials, raise error
         if call_uid is None or call_password is None:
             raise AuthError("No valid credentials available for JSON-RPC execute_kw")
 
@@ -376,3 +404,32 @@ class JSONRPCHandler:
         if hasattr(self, 'async_client'):
             await self.async_client.aclose()
             logger.info("httpx.AsyncClient closed.")
+
+@dataclass
+class Resource:
+    """Resource definition."""
+    uri: str
+    type: str
+    content: Any
+    mime_type: str
+    metadata: Dict[str, Any] = None
+    last_modified: datetime = None
+    etag: str = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the resource to a dictionary for JSON serialization."""
+        return {
+            'uri': self.uri,
+            'type': self.type,
+            'content': self.content,
+            'mime_type': self.mime_type,
+            'metadata': self.metadata,
+            'last_modified': self.last_modified.isoformat() if self.last_modified else None,
+            'etag': self.etag
+        }
+
+class ResourceManager:
+    """
+    Manages server resources and caching.
+    Provides centralized access to resources and handles resource updates.
+    """

@@ -11,7 +11,7 @@ import asyncio
 from datetime import datetime, timedelta
 
 from odoo_mcp.error_handling.exceptions import ProtocolError
-from odoo_mcp.performance.caching import cache_manager, CACHE_TYPE
+from odoo_mcp.performance.caching import get_cache_manager, CACHE_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ class ResourceManager:
         self._resource_handlers: Dict[str, Callable] = {}
         self._subscribers: Dict[str, Set[Callable]] = {}
         self._resource_cache: Dict[str, Resource] = {}
+        self._cache_manager = get_cache_manager()
 
     def register_resource_handler(self, uri_pattern: str, handler: Callable) -> None:
         """
@@ -176,8 +177,21 @@ class ResourceManager:
         Returns:
             bool: True if the pattern matches
         """
-        # TODO: Implement proper URI pattern matching
-        return pattern in parsed.path
+        # Split the full URI into parts
+        pattern_parts = pattern.split('/')
+        uri_parts = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".split('/')
+        
+        if len(pattern_parts) != len(uri_parts):
+            return False
+            
+        for pattern_part, uri_part in zip(pattern_parts, uri_parts):
+            if pattern_part.startswith('{') and pattern_part.endswith('}'):
+                # This is a parameter, any value is valid
+                continue
+            if pattern_part != uri_part:
+                return False
+                
+        return True
 
     async def _notify_subscribers(self, uri: str, resource: Resource) -> None:
         """

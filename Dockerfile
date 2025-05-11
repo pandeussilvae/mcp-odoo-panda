@@ -14,10 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml ./
 COPY README.md ./
 COPY LICENSE ./
+COPY odoo_mcp/config/config.json ./odoo_mcp/config/
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
-    pip install .[caching] && \
+    pip install -e .[caching] && \
     pip install \
     fastmcp \
     aiohttp \
@@ -40,7 +41,7 @@ RUN mkdir -p /app/logs /app/config && \
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PROTOCOL=xmlrpc \
-    CONNECTION_TYPE=stdio \
+    CONNECTION_TYPE=streamable_http \
     LOGGING_LEVEL=INFO \
     ODOO_URL=http://odoo:8069 \
     ODOO_DB=odoo \
