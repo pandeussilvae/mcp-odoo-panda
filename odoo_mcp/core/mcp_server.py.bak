@@ -1045,7 +1045,7 @@ class OdooMCPServer(Server):
                     'message': f"Internal error: {str(e)}"
                 },
                 'id': request.id
-            }
+        }
 
     async def run(self):
         """Run the server."""
@@ -1333,10 +1333,10 @@ class OdooMCPServer(Server):
         """Handle get_resource request."""
         try:
             resource = await self.get_resource(request.params['uri'])
-            return self.protocol_handler.create_response(
-                request.id,
-                result=resource
-            )
+        return self.protocol_handler.create_response(
+            request.id,
+            result=resource
+        )
         except Exception as e:
             logger.error(f"Error handling get_resource request: {e}")
             return self.protocol_handler.handle_protocol_error(e)
@@ -1414,12 +1414,12 @@ class OdooMCPServer(Server):
         """Handle get_prompt request."""
         try:
             prompt = await self.get_prompt(
-                request.params['name'],
-                request.params.get('args', {})
+            request.params['name'],
+            request.params.get('args', {})
             )
-            return self.protocol_handler.create_response(
-                request.id,
-                result=prompt
+        return self.protocol_handler.create_response(
+            request.id,
+            result=prompt
             )
         except Exception as e:
             logger.error(f"Error handling get_prompt request: {e}")
@@ -1556,11 +1556,11 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
         
         # Load configuration
         logger.info(f"Loading configuration from {config_path}")
-        try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-                logger.info("Configuration loaded successfully")
-                logger.debug(f"Configuration content: {config}")
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            logger.info("Configuration loaded successfully")
+            logger.debug(f"Configuration content: {config}")
         except Exception as e:
             logger.error(f"Failed to load configuration: {e}")
             raise
@@ -1593,8 +1593,8 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
 
         # Create server instance
         logger.info("Creating server instance...")
-        try:
-            server = OdooMCPServer(config)
+    try:
+        server = OdooMCPServer(config)
             logger.info("Server instance created successfully")
         except Exception as e:
             logger.error(f"Failed to create server instance: {e}")
@@ -1614,9 +1614,9 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
         # Start server
         logger.info("Starting server...")
         try:
-            await server.run()
+        await server.run()
             logger.info("Server started successfully")
-        except Exception as e:
+    except Exception as e:
             logger.error(f"Failed to start server: {e}")
             raise
         

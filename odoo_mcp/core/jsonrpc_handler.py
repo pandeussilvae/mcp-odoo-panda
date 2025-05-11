@@ -7,8 +7,6 @@ from typing import Dict, Any, Optional, Union, Tuple, List, Set # Added Union, T
 import aiohttp
 from functools import wraps
 import os
-from dataclasses import dataclass
-from datetime import datetime
 
 # Import specific exceptions for mapping
 from odoo_mcp.error_handling.exceptions import (
@@ -188,13 +186,39 @@ class JSONRPCHandler:
                 raise AuthError(f"Failed to authenticate: {str(e)}")
         return self.uid
 
-    def _prepare_payload(self, method: str, params: dict) -> dict:
+    def _prepare_payload(self, method: str, params: Union[dict, list]) -> dict:
         """Prepare the standard JSON-RPC 2.0 payload structure."""
-        return {
+        # For Odoo's JSON-RPC interface, we need to ensure params is a list
+        if isinstance(params, dict):
+            # Convert dict to list of key-value pairs
+            params = [params]
+        elif not isinstance(params, list):
+            params = [params]
+            
+        # Split the method into service and method name
+        service, method_name = method.split('.')
+            
+        # For Odoo's JSON-RPC interface, we need to wrap the params in a dict
+        payload = {
             "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-            "id": None, # Or generate unique IDs
+            "method": "call",
+            "params": {
+                "service": service,
+                "method": method_name,
+                "args": params,
+                "kwargs": {}
+            },
+            "id": None
+        }
+        
+        return payload
+
+    def _get_headers(self) -> Dict[str, str]:
+        """Get the headers for JSON-RPC requests."""
+        return {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'OdooMCP/1.0',
         }
 
     READ_METHODS = {'call'} # Assume 'call' with specific service/method might be readable
@@ -237,90 +261,101 @@ class JSONRPCHandler:
             return await self._call_direct(service, method, args)
 
 
+    def _serialize_resource(self, resource: Any) -> Dict[str, Any]:
+        """
+        Convert a Resource object to a serializable dictionary.
+        
+        Args:
+            resource: The resource to serialize
+            
+        Returns:
+            Dict[str, Any]: A serializable dictionary representation of the resource
+        """
+        if hasattr(resource, 'uri') and hasattr(resource, 'type') and hasattr(resource, 'data'):
+            return {
+                'uri': resource.uri,
+                'type': resource.type.value if hasattr(resource.type, 'value') else resource.type,
+                'data': resource.data,
+                'mime_type': getattr(resource, 'mime_type', 'application/json')
+            }
+        return resource
+
     async def _call_direct(self, service: str, method: str, args: list) -> Any:
-         """
-         Directly execute the JSON-RPC call to Odoo using httpx.
+        """
+        Execute a direct JSON-RPC call without caching.
+        
+        Args:
+            service: The service name
+            method: The method name
+            args: The arguments to pass
+            
+        Returns:
+            Any: The result of the call
+        """
+        try:
+            # Combine service and method for Odoo's JSON-RPC interface
+            full_method = f"{service}.{method}"
+            
+            # Prepare the payload
+            payload = self._prepare_payload(full_method, args)
+            
+            # Get headers
+            headers = self._get_headers()
+            
+            logger.debug(f"Executing JSON-RPC (httpx): service={service}, method={method}")
+            logger.debug(f"JSON-RPC Request URL: {self.jsonrpc_url}")
+            logger.debug(f"JSON-RPC Request Headers: {headers}")
+            logger.debug(f"JSON-RPC Request Payload: {json.dumps(payload, indent=2)}")
+            
+            response = await self.async_client.post(self.jsonrpc_url, headers=headers, json=payload)
+            response.raise_for_status()
+            result = response.json()
+            
+            logger.debug(f"JSON-RPC Response Status: {response.status_code}")
+            logger.debug(f"JSON-RPC Response Headers: {dict(response.headers)}")
+            logger.debug(f"JSON-RPC Response Body: {json.dumps(result, indent=2)}")
 
-         Args:
-             service: The target service name.
-             method: The method name.
-             args: List of arguments for the method.
+            if result.get("error"):
+                error_data = result["error"]
+                error_message = error_data.get('message', 'Unknown JSON-RPC Error')
+                error_code = error_data.get('code')
+                error_debug_info = error_data.get('data', {}).get('debug', '')
+                full_error = f"Code {error_code}: {error_message} - {error_debug_info}".strip(" -")
 
-         Returns:
-             The result from the Odoo method.
+                logger.error(f"JSON-RPC Error Response: {full_error}")
+                logger.error(f"JSON-RPC Error Data: {json.dumps(error_data, indent=2)}")
 
-         Raises:
-             AuthError, ProtocolError, NetworkError, OdooMCPError.
-         """
-         if service == "object" and method == "execute_kw":
-             # Per execute_kw, riorganizza gli argomenti
-             if len(args) < 6:
-                 raise ProtocolError("execute_kw requires at least 6 arguments: db, uid, password, model, method, args")
-             
-             db, uid, password, model, method_name, *rest = args
-             
-             # Verifica che uid sia un intero
-             try:
-                 uid = int(uid) if uid is not None else None
-             except (ValueError, TypeError):
-                 raise ProtocolError(f"Invalid uid value: {uid}. Must be an integer.")
-             
-             # Verifica che password non sia None
-             if password is None:
-                 raise AuthError("Password cannot be None for execute_kw")
-             
-             payload_params = {
-                 "service": service,
-                 "method": method,
-                 "args": [db, uid, password, model, method_name] + rest
-             }
-         else:
-             # Per altri metodi, usa la logica standard
-             payload_params = {
-                 "service": service,
-                 "method": method,
-                 "args": args if (service == "common" and method == "login") else [self.database, *args]
-             }
-         payload = self._prepare_payload("call", payload_params)
-         headers = {'Content-Type': 'application/json'}
+                if error_code == 100 or "AccessDenied" in error_message or "AccessError" in error_message:
+                    raise AuthError(f"JSON-RPC Access/Auth Error: {full_error}", original_exception=Exception(str(error_data)))
+                elif "UserError" in error_message or "ValidationError" in error_message:
+                    clean_message = error_data.get('data', {}).get('message', error_message.split('\n')[0])
+                    raise OdooValidationError(f"JSON-RPC Validation Error: {clean_message}", original_exception=Exception(str(error_data)))
+                elif "Record does not exist" in error_message:
+                    raise OdooRecordNotFoundError(f"JSON-RPC Record Not Found: {full_error}", original_exception=Exception(str(error_data)))
+                else:
+                    raise ProtocolError(f"JSON-RPC Error Response: {full_error}", original_exception=Exception(str(error_data)))
 
-         try:
-             logger.debug(f"Executing JSON-RPC (httpx): service={service}, method={method}")
-             response = await self.async_client.post(self.jsonrpc_url, headers=headers, json=payload)
-             response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-             result = response.json()
+            # Serialize the result if it's a Resource object
+            result_data = result.get("result")
+            if result_data:
+                return self._serialize_resource(result_data)
+            return result_data
 
-             if result.get("error"):
-                 error_data = result["error"]
-                 error_message = error_data.get('message', 'Unknown JSON-RPC Error')
-                 error_code = error_data.get('code')
-                 error_debug_info = error_data.get('data', {}).get('debug', '')
-                 full_error = f"Code {error_code}: {error_message} - {error_debug_info}".strip(" -")
-
-                 # Map Odoo JSON-RPC error codes/messages to custom exceptions
-                 if error_code == 100 or "AccessDenied" in error_message or "AccessError" in error_message:
-                      raise AuthError(f"JSON-RPC Access/Auth Error: {full_error}", original_exception=Exception(str(error_data)))
-                 elif "UserError" in error_message or "ValidationError" in error_message:
-                      clean_message = error_data.get('data', {}).get('message', error_message.split('\n')[0])
-                      raise OdooValidationError(f"JSON-RPC Validation Error: {clean_message}", original_exception=Exception(str(error_data)))
-                 elif "Record does not exist" in error_message:
-                      raise OdooRecordNotFoundError(f"JSON-RPC Record Not Found: {full_error}", original_exception=Exception(str(error_data)))
-                 else:
-                      raise ProtocolError(f"JSON-RPC Error Response: {full_error}", original_exception=Exception(str(error_data)))
-
-             return result.get("result")
-
-         except httpx.TimeoutException as e:
-             raise NetworkError(f"JSON-RPC request timed out after {self.async_client.timeout.read} seconds", original_exception=e)
-         except httpx.ConnectError as e:
-              raise NetworkError(f"JSON-RPC Connection Error: Unable to connect to {self.jsonrpc_url}", original_exception=e)
-         except httpx.RequestError as e:
-             raise NetworkError(f"JSON-RPC Network/HTTP Error: {e}", original_exception=e)
-         except json.JSONDecodeError as e:
-              raise ProtocolError("Failed to decode JSON-RPC response", original_exception=e)
-         except Exception as e:
-              logger.exception(f"An unexpected error occurred during JSON-RPC call: {e}")
-              raise OdooMCPError(f"An unexpected error occurred during JSON-RPC call: {e}", original_exception=e)
+        except httpx.TimeoutException as e:
+            logger.error(f"JSON-RPC Timeout Error: {str(e)}")
+            raise NetworkError(f"JSON-RPC request timed out after {self.async_client.timeout.read} seconds", original_exception=e)
+        except httpx.ConnectError as e:
+            logger.error(f"JSON-RPC Connection Error: {str(e)}")
+            raise NetworkError(f"JSON-RPC Connection Error: Unable to connect to {self.jsonrpc_url}", original_exception=e)
+        except httpx.RequestError as e:
+            logger.error(f"JSON-RPC Request Error: {str(e)}")
+            raise NetworkError(f"JSON-RPC Network/HTTP Error: {e}", original_exception=e)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON-RPC JSON Decode Error: {str(e)}")
+            raise ProtocolError("Failed to decode JSON-RPC response", original_exception=e)
+        except Exception as e:
+            logger.exception(f"An unexpected error occurred during JSON-RPC call: {e}")
+            raise OdooMCPError(f"An unexpected error occurred during JSON-RPC call: {e}", original_exception=e)
 
 
     @safe_cache_decorator
@@ -404,32 +439,3 @@ class JSONRPCHandler:
         if hasattr(self, 'async_client'):
             await self.async_client.aclose()
             logger.info("httpx.AsyncClient closed.")
-
-@dataclass
-class Resource:
-    """Resource definition."""
-    uri: str
-    type: str
-    content: Any
-    mime_type: str
-    metadata: Dict[str, Any] = None
-    last_modified: datetime = None
-    etag: str = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert the resource to a dictionary for JSON serialization."""
-        return {
-            'uri': self.uri,
-            'type': self.type,
-            'content': self.content,
-            'mime_type': self.mime_type,
-            'metadata': self.metadata,
-            'last_modified': self.last_modified.isoformat() if self.last_modified else None,
-            'etag': self.etag
-        }
-
-class ResourceManager:
-    """
-    Manages server resources and caching.
-    Provides centralized access to resources and handles resource updates.
-    """
