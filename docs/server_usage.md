@@ -209,8 +209,8 @@ Il server può essere configurato attraverso un file di configurazione YAML:
 
 ```yaml
 # config.yaml
-protocol: xmlrpc  # o jsonrpc
-connection_type: stdio  # o sse
+protocol: jsonrpc # or xmlrpc
+connection_type: stdio  # or sse
 odoo_url: http://localhost:8069
 database: mio_database
 uid: admin
@@ -362,7 +362,7 @@ services:
       - odoo
 
   odoo:
-    image: odoo:15.0
+    image: odoo:18.0
     ports:
       - "8069:8069"
     volumes:
@@ -401,7 +401,7 @@ docker-compose logs -f mcp-server
 services:
   mcp-server:
     environment:
-      - PROTOCOL=xmlrpc
+      - PROTOCOL=jsonrpc
       - CONNECTION_TYPE=sse
       - REQUESTS_PER_MINUTE=120
       - SSE_QUEUE_MAXSIZE=1000
@@ -701,7 +701,7 @@ The server can be configured through a YAML configuration file:
 
 ```yaml
 # config.yaml
-protocol: xmlrpc  # or jsonrpc
+protocol: jsonrpc # or xmlrpc
 connection_type: stdio  # or sse
 odoo_url: http://localhost:8069
 database: my_database
@@ -893,7 +893,7 @@ docker-compose logs -f mcp-server
 services:
   mcp-server:
     environment:
-      - PROTOCOL=xmlrpc
+      - PROTOCOL=jsonrpc
       - CONNECTION_TYPE=sse
       - REQUESTS_PER_MINUTE=120
       - SSE_QUEUE_MAXSIZE=1000
