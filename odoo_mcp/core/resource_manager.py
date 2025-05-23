@@ -26,6 +26,23 @@ class Resource:
     last_modified: datetime = None
     etag: str = None
 
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert the resource to a JSON-serializable dictionary.
+        
+        Returns:
+            Dict[str, Any]: A dictionary representation of the resource
+        """
+        return {
+            'uri': self.uri,
+            'type': self.type,
+            'content': self.content,
+            'mime_type': self.mime_type,
+            'metadata': self.metadata or {},
+            'last_modified': self.last_modified.isoformat() if self.last_modified else None,
+            'etag': self.etag
+        }
+
 class ResourceManager:
     """
     Manages server resources and caching.
@@ -83,7 +100,7 @@ class ResourceManager:
                 del self._subscribers[uri]
             logger.info(f"Unsubscribed from resource updates: {uri}")
 
-    async def get_resource(self, uri: str) -> Resource:
+    async def get_resource(self, uri: str) -> Dict[str, Any]:
         """
         Get a resource by URI.
 
@@ -91,7 +108,7 @@ class ResourceManager:
             uri: The resource URI
 
         Returns:
-            Resource: The requested resource
+            Dict[str, Any]: The requested resource as a dictionary
 
         Raises:
             ProtocolError: If the resource is not found or cannot be accessed
@@ -100,7 +117,7 @@ class ResourceManager:
         if uri in self._resource_cache:
             cached = self._resource_cache[uri]
             if cached.last_modified and datetime.now() - cached.last_modified < timedelta(seconds=self._cache_ttl):
-                return cached
+                return cached.to_dict()
 
         # Find appropriate handler
         handler = self._find_handler(uri)
@@ -115,7 +132,7 @@ class ResourceManager:
 
             # Cache the resource
             self._resource_cache[uri] = resource
-            return resource
+            return resource.to_dict()
 
         except Exception as e:
             raise ProtocolError(f"Error getting resource {uri}: {str(e)}")

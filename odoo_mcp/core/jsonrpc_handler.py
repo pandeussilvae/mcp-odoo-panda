@@ -272,10 +272,22 @@ class JSONRPCHandler:
             Dict[str, Any]: A serializable dictionary representation of the resource
         """
         if hasattr(resource, 'uri') and hasattr(resource, 'type') and hasattr(resource, 'data'):
+            # Handle binary fields in data
+            serialized_data = {}
+            if isinstance(resource.data, dict):
+                for key, value in resource.data.items():
+                    if isinstance(value, bytes):
+                        # Convert binary data to base64 string
+                        serialized_data[key] = f"data:image/png;base64,{value.decode('utf-8')}"
+                    else:
+                        serialized_data[key] = value
+            else:
+                serialized_data = resource.data
+
             return {
                 'uri': resource.uri,
                 'type': resource.type.value if hasattr(resource.type, 'value') else resource.type,
-                'data': resource.data,
+                'data': serialized_data,
                 'mime_type': getattr(resource, 'mime_type', 'application/json')
             }
         return resource
@@ -335,11 +347,8 @@ class JSONRPCHandler:
                 else:
                     raise ProtocolError(f"JSON-RPC Error Response: {full_error}", original_exception=Exception(str(error_data)))
 
-            # Serialize the result if it's a Resource object
-            result_data = result.get("result")
-            if result_data:
-                return self._serialize_resource(result_data)
-            return result_data
+            # Return the result directly without creating a Resource object
+            return result.get("result")
 
         except httpx.TimeoutException as e:
             logger.error(f"JSON-RPC Timeout Error: {str(e)}")

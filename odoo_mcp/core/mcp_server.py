@@ -18,6 +18,7 @@ from enum import Enum
 from abc import ABC, abstractmethod
 import aiohttp
 import aiohttp.web as web
+import base64
 
 # Import core components
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -500,6 +501,32 @@ class OdooMCPServer(Server):
                 raise ProtocolError(f"Invalid record URI format: {uri}")
             
             model = model or parts[0]
+            
+            # Check if this is a list request
+            if parts[1] == "list":
+                logger.info(f"Handling list request for model {model}")
+                # Get records from Odoo
+                records = await self.pool.execute_kw(
+                    model=model,
+                    method="search_read",
+                    args=[[], ["id", "name"]],
+                    kwargs={"limit": 100}
+                )
+
+                logger.info(f"Successfully retrieved {len(records)} records from model {model}")
+                return Resource(
+                    uri=uri,
+                    type="list",
+                    content=records,
+                    mime_type="application/json",
+                    metadata={
+                        "model": model,
+                        "count": len(records),
+                        "last_modified": datetime.now().isoformat()
+                    }
+                )
+            
+            # Handle single record request
             try:
                 record_id = int(parts[1])
             except ValueError:
@@ -1029,22 +1056,116 @@ class OdooMCPServer(Server):
         """Handle list_resource_templates request."""
         try:
             templates = self.capabilities_manager.list_resource_templates()
+            templates_list = []
+            for template in templates:
+                templates_list.append({
+                    "name": template["name"],
+                    "type": template["type"],
+                    "description": template["description"],
+                    "operations": template["operations"],
+                    "parameters": template["parameters"],
+                    "uriTemplate": template["uriTemplate"]
+                })
+            
             return {
-                'jsonrpc': '2.0',
-                'result': {
-                    'resourceTemplates': templates
-                },
-                'id': request.id
+                "jsonrpc": "2.0",
+                "id": request.id,
+                "result": {
+                    "id": "templates",
+                    "method": "listResourceTemplates",
+                    "resourceTemplates": templates_list
+                }
             }
         except Exception as e:
             logger.error(f"Error handling list_resource_templates request: {e}")
             return {
-                'jsonrpc': '2.0',
-                'error': {
-                    'code': -32603,
-                    'message': f"Internal error: {str(e)}"
-                },
-                'id': request.id
+                "jsonrpc": "2.0",
+                "id": request.id,
+                "error": {
+                    "code": -32603,
+                    "message": str(e)
+                }
+            }
+
+    async def _handle_get_resource(self, request: JsonRpcRequest) -> Dict[str, Any]:
+        """Handle get_resource request."""
+        try:
+            resource = await self.get_resource(request.params['uri'])
+            # Handle both Resource objects and dictionaries
+            if isinstance(resource, Resource):
+                # Convert content to text or blob based on mime_type and content type
+                if isinstance(resource.content, (dict, list)):
+                    # For dictionaries and lists, always use text with JSON
+                    content = {
+                        "text": json.dumps(resource.content),
+                        "blob": None
+                    }
+                elif isinstance(resource.content, bytes):
+                    # For binary content, encode as base64
+                    content = {
+                        "text": None,
+                        "blob": base64.b64encode(resource.content).decode()
+                    }
+                else:
+                    # For other types, convert to string
+                    content = {
+                        "text": str(resource.content),
+                        "blob": None
+                    }
+                
+                # Extract model name from URI for the name field
+                uri_parts = resource.uri.replace("odoo://", "").split("/")
+                model_name = uri_parts[0] if uri_parts else "unknown"
+                
+                contents = [{
+                    "uri": resource.uri,
+                    "type": resource.type,
+                    "content": resource.content,
+                    "mimeType": resource.mime_type,
+                    "name": model_name,
+                    **content
+                }]
+            elif isinstance(resource, dict):
+                # If it's already a dictionary, ensure it has text or blob
+                if 'content' in resource:
+                    if isinstance(resource['content'], (dict, list)):
+                        content = {
+                            "text": json.dumps(resource['content']),
+                            "blob": None
+                        }
+                    elif isinstance(resource['content'], bytes):
+                        content = {
+                            "text": None,
+                            "blob": base64.b64encode(resource['content']).decode()
+                        }
+                    else:
+                        content = {
+                            "text": str(resource['content']),
+                            "blob": None
+                        }
+                    resource.update(content)
+                contents = [resource]
+            else:
+                contents = []
+            
+            return {
+                "jsonrpc": "2.0",
+                "id": request.id,
+                "result": {
+                    "id": request.params['uri'],
+                    "method": "readResource",
+                    "contents": contents
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error handling get_resource request: {e}")
+            return {
+                "jsonrpc": "2.0",
+                "id": request.id,
+                "error": {
+                    "code": -32603,
+                    "message": str(e)
+                }
             }
 
     async def run(self):
@@ -1294,6 +1415,20 @@ class OdooMCPServer(Server):
                 logger.debug(f"Converted response to dict: {response_dict}")
                 return response_dict
             else:
+                # Ensure the result is JSON-serializable
+                if isinstance(result, dict):
+                    # Recursively convert any Resource objects in the result
+                    def convert_resource(obj):
+                        if isinstance(obj, Resource):
+                            return obj.to_dict()
+                        elif isinstance(obj, dict):
+                            return {k: convert_resource(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [convert_resource(item) for item in obj]
+                        return obj
+                    
+                    result = convert_resource(result)
+                
                 logger.debug(f"Result is already a dict: {result}")
                 return result
 
@@ -1329,50 +1464,63 @@ class OdooMCPServer(Server):
             logger.error(f"Error handling initialize request: {e}")
             return self.protocol_handler.handle_protocol_error(e)
 
-    async def _handle_get_resource(self, request: JsonRpcRequest) -> Dict[str, Any]:
-        """Handle get_resource request."""
-        try:
-            resource = await self.get_resource(request.params['uri'])
-            return self.protocol_handler.create_response(
-                request.id,
-                result=resource
-            )
-        except Exception as e:
-            logger.error(f"Error handling get_resource request: {e}")
-            return self.protocol_handler.handle_protocol_error(e)
-
     async def _handle_list_resources(self, request: JsonRpcRequest) -> Dict[str, Any]:
         """Handle list_resources request."""
         try:
             resources = await self.list_resources()
+            # Convert to MCP client format with text or blob
+            resources_list = []
+            for resource in resources:
+                if isinstance(resource.content, (dict, list)):
+                    # For dictionaries and lists, always use text with JSON
+                    content = {
+                        "text": json.dumps(resource.content),
+                        "blob": None
+                    }
+                elif isinstance(resource.content, bytes):
+                    # For binary content, encode as base64
+                    content = {
+                        "text": None,
+                        "blob": base64.b64encode(resource.content).decode()
+                    }
+                else:
+                    # For other types, convert to string
+                    content = {
+                        "text": str(resource.content),
+                        "blob": None
+                    }
+                
+                # Extract model name from URI for the name field
+                uri_parts = resource.uri.replace("odoo://", "").split("/")
+                model_name = uri_parts[0] if uri_parts else "unknown"
+                
+                resources_list.append({
+                    "uri": resource.uri,
+                    "type": resource.type,
+                    "content": resource.content,
+                    "mimeType": resource.mime_type,
+                    "name": model_name,
+                    **content
+                })
+            
             return {
-                'jsonrpc': '2.0',
-                'result': {
-                    'resources': [
-                        {
-                            'uri': resource.uri,
-                            'type': resource.type,
-                            'content': resource.content,
-                            'mimeType': resource.mime_type,
-                            'name': resource.metadata['name'],
-                            'description': resource.metadata['description'],
-                            'operations': resource.metadata['operations'],
-                            'parameters': resource.metadata['parameters']
-                        }
-                        for resource in resources
-                    ]
-                },
-                'id': request.id
+                "jsonrpc": "2.0",
+                "id": request.id,
+                "result": {
+                    "id": "list",
+                    "method": "listResources",
+                    "resources": resources_list
+                }
             }
         except Exception as e:
             logger.error(f"Error handling list_resources request: {e}")
             return {
-                'jsonrpc': '2.0',
-                'error': {
-                    'code': -32603,
-                    'message': f"Internal error: {str(e)}"
-                },
-                'id': request.id
+                "jsonrpc": "2.0",
+                "id": request.id,
+                "error": {
+                    "code": -32603,
+                    "message": str(e)
+                }
             }
 
     async def _handle_list_tools(self, request: JsonRpcRequest) -> Dict[str, Any]:
