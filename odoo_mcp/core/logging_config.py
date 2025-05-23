@@ -140,7 +140,7 @@ def setup_logging_from_config(logging_config: dict):
         logger.debug(f"Logging config: {logging_config}")
         
         # Get root logger and set level
-        root_logger = logging.getLogger()
+    root_logger = logging.getLogger()
         
         # Check environment variable first, then config file
         env_log_level = os.getenv('LOGGING_LEVEL', '').upper()
@@ -157,8 +157,8 @@ def setup_logging_from_config(logging_config: dict):
         
         # Remove existing handlers
         logger.info("Removing existing handlers...")
-        for handler in root_logger.handlers[:]:
-            root_logger.removeHandler(handler)
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
         
         # Configure handlers
         logger.info("Configuring handlers...")
@@ -179,10 +179,10 @@ def setup_logging_from_config(logging_config: dict):
             try:
                 logger.info(f"Configuring handler of type: {handler_cfg['type']}")
                 
-                if handler_cfg['type'] == 'StreamHandler':
+        if handler_cfg['type'] == 'StreamHandler':
                     logger.info("Creating StreamHandler...")
                     handler = logging.StreamHandler(sys.stderr)  # Explicitly use stderr
-                elif handler_cfg['type'] == 'FileHandler':
+        elif handler_cfg['type'] == 'FileHandler':
                     filename = handler_cfg.get('filename')
                     if not filename:
                         logger.error("FileHandler configured but no filename provided")
@@ -193,9 +193,9 @@ def setup_logging_from_config(logging_config: dict):
                     except Exception as e:
                         logger.error(f"Failed to create FileHandler for {filename}: {e}")
                         continue
-                else:
+        else:
                     logger.warning(f"Unsupported handler type: {handler_cfg['type']}")
-                    continue
+            continue
                 
                 # Set handler level
                 handler_level = handler_cfg.get('level', log_level).upper()
@@ -206,10 +206,10 @@ def setup_logging_from_config(logging_config: dict):
                 log_format = handler_cfg.get('format', logging_config.get('format', '%(asctime)s - %(levelname)s - [%(name)s] - %(message)s'))
                 logger.info(f"Using log format: {log_format}")
                 formatter = logging.Formatter(log_format)
-                handler.setFormatter(formatter)
+        handler.setFormatter(formatter)
                 
                 # Add handler to root logger
-                root_logger.addHandler(handler)
+        root_logger.addHandler(handler)
                 logger.info(f"Handler {handler_cfg['type']} configured successfully")
                 
             except Exception as e:

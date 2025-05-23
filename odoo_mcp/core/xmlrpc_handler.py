@@ -164,14 +164,14 @@ class XMLRPCHandler:
                 result = await loop.run_in_executor(
                     None,
                     lambda: proxy.execute_kw(
-                        self.database,
-                        self.global_uid,
-                        self.global_password,
-                        model,
-                        method,
-                        args or [],
-                        kwargs or {}
-                    )
+                    self.database,
+                    self.global_uid,
+                    self.global_password,
+                    model,
+                    method,
+                    args or [],
+                    kwargs or {}
+                )
                 )
                 return result
             finally:

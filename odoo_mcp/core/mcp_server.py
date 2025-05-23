@@ -181,17 +181,57 @@ class StreamableHTTPProtocol:
         self.config = config
         self.running = False
         self.app = web.Application()
+        
+        # Configura CORS
         self.app.router.add_post('/mcp', self._handle_request)
         self.app.router.add_get('/sse', self._handle_sse)
+        self.app.router.add_options('/mcp', self._handle_options)
+        self.app.router.add_options('/sse', self._handle_options)
+        
+        # Aggiungi middleware per CORS
+        @web.middleware
+        async def cors_middleware(request, handler):
+            response = await handler(request)
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            response.headers['Content-Type'] = 'application/json; charset=utf-8'
+            return response
+        
+        self.app.middlewares.append(cors_middleware)
+        
         self.runner = None
         self.site = None
 
     async def _handle_request(self, request: web.Request) -> web.Response:
         """Handle HTTP request."""
         try:
-            data = await request.json()
+            # Leggi il corpo della richiesta come bytes
+            body = await request.read()
+            
+            # Prova a decodificare con UTF-8, se fallisce prova con latin-1
+            try:
+                data = json.loads(body.decode('utf-8'))
+            except UnicodeDecodeError:
+                data = json.loads(body.decode('latin-1'))
+            
             response = self.request_handler(data)
-            return web.json_response(response)
+            
+            # Assicurati che la risposta sia codificata correttamente
+            return web.json_response(
+                response,
+                content_type='application/json; charset=utf-8'
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in request: {e}")
+            return web.json_response({
+                'jsonrpc': '2.0',
+                'error': {
+                    'code': -32700,
+                    'message': 'Parse error: Invalid JSON'
+                },
+                'id': None
+            }, status=400)
         except Exception as e:
             logger.error(f"Error handling request: {e}")
             return web.json_response({
@@ -201,7 +241,7 @@ class StreamableHTTPProtocol:
                     'message': str(e)
                 },
                 'id': None
-            })
+            }, status=500)
 
     async def _handle_sse(self, request: web.Request) -> web.StreamResponse:
         """Handle Server-Sent Events request."""
@@ -220,6 +260,14 @@ class StreamableHTTPProtocol:
             logger.error(f"Error in SSE handler: {e}")
         finally:
             await response.write_eof()
+        return response
+
+    async def _handle_options(self, request: web.Request) -> web.Response:
+        """Handle OPTIONS request for CORS preflight."""
+        response = web.Response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
         return response
 
     async def run(self):
@@ -412,46 +460,6 @@ class OdooMCPServer(Server):
             self.capabilities_manager.register_resource(template)
             logger.info(f"Resource template {template.name} registered successfully")
 
-        # Register tools
-        logger.info("Registering tools...")
-        tools = [
-            Tool(
-                name="odoo_login",
-                description="Authenticate with Odoo",
-                operations=["authenticate"],
-                parameters={
-                    "database": {"type": "string", "description": "Database name"},
-                    "username": {"type": "string", "description": "Username"},
-                    "password": {"type": "string", "description": "Password"}
-                }
-            ),
-            Tool(
-                name="odoo_search",
-                description="Search records in Odoo",
-                operations=["search"],
-                parameters={
-                    "model": {"type": "string", "description": "Model name"},
-                    "domain": {"type": "array", "description": "Search domain"},
-                    "fields": {"type": "array", "description": "Fields to return"}
-                }
-            ),
-            Tool(
-                name="odoo_read",
-                description="Read records from Odoo",
-                operations=["read"],
-                parameters={
-                    "model": {"type": "string", "description": "Model name"},
-                    "ids": {"type": "array", "description": "Record IDs"},
-                    "fields": {"type": "array", "description": "Fields to return"}
-                }
-            )
-        ]
-
-        for tool in tools:
-            logger.info(f"Registering tool: {tool.name}")
-            self.capabilities_manager.register_tool(tool)
-            logger.info(f"Tool {tool.name} registered successfully")
-
         # Register prompts
         logger.info("Registering prompts...")
         prompts = [
@@ -510,7 +518,7 @@ class OdooMCPServer(Server):
                     model=model,
                     method="search_read",
                     args=[[], ["id", "name"]],
-                    kwargs={"limit": 100}
+                    kwargs={"limit": 100, "offset": 0}
                 )
 
                 logger.info(f"Successfully retrieved {len(records)} records from model {model}")
@@ -565,7 +573,7 @@ class OdooMCPServer(Server):
             logger.error(f"Error handling Odoo record request: {str(e)}")
             raise ProtocolError(f"Error handling Odoo record request: {str(e)}")
 
-    async def _handle_odoo_record_list(self, uri: str, model: Optional[str] = None) -> Resource:
+    async def _handle_odoo_record_list(self, uri: str, model: Optional[str] = None, domain: Optional[List] = None, fields: Optional[List[str]] = None, limit: Optional[int] = None, offset: Optional[int] = None) -> Resource:
         """Handle Odoo record list resource requests."""
         logger.info(f"Handling Odoo record list request for URI: {uri}")
         try:
@@ -578,12 +586,18 @@ class OdooMCPServer(Server):
             model = model or parts[0]
             logger.info(f"Fetching records from model {model}")
 
+            # Set default values
+            domain = domain or []
+            fields = fields or ["id", "name"]
+            limit = limit or 100
+            offset = offset or 0
+
             # Get records from Odoo
             records = await self.pool.execute_kw(
                 model=model,
                 method="search_read",
-                args=[[], ["id", "name"]],
-                kwargs={"limit": 100}
+                args=[domain, fields],
+                kwargs={"limit": limit, "offset": offset}
             )
 
             logger.info(f"Successfully retrieved {len(records)} records from model {model}")
@@ -595,6 +609,10 @@ class OdooMCPServer(Server):
                 metadata={
                     "model": model,
                     "count": len(records),
+                    "domain": domain,
+                    "fields": fields,
+                    "limit": limit,
+                    "offset": offset,
                     "last_modified": datetime.now().isoformat()
                 }
             )
@@ -1165,15 +1183,15 @@ class OdooMCPServer(Server):
                 "error": {
                     "code": -32603,
                     "message": str(e)
-                }
             }
+        }
 
     async def run(self):
         """Run the server."""
         try:
             logger.info("Starting server...")
             if self.config.get('protocol') == 'stdio':
-                logger.info("Starting server in stdio mode")
+            logger.info("Starting server in stdio mode")
                 await self._run_stdio()
             else:
                 logger.info("Starting server in streamable_http mode")
@@ -1343,126 +1361,229 @@ class OdooMCPServer(Server):
             raise
 
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Process an incoming request."""
+        """Process a JSON-RPC request."""
         try:
-            # Parse and validate request
-            parsed_request = self.protocol_handler.parse_request(request)
-            logger.debug(f"Processing request: {parsed_request}")
-            
-            # Handle the request based on method
-            method = parsed_request.method
-            # Convert namespace/method format to method_name format
-            if '/' in method:
-                parts = method.split('/')
-                if len(parts) == 2:
-                    namespace, method_name = parts
-                    if namespace == 'tools' and method_name == 'list':
-                        method = 'list_tools'
-                    elif namespace == 'prompts' and method_name == 'list':
-                        method = 'list_prompts'
-                    elif namespace == 'resources' and method_name == 'list':
-                        method = 'list_resources'
-                    elif namespace == 'resources' and method_name == 'read':
-                        method = 'get_resource'
-                    elif namespace == 'notifications' and method_name == 'initialized':
-                        # Handle notification
-                        return {
-                            'jsonrpc': '2.0',
-                            'result': None,
-                            'id': parsed_request.id
-                        }
-                elif len(parts) == 3:
-                    namespace, subnamespace, method_name = parts
-                    if namespace == 'resources' and subnamespace == 'templates' and method_name == 'list':
-                        method = 'list_resource_templates'
-            
-            if method == 'initialize':
-                result = await self._handle_initialize(parsed_request)
-            elif method == 'get_resource':
-                result = await self._handle_get_resource(parsed_request)
-            elif method == 'list_resources':
-                result = await self._handle_list_resources(parsed_request)
-            elif method == 'list_resource_templates':
-                result = await self._handle_list_resource_templates(parsed_request)
-            elif method == 'list_tools':
-                result = await self._handle_list_tools(parsed_request)
-            elif method == 'list_prompts':
-                result = await self._handle_list_prompts(parsed_request)
-            elif method == 'get_prompt':
-                result = await self._handle_get_prompt(parsed_request)
-            else:
-                result = {
-                    'jsonrpc': '2.0',
-                    'error': {
-                        'code': -32601,
-                        'message': f"Method not found: {parsed_request.method}"
-                    },
-                    'id': parsed_request.id
-                }
-                return result
-
-            # Convert result to dict if it's a JsonRpcResponse
-            if hasattr(result, 'jsonrpc'):
-                response_dict = {
-                    'jsonrpc': getattr(result, 'jsonrpc', '2.0'),
-                    'result': getattr(result, 'result', None),
-                    'id': getattr(result, 'id', None)
-                }
-                # Only add error if it's not None
-                error = getattr(result, 'error', None)
-                if error is not None:
-                    response_dict['error'] = error
-                logger.debug(f"Converted response to dict: {response_dict}")
-                return response_dict
-            else:
-                # Ensure the result is JSON-serializable
-                if isinstance(result, dict):
-                    # Recursively convert any Resource objects in the result
-                    def convert_resource(obj):
-                        if isinstance(obj, Resource):
-                            return obj.to_dict()
-                        elif isinstance(obj, dict):
-                            return {k: convert_resource(v) for k, v in obj.items()}
-                        elif isinstance(obj, list):
-                            return [convert_resource(item) for item in obj]
-                        return obj
-                    
-                    result = convert_resource(result)
+            # Parse request
+            jsonrpc_request = JsonRpcRequest.from_dict(request)
+            # PATCH: alias per compatibilità n8n
+            method_aliases = {
+                "tools/list": "list_tools",
+                "prompts/list": "list_prompts",
+                "resources/templates/list": "list_resource_templates",
+                "resources/list": "list_resources",
+            }
+            method = jsonrpc_request.method
+            if method in method_aliases:
+                jsonrpc_request.method = method_aliases[method]
+            # Handle different methods
+            if jsonrpc_request.method == "initialize":
+                return await self._handle_initialize(jsonrpc_request)
+            elif jsonrpc_request.method == "list_resources":
+                return await self._handle_list_resources(jsonrpc_request)
+            elif jsonrpc_request.method == "list_tools":
+                return await self._handle_list_tools(jsonrpc_request)
+            elif jsonrpc_request.method == "list_prompts":
+                return await self._handle_list_prompts(jsonrpc_request)
+            elif jsonrpc_request.method == "get_prompt":
+                return await self._handle_get_prompt(jsonrpc_request)
+            elif jsonrpc_request.method == "list_resource_templates":
+                return await self._handle_list_resource_templates(jsonrpc_request)
+            elif jsonrpc_request.method == "call_tool":
+                # Handle tool calls
+                tool_name = jsonrpc_request.params.get("name")
+                tool_args = jsonrpc_request.params.get("arguments", {})
                 
-                logger.debug(f"Result is already a dict: {result}")
-                return result
-
+                if tool_name == "odoo_search_read":
+                    # Get parameters
+                    model = tool_args.get("model")
+                    domain = tool_args.get("domain", [])
+                    fields = tool_args.get("fields", ["id", "name"])
+                    limit = tool_args.get("limit", 100)
+                    offset = tool_args.get("offset", 0)
+                    
+                    # Create URI for the list resource
+                    uri = f"odoo://{model}/list"
+                    
+                    # Get resource with search parameters
+                    resource = await self._handle_odoo_record_list(
+                        uri=uri,
+                        model=model,
+                        domain=domain,
+                        fields=fields,
+                        limit=limit,
+                        offset=offset
+                    )
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": resource.content,
+                            "metadata": resource.metadata
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                elif tool_name == "odoo_read":
+                    # Handle odoo_read tool
+                    model = tool_args.get("model")
+                    ids = tool_args.get("ids", [])
+                    fields = tool_args.get("fields", ["id", "name"])
+                    
+                    records = await self.pool.execute_kw(
+                        model=model,
+                        method="read",
+                        args=[ids, fields],
+                        kwargs={}
+                    )
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": records,
+                            "metadata": {
+                                "model": model,
+                                "count": len(records)
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                elif tool_name == "odoo_create":
+                    # Handle odoo_create tool
+                    model = tool_args.get("model")
+                    values = tool_args.get("values", {})
+                    
+                    record_id = await self.pool.execute_kw(
+                        model=model,
+                        method="create",
+                        args=[values],
+                        kwargs={}
+                    )
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": {"id": record_id},
+                            "metadata": {
+                                "model": model,
+                                "operation": "create"
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                elif tool_name == "odoo_write":
+                    # Handle odoo_write tool
+                    model = tool_args.get("model")
+                    ids = tool_args.get("ids", [])
+                    values = tool_args.get("values", {})
+                    
+                    result = await self.pool.execute_kw(
+                        model=model,
+                        method="write",
+                        args=[ids, values],
+                        kwargs={}
+                    )
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": {"success": result},
+                            "metadata": {
+                                "model": model,
+                                "operation": "write"
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                elif tool_name == "odoo_unlink":
+                    # Handle odoo_unlink tool
+                    model = tool_args.get("model")
+                    ids = tool_args.get("ids", [])
+                    
+                    result = await self.pool.execute_kw(
+                        model=model,
+                        method="unlink",
+                        args=[ids],
+                        kwargs={}
+                    )
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": {"success": result},
+                            "metadata": {
+                                "model": model,
+                                "operation": "unlink"
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                elif tool_name == "odoo_call_method":
+                    # Handle odoo_call_method tool
+                    model = tool_args.get("model")
+                    method = tool_args.get("method")
+                    args = tool_args.get("args", [])
+                    kwargs = tool_args.get("kwargs", {})
+                    
+                    result = await self.pool.execute_kw(
+                        model=model,
+                        method=method,
+                        args=args,
+                        kwargs=kwargs
+                    )
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": result,
+                            "metadata": {
+                                "model": model,
+                                "method": method
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                else:
+                    raise ProtocolError(f"Unknown tool: {tool_name}")
+            else:
+                raise ProtocolError(f"Unknown method: {jsonrpc_request.method}")
         except Exception as e:
-            logger.error(f"Error processing request: {e}")
-            logger.exception("Full traceback for process_request error:")
+            logger.error(f"Error processing request: {str(e)}")
             return {
-                'jsonrpc': '2.0',
-                'error': {
-                    'code': -32603,
-                    'message': str(e)
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32603,
+                    "message": str(e)
                 },
-                'id': request.get('id')
+                "id": request.get("id")
             }
 
     async def _handle_initialize(self, request: JsonRpcRequest) -> Dict[str, Any]:
         """Handle initialize request."""
         try:
-            client_info = ClientInfo.from_dict(request.params)
+        client_info = ClientInfo.from_dict(request.params)
             server_info = await self.initialize(client_info)
-            return self.protocol_handler.create_response(
-                request.id,
-                result={
-                    "protocolVersion": PROTOCOL_VERSION,
-                    "serverInfo": {
-                        "name": SERVER_NAME,
-                        "version": SERVER_VERSION
-                    },
-                    "capabilities": server_info.capabilities
-                }
-            )
+            # Convert ProtocolHandler response to dict
+            response = self.protocol_handler.create_response(
+            request.id,
+            result={
+                "protocolVersion": PROTOCOL_VERSION,
+                "serverInfo": {
+                    "name": SERVER_NAME,
+                    "version": SERVER_VERSION
+                },
+                "capabilities": server_info.capabilities
+            }
+        )
+            response = response.dict() if hasattr(response, 'dict') else dict(response)
+            if 'error' in response and (response['error'] is None or response['error'] == {}):
+                del response['error']
+            return response
         except Exception as e:
             logger.error(f"Error handling initialize request: {e}")
-            return self.protocol_handler.handle_protocol_error(e)
+            error_response = self.protocol_handler.handle_protocol_error(e)
+            error_response = error_response.dict() if hasattr(error_response, 'dict') else dict(error_response)
+            if 'error' in error_response and (error_response['error'] is None or error_response['error'] == {}):
+                del error_response['error']
+            return error_response
 
     async def _handle_list_resources(self, request: JsonRpcRequest) -> Dict[str, Any]:
         """Handle list_resources request."""
@@ -1529,49 +1650,57 @@ class OdooMCPServer(Server):
             tools = await self.list_tools()
             return {
                 'jsonrpc': '2.0',
+                'id': request.id,
                 'result': {
                     'tools': [
                         {
                             'name': tool.name,
                             'description': tool.description,
-                            'operations': tool.operations,
                             'parameters': tool.parameters,
-                            'inputSchema': {
+                            'inputSchema': tool.inputSchema or {
                                 'type': 'object',
-                                'properties': tool.parameters,
-                                'required': list(tool.parameters.keys())
+                                'properties': {},
+                                'required': []
                             }
                         }
                         for tool in tools
                     ]
-                },
-                'id': request.id
+                }
             }
         except Exception as e:
             logger.error(f"Error handling list_tools request: {e}")
             return {
                 'jsonrpc': '2.0',
+                'id': request.id,
                 'error': {
                     'code': -32603,
                     'message': f"Internal error: {str(e)}"
-                },
-                'id': request.id
+                }
             }
 
     async def _handle_get_prompt(self, request: JsonRpcRequest) -> Dict[str, Any]:
         """Handle get_prompt request."""
         try:
             prompt = await self.get_prompt(
-                request.params['name'],
-                request.params.get('args', {})
+            request.params['name'],
+            request.params.get('args', {})
             )
-            return self.protocol_handler.create_response(
-                request.id,
-                result=prompt
+            # Convert ProtocolHandler response to dict
+            response = self.protocol_handler.create_response(
+            request.id,
+            result=prompt
             )
+            response = response.dict() if hasattr(response, 'dict') else dict(response)
+            if 'error' in response and (response['error'] is None or response['error'] == {}):
+                del response['error']
+            return response
         except Exception as e:
             logger.error(f"Error handling get_prompt request: {e}")
-            return self.protocol_handler.handle_protocol_error(e)
+            error_response = self.protocol_handler.handle_protocol_error(e)
+            error_response = error_response.dict() if hasattr(error_response, 'dict') else dict(error_response)
+            if 'error' in error_response and (error_response['error'] is None or error_response['error'] == {}):
+                del error_response['error']
+            return error_response
 
     async def stop(self):
         """Stop the server and clean up resources."""
@@ -1616,18 +1745,17 @@ class OdooMCPServer(Server):
                 logger.debug(f"Got response from process_request: {response}")
                 logger.debug(f"Response type: {type(response)}")
                 logger.debug(f"Response attributes: {dir(response)}")
-                
                 try:
-                    # Convert JsonRpcResponse to dict
+                    # Build JSON-RPC response dict with only 'result' OR 'error'
                     response_dict = {
                         'jsonrpc': getattr(response, 'jsonrpc', '2.0'),
-                        'result': getattr(response, 'result', None),
                         'id': getattr(response, 'id', None)
                     }
-                    # Only add error if it's not None
                     error = getattr(response, 'error', None)
                     if error is not None:
                         response_dict['error'] = error
+                    else:
+                        response_dict['result'] = getattr(response, 'result', None)
                     logger.debug(f"Converted response dict: {response_dict}")
                     return web.json_response(response_dict)
                 except Exception as e:
@@ -1644,18 +1772,17 @@ class OdooMCPServer(Server):
                 logger.debug(f"Got response from process_request: {response}")
                 logger.debug(f"Response type: {type(response)}")
                 logger.debug(f"Response attributes: {dir(response)}")
-                
                 try:
-                    # Convert JsonRpcResponse to dict
+                    # Build JSON-RPC response dict with only 'result' OR 'error'
                     response_dict = {
                         'jsonrpc': getattr(response, 'jsonrpc', '2.0'),
-                        'result': getattr(response, 'result', None),
                         'id': getattr(response, 'id', None)
                     }
-                    # Only add error if it's not None
                     error = getattr(response, 'error', None)
                     if error is not None:
                         response_dict['error'] = error
+                    else:
+                        response_dict['result'] = getattr(response, 'result', None)
                     logger.debug(f"Converted response dict: {response_dict}")
                     return response_dict
                 except Exception as e:
@@ -1704,9 +1831,9 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
         
         # Load configuration
         logger.info(f"Loading configuration from {config_path}")
-        try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
                 logger.info("Configuration loaded successfully")
                 logger.debug(f"Configuration content: {config}")
         except Exception as e:
@@ -1741,8 +1868,8 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
 
         # Create server instance
         logger.info("Creating server instance...")
-        try:
-            server = OdooMCPServer(config)
+    try:
+        server = OdooMCPServer(config)
             logger.info("Server instance created successfully")
         except Exception as e:
             logger.error(f"Failed to create server instance: {e}")
@@ -1762,9 +1889,9 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
         # Start server
         logger.info("Starting server...")
         try:
-            await server.run()
+        await server.run()
             logger.info("Server started successfully")
-        except Exception as e:
+    except Exception as e:
             logger.error(f"Failed to start server: {e}")
             raise
         

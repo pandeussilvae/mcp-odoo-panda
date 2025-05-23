@@ -132,6 +132,111 @@ class CapabilitiesManager:
         
         # Register tools with proper inputSchema
         self.register_tool(Tool(
+            name="odoo_login",
+            description="Authenticate with Odoo",
+            operations=["authenticate"],
+            parameters={
+                "database": {"type": "string", "description": "Database name"},
+                "username": {"type": "string", "description": "Username"},
+                "password": {"type": "string", "description": "Password"}
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "database": {
+                        "type": "string",
+                        "description": "Database name"
+                    },
+                    "username": {
+                        "type": "string",
+                        "description": "Username"
+                    },
+                    "password": {
+                        "type": "string",
+                        "description": "Password"
+                    }
+                },
+                "required": ["database", "username", "password"]
+            }
+        ))
+
+        self.register_tool(Tool(
+            name="odoo_search_read",
+            description="Search and read records in Odoo",
+            operations=["search_read"],
+            parameters={
+                "model": {"type": "string", "description": "Model name"},
+                "domain": {"type": "array", "description": "Search domain"},
+                "fields": {"type": "array", "description": "Fields to return"},
+                "limit": {"type": "integer", "description": "Maximum number of records to return"},
+                "offset": {"type": "integer", "description": "Number of records to skip"}
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the Odoo model"
+                    },
+                    "domain": {
+                        "type": "array",
+                        "description": "Search domain",
+                        "items": {"type": "any"}
+                    },
+                    "fields": {
+                        "type": "array",
+                        "description": "Fields to return",
+                        "items": {"type": "string"}
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of records to return"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Number of records to skip"
+                    }
+                },
+                "required": ["model"]
+            }
+        ))
+
+        self.register_tool(Tool(
+            name="odoo_read",
+            description="Read records from Odoo",
+            operations=["read"],
+            parameters={
+                "model": {"type": "string", "description": "Model name"},
+                "ids": {"type": "array", "description": "Record IDs"},
+                "fields": {"type": "array", "description": "Fields to return"}
+            },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the Odoo model"
+                    },
+                    "ids": {
+                        "type": "array",
+                        "description": "Record IDs to read",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "fields": {
+                        "type": "array",
+                        "description": "Fields to return",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": ["model", "ids"]
+            }
+        ))
+
+        self.register_tool(Tool(
             name="odoo_execute_kw",
             description="Execute an arbitrary method on an Odoo model",
             operations=["execute"],
@@ -349,46 +454,6 @@ class CapabilitiesManager:
                     }
                 },
                 "required": ["model", "id"]
-            }
-        ))
-
-        self.register_tool(Tool(
-            name="odoo_search_records",
-            description="Search records in an Odoo model",
-            operations=["search_read"],
-            parameters={
-                "model": "string",
-                "domain": "array",
-                "fields": "array",
-                "limit": "integer"
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Name of the Odoo model"
-                    },
-                    "domain": {
-                        "type": "array",
-                        "description": "Search domain",
-                        "items": {
-                            "type": "any"
-                        }
-                    },
-                    "fields": {
-                        "type": "array",
-                        "description": "Fields to return",
-                        "items": {
-                            "type": "string"
-                        }
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of records to return"
-                    }
-                },
-                "required": ["model"]
             }
         ))
         

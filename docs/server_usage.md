@@ -97,7 +97,9 @@ async function searchPartners() {
                 arguments: {
                     model: "res.partner",
                     domain: [["active", "=", true]],
-                    fields: ["name", "email"]
+                    fields: ["name", "email"],
+                    limit: 10,
+                    offset: 0
                 }
             }
         })
@@ -153,8 +155,8 @@ response = await client.call_tool("odoo_read", {
 response = await client.call_tool("odoo_create", {
     "model": "res.partner",
     "values": {
-        "name": "Mario Rossi",
-        "email": "mario@esempio.com"
+        "name": "John Doe",
+        "email": "john@example.com"
     }
 })
 ```
@@ -165,7 +167,7 @@ response = await client.call_tool("odoo_write", {
     "model": "res.partner",
     "ids": [1],
     "values": {
-        "name": "Mario Rossi Aggiornato"
+        "name": "John Doe Updated"
     }
 })
 ```
@@ -182,8 +184,9 @@ response = await client.call_tool("odoo_unlink", {
 ```python
 response = await client.call_tool("odoo_call_method", {
     "model": "res.partner",
-    "method": "action_archive",
-    "ids": [1]
+    "method": "name_get",
+    "args": [[1]],
+    "kwargs": {}
 })
 ```
 
@@ -589,7 +592,9 @@ async function searchPartners() {
                 arguments: {
                     model: "res.partner",
                     domain: [["active", "=", true]],
-                    fields: ["name", "email"]
+                    fields: ["name", "email"],
+                    limit: 10,
+                    offset: 0
                 }
             }
         })
@@ -674,8 +679,9 @@ response = await client.call_tool("odoo_unlink", {
 ```python
 response = await client.call_tool("odoo_call_method", {
     "model": "res.partner",
-    "method": "action_archive",
-    "ids": [1]
+    "method": "name_get",
+    "args": [[1]],
+    "kwargs": {}
 })
 ```
 

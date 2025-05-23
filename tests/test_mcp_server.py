@@ -139,6 +139,7 @@ async def test_call_tool_search_read(server, mock_pool):
         {"id": 1, "name": "Test Record"}
     ]
 
+    # Test basic search
     result = await server.call_tool("odoo_search_read", {
         "model": "res.partner",
         "domain": [["name", "=", "Test"]],
@@ -147,6 +148,33 @@ async def test_call_tool_search_read(server, mock_pool):
     assert "content" in result
     assert len(result["content"]) == 1
     assert result["content"][0]["type"] == "text"
+    assert "id" in result["content"][0]["content"]
+    assert "name" in result["content"][0]["content"]
+
+    # Test with limit and offset
+    result = await server.call_tool("odoo_search_read", {
+        "model": "res.partner",
+        "domain": [["name", "=", "Test"]],
+        "fields": ["id", "name"],
+        "limit": 10,
+        "offset": 0
+    })
+    assert "content" in result
+    assert len(result["content"]) == 1
+
+    # Test with only required parameters
+    result = await server.call_tool("odoo_search_read", {
+        "model": "res.partner"
+    })
+    assert "content" in result
+    assert len(result["content"]) == 1
+
+    # Test error handling
+    mock_pool.get_connection.return_value.__aenter__.return_value.connection.execute_kw.side_effect = Exception("Test error")
+    with pytest.raises(Exception):
+        await server.call_tool("odoo_search_read", {
+            "model": "res.partner"
+        })
 
 @pytest.mark.asyncio
 async def test_call_tool_create(server, mock_pool):
