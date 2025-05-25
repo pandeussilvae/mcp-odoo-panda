@@ -1705,6 +1705,29 @@ class OdooMCPServer(Server):
                         },
                         "id": jsonrpc_request.id
                     }
+                elif tool_name == "odoo_create":
+                    model = tool_args.get("model")
+                    values = tool_args.get("values", {})
+                    result = await self.pool.execute_kw(
+                        model=model,
+                        method="create",
+                        args=[values],
+                        kwargs={}
+                    )
+                    content = [
+                        {"type": "text", "text": str(result)}
+                    ]
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": content,
+                            "metadata": {
+                                "model": model,
+                                "operation": "create"
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
                 elif tool_name in ["data_export", "data_import", "report_generator"]:
                     return {
                         "jsonrpc": "2.0",
