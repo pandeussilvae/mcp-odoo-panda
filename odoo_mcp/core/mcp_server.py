@@ -1540,22 +1540,30 @@ class OdooMCPServer(Server):
                         "id": jsonrpc_request.id
                     }
                 elif tool_name == "odoo_read":
-                    # Handle odoo_read tool
                     model = tool_args.get("model")
                     ids = tool_args.get("ids", [])
                     fields = tool_args.get("fields", ["id", "name"])
-                    
                     records = await self.pool.execute_kw(
                         model=model,
                         method="read",
                         args=[ids, fields],
                         kwargs={}
                     )
-                    
+                    # Trasforma in formato compatibile se records è una lista di dict
+                    if isinstance(records, list) and records and isinstance(records[0], dict):
+                        content = [
+                            {
+                                "type": "text",
+                                "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
+                            }
+                            for record in records
+                        ]
+                    else:
+                        content = records
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": records,
+                            "content": content,
                             "metadata": {
                                 "model": model,
                                 "count": len(records)
@@ -1563,46 +1571,31 @@ class OdooMCPServer(Server):
                         },
                         "id": jsonrpc_request.id
                     }
-                elif tool_name == "odoo_create":
-                    # Handle odoo_create tool
-                    model = tool_args.get("model")
-                    values = tool_args.get("values", {})
-                    
-                    record_id = await self.pool.execute_kw(
-                        model=model,
-                        method="create",
-                        args=[values],
-                        kwargs={}
-                    )
-                    
-                    return {
-                        "jsonrpc": "2.0",
-                        "result": {
-                            "content": {"id": record_id},
-                            "metadata": {
-                                "model": model,
-                                "operation": "create"
-                            }
-                        },
-                        "id": jsonrpc_request.id
-                    }
                 elif tool_name == "odoo_write":
-                    # Handle odoo_write tool
                     model = tool_args.get("model")
                     ids = tool_args.get("ids", [])
                     values = tool_args.get("values", {})
-                    
                     result = await self.pool.execute_kw(
                         model=model,
                         method="write",
                         args=[ids, values],
                         kwargs={}
                     )
-                    
+                    # result può essere bool o lista, gestiamo entrambi
+                    if isinstance(result, list) and result and isinstance(result[0], dict):
+                        content = [
+                            {
+                                "type": "text",
+                                "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
+                            }
+                            for record in result
+                        ]
+                    else:
+                        content = [{"type": "text", "text": str(result)}]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": {"success": result},
+                            "content": content,
                             "metadata": {
                                 "model": model,
                                 "operation": "write"
@@ -1611,21 +1604,19 @@ class OdooMCPServer(Server):
                         "id": jsonrpc_request.id
                     }
                 elif tool_name == "odoo_unlink":
-                    # Handle odoo_unlink tool
                     model = tool_args.get("model")
                     ids = tool_args.get("ids", [])
-                    
                     result = await self.pool.execute_kw(
                         model=model,
                         method="unlink",
                         args=[ids],
                         kwargs={}
                     )
-                    
+                    content = [{"type": "text", "text": str(result)}]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": {"success": result},
+                            "content": content,
                             "metadata": {
                                 "model": model,
                                 "operation": "unlink"
@@ -1634,23 +1625,31 @@ class OdooMCPServer(Server):
                         "id": jsonrpc_request.id
                     }
                 elif tool_name == "odoo_call_method":
-                    # Handle odoo_call_method tool
                     model = tool_args.get("model")
                     method = tool_args.get("method")
                     args = tool_args.get("args", [])
                     kwargs = tool_args.get("kwargs", {})
-                    
                     result = await self.pool.execute_kw(
                         model=model,
                         method=method,
                         args=args,
                         kwargs=kwargs
                     )
-                    
+                    # Se il risultato è una lista di dict, trasforma
+                    if isinstance(result, list) and result and isinstance(result[0], dict):
+                        content = [
+                            {
+                                "type": "text",
+                                "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
+                            }
+                            for record in result
+                        ]
+                    else:
+                        content = [{"type": "text", "text": str(result)}]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": result,
+                            "content": content,
                             "metadata": {
                                 "model": model,
                                 "method": method
@@ -1658,73 +1657,7 @@ class OdooMCPServer(Server):
                         },
                         "id": jsonrpc_request.id
                     }
-                # Alias
-                elif tool_name == "odoo_create_record":
-                    # Alias di odoo_create
-                    model = tool_args.get("model")
-                    values = tool_args.get("values", {})
-                    record_id = await self.pool.execute_kw(
-                        model=model,
-                        method="create",
-                        args=[values],
-                        kwargs={}
-                    )
-                    return {
-                        "jsonrpc": "2.0",
-                        "result": {
-                            "content": {"id": record_id},
-                            "metadata": {
-                                "model": model,
-                                "operation": "create"
-                            }
-                        },
-                        "id": jsonrpc_request.id
-                    }
-                elif tool_name == "odoo_update_record":
-                    # Alias di odoo_write
-                    model = tool_args.get("model")
-                    record_id = tool_args.get("id")
-                    values = tool_args.get("values", {})
-                    result = await self.pool.execute_kw(
-                        model=model,
-                        method="write",
-                        args=[[record_id], values],
-                        kwargs={}
-                    )
-                    return {
-                        "jsonrpc": "2.0",
-                        "result": {
-                            "content": {"success": result},
-                            "metadata": {
-                                "model": model,
-                                "operation": "write"
-                            }
-                        },
-                        "id": jsonrpc_request.id
-                    }
-                elif tool_name == "odoo_delete_record":
-                    # Alias di odoo_unlink
-                    model = tool_args.get("model")
-                    record_id = tool_args.get("id")
-                    result = await self.pool.execute_kw(
-                        model=model,
-                        method="unlink",
-                        args=[[record_id]],
-                        kwargs={}
-                    )
-                    return {
-                        "jsonrpc": "2.0",
-                        "result": {
-                            "content": {"success": result},
-                            "metadata": {
-                                "model": model,
-                                "operation": "unlink"
-                            }
-                        },
-                        "id": jsonrpc_request.id
-                    }
                 elif tool_name == "odoo_execute_kw":
-                    # Esegue un metodo arbitrario su un modello Odoo
                     model = tool_args.get("model")
                     method = tool_args.get("method")
                     args = tool_args.get("args", [])
@@ -1735,10 +1668,20 @@ class OdooMCPServer(Server):
                         args=args,
                         kwargs=kwargs_
                     )
+                    if isinstance(result, list) and result and isinstance(result[0], dict):
+                        content = [
+                            {
+                                "type": "text",
+                                "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
+                            }
+                            for record in result
+                        ]
+                    else:
+                        content = [{"type": "text", "text": str(result)}]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": result,
+                            "content": content,
                             "metadata": {
                                 "model": model,
                                 "method": method
