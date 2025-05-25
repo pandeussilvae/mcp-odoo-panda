@@ -1477,6 +1477,7 @@ class OdooMCPServer(Server):
                 "prompts/list": "list_prompts",
                 "resources/templates/list": "list_resource_templates",
                 "resources/list": "list_resources",
+                "resources/read": "get_resource",
                 "notifications/initialized": "handle_notification_initialized",
                 "tools/call": "call_tool"
             }
