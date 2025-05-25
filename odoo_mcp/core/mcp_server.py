@@ -1323,17 +1323,29 @@ class OdooMCPServer(Server):
                         
                         # Process the request
                         response = await self.process_request(request)
-                        logger.debug(f"Response: {response}")
-                        
-                        # Send the response
-                        response_data = json.dumps(response).encode('utf-8')
-                        writer.write(b'HTTP/1.1 200 OK\r\n')
-                        writer.write(b'Content-Type: application/json; charset=utf-8\r\n')
-                        writer.write(f'Content-Length: {len(response_data)}\r\n'.encode('utf-8'))
-                        writer.write(b'\r\n')
-                        writer.write(response_data)
-                        await writer.drain()
-                        
+                        logger.debug(f"Got response from process_request: {response}")
+                        logger.debug(f"Response type: {type(response)}")
+                        logger.debug(f"Response attributes: {dir(response)}")
+                        try:
+                            # Build JSON-RPC response dict with only 'result' OR 'error'
+                            response_dict = {
+                                'jsonrpc': getattr(response, 'jsonrpc', '2.0'),
+                                'id': getattr(response, 'id', None)
+                            }
+                            error = getattr(response, 'error', None)
+                            if error is not None:
+                                response_dict['error'] = error
+                            else:
+                                response_dict['result'] = getattr(response, 'result', None)
+                            logger.debug(f"Converted response dict: {response_dict}")
+                            return web.json_response(response_dict)
+                        except Exception as e:
+                            logger.error(f"Error converting response to dict: {e}")
+                            logger.exception("Full traceback for conversion error:")
+                            return web.json_response({
+                                "error": f"Error converting response: {str(e)}",
+                                "status": "error"
+                            }, status=500)
                     except json.JSONDecodeError as e:
                         logger.error(f"Invalid JSON in request: {e}")
                         error_response = {
@@ -1499,11 +1511,18 @@ class OdooMCPServer(Server):
                         limit=limit,
                         offset=offset
                     )
-                    
+                    # Trasforma ogni record in formato compatibile con n8n/langchain
+                    content = [
+                        {
+                            "type": "text",
+                            "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
+                        }
+                        for record in resource.content
+                    ]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": resource.content,
+                            "content": content,
                             "metadata": resource.metadata
                         },
                         "id": jsonrpc_request.id
