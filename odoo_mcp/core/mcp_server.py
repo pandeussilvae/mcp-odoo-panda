@@ -1497,6 +1497,8 @@ class OdooMCPServer(Server):
                 return await self._handle_get_prompt(jsonrpc_request)
             elif jsonrpc_request.method == "list_resource_templates":
                 return await self._handle_list_resource_templates(jsonrpc_request)
+            elif jsonrpc_request.method == "get_resource":
+                return await self._handle_get_resource(jsonrpc_request)
             elif jsonrpc_request.method == "handle_notification_initialized":
                 return await self._handle_notification_initialized(jsonrpc_request)
             elif jsonrpc_request.method == "call_tool":
