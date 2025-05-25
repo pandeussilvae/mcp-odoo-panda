@@ -1119,11 +1119,13 @@ class OdooMCPServer(Server):
     async def _handle_get_resource(self, request: JsonRpcRequest) -> Dict[str, Any]:
         """Handle get_resource request."""
         try:
-            resource = await self.get_resource(request.params['uri'])
-            
+            # PATCH: accetta sia stringa che dict per 'uri'
+            uri = request.params['uri']
+            if isinstance(uri, dict) and 'uri' in uri:
+                uri = uri['uri']
+            resource = await self.get_resource(uri)
             # Check if this is a Langchain request
             is_langchain = request.params.get('format') == 'langchain'
-            
             if is_langchain:
                 # Format for Langchain
                 if isinstance(resource.content, (dict, list)):
@@ -1132,7 +1134,6 @@ class OdooMCPServer(Server):
                     content = base64.b64encode(resource.content).decode()
                 else:
                     content = str(resource.content)
-                    
                 return {
                     "jsonrpc": "2.0",
                     "id": request.id,
@@ -1141,7 +1142,6 @@ class OdooMCPServer(Server):
                         "text": content
                     }
                 }
-            
             # Standard MCP format
             if isinstance(resource, Resource):
                 if isinstance(resource.content, (dict, list)):
@@ -1159,10 +1159,8 @@ class OdooMCPServer(Server):
                         "text": str(resource.content),
                         "blob": None
                     }
-                
                 uri_parts = resource.uri.replace("odoo://", "").split("/")
                 model_name = uri_parts[0] if uri_parts else "unknown"
-                
                 contents = [{
                     "uri": resource.uri,
                     "type": resource.type,
@@ -1192,12 +1190,11 @@ class OdooMCPServer(Server):
                 contents = [resource]
             else:
                 contents = []
-            
             return {
                 "jsonrpc": "2.0",
                 "id": request.id,
                 "result": {
-                    "id": request.params['uri'],
+                    "id": uri,
                     "method": "readResource",
                     "contents": contents
                 }
