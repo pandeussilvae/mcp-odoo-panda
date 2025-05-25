@@ -29,8 +29,18 @@
         "streamable": true
     },
     "logging": {
-        "level": "INFO",
+        "level": "DEBUG",
         "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        "file": "mcp_server.log"
+        "handlers": [
+            {
+                "type": "StreamHandler",
+                "level": "DEBUG"
+            },
+            {
+                "type": "FileHandler",
+                "filename": "mcp_server.log",
+                "level": "DEBUG"
+            }
+        ]
     }
 } 

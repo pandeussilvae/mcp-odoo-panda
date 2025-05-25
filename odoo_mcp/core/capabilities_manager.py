@@ -132,35 +132,6 @@ class CapabilitiesManager:
         
         # Register tools with proper inputSchema
         self.register_tool(Tool(
-            name="odoo_login",
-            description="Authenticate with Odoo",
-            operations=["authenticate"],
-            parameters={
-                "database": {"type": "string", "description": "Database name"},
-                "username": {"type": "string", "description": "Username"},
-                "password": {"type": "string", "description": "Password"}
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "database": {
-                        "type": "string",
-                        "description": "Database name"
-                    },
-                    "username": {
-                        "type": "string",
-                        "description": "Username"
-                    },
-                    "password": {
-                        "type": "string",
-                        "description": "Password"
-                    }
-                },
-                "required": ["database", "username", "password"]
-            }
-        ))
-
-        self.register_tool(Tool(
             name="odoo_search_read",
             description="Search and read records in Odoo",
             operations=["search_read"],
@@ -174,30 +145,19 @@ class CapabilitiesManager:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Name of the Odoo model"
-                    },
-                    "domain": {
-                        "type": "array",
-                        "description": "Search domain",
-                        "items": {"type": "any"}
-                    },
-                    "fields": {
-                        "type": "array",
-                        "description": "Fields to return",
-                        "items": {"type": "string"}
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of records to return"
-                    },
-                    "offset": {
-                        "type": "integer",
-                        "description": "Number of records to skip"
+                    "arguments": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Name of the Odoo model"},
+                            "domain": {"type": "array", "description": "Search domain", "items": {"type": "any"}},
+                            "fields": {"type": "array", "description": "Fields to return", "items": {"type": "string"}},
+                            "limit": {"type": "integer", "description": "Maximum number of records to return"},
+                            "offset": {"type": "integer", "description": "Number of records to skip"}
+                        },
+                        "required": ["model"]
                     }
                 },
-                "required": ["model"]
+                "required": ["arguments"]
             }
         ))
 
@@ -213,26 +173,17 @@ class CapabilitiesManager:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Name of the Odoo model"
-                    },
-                    "ids": {
-                        "type": "array",
-                        "description": "Record IDs to read",
-                        "items": {
-                            "type": "integer"
-                        }
-                    },
-                    "fields": {
-                        "type": "array",
-                        "description": "Fields to return",
-                        "items": {
-                            "type": "string"
-                        }
+                    "arguments": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Name of the Odoo model"},
+                            "ids": {"type": "array", "description": "Record IDs to read", "items": {"type": "integer"}},
+                            "fields": {"type": "array", "description": "Fields to return", "items": {"type": "string"}}
+                        },
+                        "required": ["model", "ids"]
                     }
                 },
-                "required": ["model", "ids"]
+                "required": ["arguments"]
             }
         ))
 
@@ -260,9 +211,7 @@ class CapabilitiesManager:
                     "args": {
                         "type": "array",
                         "description": "Positional arguments for the method",
-                        "items": {
-                            "type": "any"
-                        }
+                        "items": {"type": "any"}
                     },
                     "kwargs": {
                         "type": "object",
@@ -270,7 +219,7 @@ class CapabilitiesManager:
                         "additionalProperties": True
                     }
                 },
-                "required": ["model", "method", "args", "kwargs"]
+                "required": ["model", "method"]
             }
         ))
 
@@ -379,7 +328,7 @@ class CapabilitiesManager:
         ))
 
         self.register_tool(Tool(
-            name="odoo_create_record",
+            name="odoo_create",
             description="Create a new record in an Odoo model",
             operations=["create"],
             parameters={
@@ -389,71 +338,66 @@ class CapabilitiesManager:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Name of the Odoo model"
-                    },
-                    "values": {
+                    "arguments": {
                         "type": "object",
-                        "description": "Field values for the new record",
-                        "additionalProperties": True
+                        "properties": {
+                            "model": {"type": "string", "description": "Name of the Odoo model"},
+                            "values": {"type": "object", "description": "Field values for the new record", "additionalProperties": True}
+                        },
+                        "required": ["model", "values"]
                     }
                 },
-                "required": ["model", "values"]
+                "required": ["arguments"]
             }
         ))
 
         self.register_tool(Tool(
-            name="odoo_update_record",
+            name="odoo_write",
             description="Update an existing record in an Odoo model",
             operations=["write"],
             parameters={
                 "model": "string",
-                "id": "integer",
+                "ids": "array",
                 "values": "object"
             },
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Name of the Odoo model"
-                    },
-                    "id": {
-                        "type": "integer",
-                        "description": "ID of the record to update"
-                    },
-                    "values": {
+                    "arguments": {
                         "type": "object",
-                        "description": "Field values to update",
-                        "additionalProperties": True
+                        "properties": {
+                            "model": {"type": "string", "description": "Name of the Odoo model"},
+                            "ids": {"type": "array", "description": "Record IDs to update", "items": {"type": "integer"}},
+                            "values": {"type": "object", "description": "Field values to update", "additionalProperties": True}
+                        },
+                        "required": ["model", "ids", "values"]
                     }
                 },
-                "required": ["model", "id", "values"]
+                "required": ["arguments"]
             }
         ))
 
         self.register_tool(Tool(
-            name="odoo_delete_record",
+            name="odoo_unlink",
             description="Delete a record from an Odoo model",
             operations=["unlink"],
             parameters={
                 "model": "string",
-                "id": "integer"
+                "ids": "array"
             },
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Name of the Odoo model"
-                    },
-                    "id": {
-                        "type": "integer",
-                        "description": "ID of the record to delete"
+                    "arguments": {
+                        "type": "object",
+                        "properties": {
+                            "model": {"type": "string", "description": "Name of the Odoo model"},
+                            "ids": {"type": "array", "description": "Record IDs to delete", "items": {"type": "integer"}}
+                        },
+                        "required": ["model", "ids"]
                     }
                 },
-                "required": ["model", "id"]
+                "required": ["arguments"]
             }
         ))
         

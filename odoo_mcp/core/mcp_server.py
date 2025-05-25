@@ -44,7 +44,8 @@ from odoo_mcp.core.resource_manager import ResourceManager, Resource
 # Constants
 SERVER_NAME = "odoo-mcp-server"
 SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
-PROTOCOL_VERSION = "2025-03-26"  # Updated to match ProtocolHandler supported version
+PROTOCOL_VERSION = "2025-03-26"  # Current protocol version
+LEGACY_PROTOCOL_VERSIONS = ["2024-11-05"]  # Supported legacy versions
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,10 @@ class ClientInfo:
         allowed = {"name", "version", "capabilities", "protocol_version"}
         filtered = {k: v for k, v in data.items() if k in allowed}
         return cls(**filtered)
+
+    def is_compatible(self) -> bool:
+        """Check if the client's protocol version is compatible."""
+        return self.protocol_version == PROTOCOL_VERSION or self.protocol_version in LEGACY_PROTOCOL_VERSIONS
 
 @dataclass
 class JsonRpcRequest:
@@ -695,9 +700,15 @@ class OdooMCPServer(Server):
 
     async def initialize(self, client_info: ClientInfo) -> ServerInfo:
         """Initialize the server with client information."""
+        # Get the client's requested protocol version
+        client_version = client_info.protocol_version
+        
         # Validate protocol version
-        if not self.protocol_handler.validate_protocol_version(client_info.protocol_version):
-            raise ProtocolError(f"Unsupported protocol version: {client_info.protocol_version}")
+        if client_version != PROTOCOL_VERSION and client_version not in LEGACY_PROTOCOL_VERSIONS:
+            raise ProtocolError(
+                f"Unsupported protocol version: {client_version}. "
+                f"Supported versions: {PROTOCOL_VERSION} and {', '.join(LEGACY_PROTOCOL_VERSIONS)}"
+            )
 
         # Create server info
         return ServerInfo(
@@ -1227,96 +1238,167 @@ class OdooMCPServer(Server):
         """Handle an HTTP connection."""
         try:
             # Read the request line and headers
-            request_line = await reader.readline()
-            if not request_line:
-                logger.warning("Empty request received")
-                return
+            try:
+                request_line = await reader.readline()
+                if not request_line:
+                    logger.warning("Empty request received")
+                    return
                 
-            logger.debug(f"Request line: {request_line.decode().strip()}")
-            
-            # Read headers
-            headers = {}
-            while True:
-                line = await reader.readline()
-                if not line or line == b'\r\n':
-                    break
-                header_line = line.decode().strip()
-                if ':' in header_line:
-                    key, value = header_line.split(':', 1)
-                    headers[key.strip().lower()] = value.strip()
-            
-            logger.debug(f"Request headers: {headers}")
-            
-            # Read content length if present
-            content_length = int(headers.get('content-length', 0))
-            logger.debug(f"Content length: {content_length}")
-            
-            if content_length > 0:
-                # Read the request body
-                request_data = await reader.read(content_length)
-                logger.debug(f"Request body: {request_data.decode()}")
+                # Try to decode request line with different encodings
+                encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+                decoded_line = None
+                for encoding in encodings:
+                    try:
+                        decoded_line = request_line.decode(encoding)
+                        logger.debug(f"Successfully decoded request line with {encoding}: {decoded_line}")
+                        break
+                    except UnicodeDecodeError:
+                        continue
                 
-                try:
-                    # Parse the request
-                    request = json.loads(request_data.decode())
-                    logger.debug(f"Parsed request: {request}")
-                    
-                    # Process the request
-                    response = await self.process_request(request)
-                    logger.debug(f"Response: {response}")
-                    
-                    # Send the response
-                    response_data = json.dumps(response).encode()
-                    writer.write(b'HTTP/1.1 200 OK\r\n')
-                    writer.write(b'Content-Type: application/json\r\n')
-                    writer.write(f'Content-Length: {len(response_data)}\r\n'.encode())
-                    writer.write(b'\r\n')
-                    writer.write(response_data)
-                    await writer.drain()
-                    
-                except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON in request: {e}")
+                if not decoded_line:
+                    logger.error("Could not decode request line with any supported encoding")
+                    return
+                
+                # Validate HTTP request line format
+                if not decoded_line.startswith(('GET', 'POST', 'PUT', 'DELETE', 'OPTIONS')):
+                    logger.error(f"Invalid HTTP request line: {decoded_line}")
+                    return
+                
+                # Read headers
+                headers = {}
+                while True:
+                    try:
+                        line = await reader.readline()
+                        if not line or line == b'\r\n':
+                            break
+                        
+                        # Try to decode header line
+                        decoded_header = None
+                        for encoding in encodings:
+                            try:
+                                decoded_header = line.decode(encoding)
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                        
+                        if not decoded_header:
+                            logger.error("Could not decode header line")
+                            continue
+                        
+                        if ':' in decoded_header:
+                            key, value = decoded_header.split(':', 1)
+                            headers[key.strip().lower()] = value.strip()
+                    except Exception as e:
+                        logger.error(f"Error reading header: {e}")
+                        continue
+                
+                logger.debug(f"Request headers: {headers}")
+                
+                # Read content length if present
+                content_length = int(headers.get('content-length', 0))
+                logger.debug(f"Content length: {content_length}")
+                
+                if content_length > 0:
+                    # Read the request body
+                    try:
+                        request_data = await reader.read(content_length)
+                        logger.debug(f"Request body (raw): {request_data}")
+                        
+                        # Try different encodings for request body
+                        decoded_data = None
+                        for encoding in encodings:
+                            try:
+                                decoded_data = request_data.decode(encoding)
+                                logger.debug(f"Successfully decoded request body with {encoding}")
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                        
+                        if decoded_data is None:
+                            raise UnicodeDecodeError("Could not decode request data with any supported encoding")
+                        
+                        # Parse the request
+                        request = json.loads(decoded_data)
+                        logger.debug(f"Parsed request: {request}")
+                        
+                        # Process the request
+                        response = await self.process_request(request)
+                        logger.debug(f"Response: {response}")
+                        
+                        # Send the response
+                        response_data = json.dumps(response).encode('utf-8')
+                        writer.write(b'HTTP/1.1 200 OK\r\n')
+                        writer.write(b'Content-Type: application/json; charset=utf-8\r\n')
+                        writer.write(f'Content-Length: {len(response_data)}\r\n'.encode('utf-8'))
+                        writer.write(b'\r\n')
+                        writer.write(response_data)
+                        await writer.drain()
+                        
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON in request: {e}")
+                        error_response = {
+                            "error": "Invalid JSON in request",
+                            "status": "error"
+                        }
+                        response_data = json.dumps(error_response).encode('utf-8')
+                        writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                        writer.write(b'Content-Type: application/json; charset=utf-8\r\n')
+                        writer.write(f'Content-Length: {len(response_data)}\r\n'.encode('utf-8'))
+                        writer.write(b'\r\n')
+                        writer.write(response_data)
+                        await writer.drain()
+                    except UnicodeDecodeError as e:
+                        logger.error(f"Error decoding request data: {e}")
+                        error_response = {
+                            "error": "Invalid character encoding in request",
+                            "status": "error"
+                        }
+                        response_data = json.dumps(error_response).encode('utf-8')
+                        writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                        writer.write(b'Content-Type: application/json; charset=utf-8\r\n')
+                        writer.write(f'Content-Length: {len(response_data)}\r\n'.encode('utf-8'))
+                        writer.write(b'\r\n')
+                        writer.write(response_data)
+                        await writer.drain()
+                else:
+                    logger.warning("No content length in request")
                     error_response = {
-                        "error": "Invalid JSON in request",
+                        "error": "No content length specified",
                         "status": "error"
                     }
-                    response_data = json.dumps(error_response).encode()
+                    response_data = json.dumps(error_response).encode('utf-8')
                     writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-                    writer.write(b'Content-Type: application/json\r\n')
-                    writer.write(f'Content-Length: {len(response_data)}\r\n'.encode())
+                    writer.write(b'Content-Type: application/json; charset=utf-8\r\n')
+                    writer.write(f'Content-Length: {len(response_data)}\r\n'.encode('utf-8'))
                     writer.write(b'\r\n')
                     writer.write(response_data)
                     await writer.drain()
-            else:
-                logger.warning("No content length in request")
-                error_response = {
-                    "error": "No content length specified",
-                    "status": "error"
-                }
-                response_data = json.dumps(error_response).encode()
-                writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(f'Content-Length: {len(response_data)}\r\n'.encode())
-                writer.write(b'\r\n')
-                writer.write(response_data)
-                await writer.drain()
-            
-        except Exception as e:
-            logger.error(f"Error handling HTTP connection: {e}")
-            error_response = {
-                "error": str(e),
-                "status": "error"
-            }
-            response_data = json.dumps(error_response).encode()
-            writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(f'Content-Length: {len(response_data)}\r\n'.encode())
-            writer.write(b'\r\n')
-            writer.write(response_data)
-            await writer.drain()
+                
+            except ConnectionResetError as e:
+                logger.warning(f"Connection reset by peer: {e}")
+                return
+            except Exception as e:
+                logger.error(f"Error handling HTTP connection: {e}")
+                try:
+                    error_response = {
+                        "error": str(e),
+                        "status": "error"
+                    }
+                    response_data = json.dumps(error_response).encode('utf-8')
+                    writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+                    writer.write(b'Content-Type: application/json; charset=utf-8\r\n')
+                    writer.write(f'Content-Length: {len(response_data)}\r\n'.encode('utf-8'))
+                    writer.write(b'\r\n')
+                    writer.write(response_data)
+                    await writer.drain()
+                except Exception as write_error:
+                    logger.error(f"Error sending error response: {write_error}")
         finally:
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception as e:
+                logger.error(f"Error closing connection: {e}")
 
     async def _run_stdio(self):
         """Run the server in stdio mode."""
@@ -1371,6 +1453,8 @@ class OdooMCPServer(Server):
                 "prompts/list": "list_prompts",
                 "resources/templates/list": "list_resource_templates",
                 "resources/list": "list_resources",
+                "notifications/initialized": "handle_notification_initialized",
+                "tools/call": "call_tool"
             }
             method = jsonrpc_request.method
             if method in method_aliases:
@@ -1388,6 +1472,8 @@ class OdooMCPServer(Server):
                 return await self._handle_get_prompt(jsonrpc_request)
             elif jsonrpc_request.method == "list_resource_templates":
                 return await self._handle_list_resource_templates(jsonrpc_request)
+            elif jsonrpc_request.method == "handle_notification_initialized":
+                return await self._handle_notification_initialized(jsonrpc_request)
             elif jsonrpc_request.method == "call_tool":
                 # Handle tool calls
                 tool_name = jsonrpc_request.params.get("name")
@@ -1541,6 +1627,103 @@ class OdooMCPServer(Server):
                         },
                         "id": jsonrpc_request.id
                     }
+                # Alias
+                elif tool_name == "odoo_create_record":
+                    # Alias di odoo_create
+                    model = tool_args.get("model")
+                    values = tool_args.get("values", {})
+                    record_id = await self.pool.execute_kw(
+                        model=model,
+                        method="create",
+                        args=[values],
+                        kwargs={}
+                    )
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": {"id": record_id},
+                            "metadata": {
+                                "model": model,
+                                "operation": "create"
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                elif tool_name == "odoo_update_record":
+                    # Alias di odoo_write
+                    model = tool_args.get("model")
+                    record_id = tool_args.get("id")
+                    values = tool_args.get("values", {})
+                    result = await self.pool.execute_kw(
+                        model=model,
+                        method="write",
+                        args=[[record_id], values],
+                        kwargs={}
+                    )
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": {"success": result},
+                            "metadata": {
+                                "model": model,
+                                "operation": "write"
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                elif tool_name == "odoo_delete_record":
+                    # Alias di odoo_unlink
+                    model = tool_args.get("model")
+                    record_id = tool_args.get("id")
+                    result = await self.pool.execute_kw(
+                        model=model,
+                        method="unlink",
+                        args=[[record_id]],
+                        kwargs={}
+                    )
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": {"success": result},
+                            "metadata": {
+                                "model": model,
+                                "operation": "unlink"
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                elif tool_name == "odoo_execute_kw":
+                    # Esegue un metodo arbitrario su un modello Odoo
+                    model = tool_args.get("model")
+                    method = tool_args.get("method")
+                    args = tool_args.get("args", [])
+                    kwargs_ = tool_args.get("kwargs", {})
+                    result = await self.pool.execute_kw(
+                        model=model,
+                        method=method,
+                        args=args,
+                        kwargs=kwargs_
+                    )
+                    return {
+                        "jsonrpc": "2.0",
+                        "result": {
+                            "content": result,
+                            "metadata": {
+                                "model": model,
+                                "method": method
+                            }
+                        },
+                        "id": jsonrpc_request.id
+                    }
+                elif tool_name in ["data_export", "data_import", "report_generator"]:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {
+                            "code": -32001,
+                            "message": f"Tool '{tool_name}' not implemented yet."
+                        },
+                        "id": jsonrpc_request.id
+                    }
                 else:
                     raise ProtocolError(f"Unknown tool: {tool_name}")
             else:
@@ -1556,34 +1739,69 @@ class OdooMCPServer(Server):
                 "id": request.get("id")
             }
 
+    async def _handle_notification_initialized(self, request: JsonRpcRequest) -> Dict[str, Any]:
+        """Handle notification initialized request."""
+        try:
+            logger.info("Received notification initialized request")
+            return {
+                "jsonrpc": "2.0",
+                "result": {
+                    "status": "ok"
+                },
+                "id": request.id
+            }
+        except Exception as e:
+            logger.error(f"Error handling notification initialized: {e}")
+            return {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32603,
+                    "message": str(e)
+                },
+                "id": request.id
+            }
+
     async def _handle_initialize(self, request: JsonRpcRequest) -> Dict[str, Any]:
         """Handle initialize request."""
         try:
             client_info = ClientInfo.from_dict(request.params)
             server_info = await self.initialize(client_info)
-            # Convert ProtocolHandler response to dict
-            response = self.protocol_handler.create_response(
-                request.id,
-                result={
-                    "protocolVersion": PROTOCOL_VERSION,
+            
+            # Get the client's requested protocol version
+            client_version = request.params.get('protocolVersion', PROTOCOL_VERSION)
+            logger.debug(f"Client requested protocol version: {client_version}")
+            
+            # Use client's version if it's a supported legacy version
+            response_version = client_version if client_version in LEGACY_PROTOCOL_VERSIONS else PROTOCOL_VERSION
+            logger.debug(f"Using protocol version in response: {response_version}")
+            
+            # Create response directly
+            response = {
+                "jsonrpc": "2.0",
+                "id": request.id,
+                "result": {
+                    "protocolVersion": response_version,
                     "serverInfo": {
                         "name": SERVER_NAME,
                         "version": SERVER_VERSION
                     },
                     "capabilities": server_info.capabilities
                 }
-            )
-            response = response.dict() if hasattr(response, 'dict') else dict(response)
-            if 'error' in response and (response['error'] is None or response['error'] == {}):
-                del response['error']
+            }
+            
+            logger.debug(f"Initializing client with protocol version: {response_version}")
             return response
+            
         except Exception as e:
             logger.error(f"Error handling initialize request: {e}")
-            error_response = self.protocol_handler.handle_protocol_error(e)
-            error_response = error_response.dict() if hasattr(error_response, 'dict') else dict(error_response)
-            if 'error' in error_response and (error_response['error'] is None or error_response['error'] == {}):
-                del error_response['error']
-            return error_response
+            return {
+                "jsonrpc": "2.0",
+                "id": request.id,
+                "error": {
+                    "code": -32603,
+                    "message": str(e)
+                }
+            }
 
     async def _handle_list_resources(self, request: JsonRpcRequest) -> Dict[str, Any]:
         """Handle list_resources request."""
@@ -1690,14 +1908,14 @@ class OdooMCPServer(Server):
             request.id,
             result=prompt
             )
-            response = response.dict() if hasattr(response, 'dict') else dict(response)
+            response = response.model_dump() if hasattr(response, 'model_dump') else dict(response)
             if 'error' in response and (response['error'] is None or response['error'] == {}):
                 del response['error']
             return response
         except Exception as e:
             logger.error(f"Error handling get_prompt request: {e}")
             error_response = self.protocol_handler.handle_protocol_error(e)
-            error_response = error_response.dict() if hasattr(error_response, 'dict') else dict(error_response)
+            error_response = error_response.model_dump() if hasattr(error_response, 'model_dump') else dict(error_response)
             if 'error' in error_response and (error_response['error'] is None or error_response['error'] == {}):
                 del error_response['error']
             return error_response
