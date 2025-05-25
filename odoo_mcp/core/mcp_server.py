@@ -1303,7 +1303,6 @@ class OdooMCPServer(Server):
                     try:
                         request_data = await reader.read(content_length)
                         logger.debug(f"Request body (raw): {request_data}")
-                        
                         # Try different encodings for request body
                         decoded_data = None
                         for encoding in encodings:
@@ -1313,39 +1312,52 @@ class OdooMCPServer(Server):
                                 break
                             except UnicodeDecodeError:
                                 continue
-                        
                         if decoded_data is None:
                             raise UnicodeDecodeError("Could not decode request data with any supported encoding")
-                        
                         # Parse the request
                         request = json.loads(decoded_data)
                         logger.debug(f"Parsed request: {request}")
-                        
                         # Process the request
                         response = await self.process_request(request)
                         logger.debug(f"Got response from process_request: {response}")
                         logger.debug(f"Response type: {type(response)}")
                         logger.debug(f"Response attributes: {dir(response)}")
                         try:
-                            # Build JSON-RPC response dict with only 'result' OR 'error'
-                            response_dict = {
-                                'jsonrpc': getattr(response, 'jsonrpc', '2.0'),
-                                'id': getattr(response, 'id', None)
-                            }
-                            error = getattr(response, 'error', None)
-                            if error is not None:
-                                response_dict['error'] = error
+                            # FIX: Se la risposta è già un dict, restituiscila così com'è
+                            if isinstance(response, dict):
+                                response_data = json.dumps(response).encode('utf-8')
                             else:
-                                response_dict['result'] = getattr(response, 'result', None)
-                            logger.debug(f"Converted response dict: {response_dict}")
-                            return web.json_response(response_dict)
+                                response_dict = {
+                                    'jsonrpc': getattr(response, 'jsonrpc', '2.0'),
+                                    'id': getattr(response, 'id', None)
+                                }
+                                error = getattr(response, 'error', None)
+                                if error is not None:
+                                    response_dict['error'] = error
+                                else:
+                                    response_dict['result'] = getattr(response, 'result', None)
+                                logger.debug(f"Converted response dict: {response_dict}")
+                                response_data = json.dumps(response_dict).encode('utf-8')
+                            writer.write(b'HTTP/1.1 200 OK\r\n')
+                            writer.write(b'Content-Type: application/json; charset=utf-8\r\n')
+                            writer.write(f'Content-Length: {len(response_data)}\r\n'.encode('utf-8'))
+                            writer.write(b'\r\n')
+                            writer.write(response_data)
+                            await writer.drain()
                         except Exception as e:
                             logger.error(f"Error converting response to dict: {e}")
                             logger.exception("Full traceback for conversion error:")
-                            return web.json_response({
+                            error_response = {
                                 "error": f"Error converting response: {str(e)}",
                                 "status": "error"
-                            }, status=500)
+                            }
+                            response_data = json.dumps(error_response).encode('utf-8')
+                            writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+                            writer.write(b'Content-Type: application/json; charset=utf-8\r\n')
+                            writer.write(f'Content-Length: {len(response_data)}\r\n'.encode('utf-8'))
+                            writer.write(b'\r\n')
+                            writer.write(response_data)
+                            await writer.drain()
                     except json.JSONDecodeError as e:
                         logger.error(f"Invalid JSON in request: {e}")
                         error_response = {
