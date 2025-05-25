@@ -1120,29 +1120,46 @@ class OdooMCPServer(Server):
         """Handle get_resource request."""
         try:
             resource = await self.get_resource(request.params['uri'])
-            # Handle both Resource objects and dictionaries
-            if isinstance(resource, Resource):
-                # Convert content to text or blob based on mime_type and content type
+            
+            # Check if this is a Langchain request
+            is_langchain = request.params.get('format') == 'langchain'
+            
+            if is_langchain:
+                # Format for Langchain
                 if isinstance(resource.content, (dict, list)):
-                    # For dictionaries and lists, always use text with JSON
+                    content = json.dumps(resource.content)
+                elif isinstance(resource.content, bytes):
+                    content = base64.b64encode(resource.content).decode()
+                else:
+                    content = str(resource.content)
+                    
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request.id,
+                    "result": {
+                        "type": "text",
+                        "text": content
+                    }
+                }
+            
+            # Standard MCP format
+            if isinstance(resource, Resource):
+                if isinstance(resource.content, (dict, list)):
                     content = {
                         "text": json.dumps(resource.content),
                         "blob": None
                     }
                 elif isinstance(resource.content, bytes):
-                    # For binary content, encode as base64
                     content = {
                         "text": None,
                         "blob": base64.b64encode(resource.content).decode()
                     }
                 else:
-                    # For other types, convert to string
                     content = {
                         "text": str(resource.content),
                         "blob": None
                     }
                 
-                # Extract model name from URI for the name field
                 uri_parts = resource.uri.replace("odoo://", "").split("/")
                 model_name = uri_parts[0] if uri_parts else "unknown"
                 
@@ -1155,7 +1172,6 @@ class OdooMCPServer(Server):
                     **content
                 }]
             elif isinstance(resource, dict):
-                # If it's already a dictionary, ensure it has text or blob
                 if 'content' in resource:
                     if isinstance(resource['content'], (dict, list)):
                         content = {
@@ -1194,8 +1210,8 @@ class OdooMCPServer(Server):
                 "error": {
                     "code": -32603,
                     "message": str(e)
+                }
             }
-        }
 
     async def run(self):
         """Run the server."""
