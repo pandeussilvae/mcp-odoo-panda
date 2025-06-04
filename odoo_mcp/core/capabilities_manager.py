@@ -153,8 +153,8 @@ class CapabilitiesManager:
                             "fields": {"type": "array", "description": "Fields to return", "items": {"type": "string"}},
                             "limit": {"type": "integer", "description": "Maximum number of records to return"},
                             "offset": {"type": "integer", "description": "Number of records to skip"}
-                        },
-                        "required": ["model"]
+                },
+                "required": ["model"]
                     }
                 },
                 "required": ["arguments"]
@@ -179,8 +179,8 @@ class CapabilitiesManager:
                             "model": {"type": "string", "description": "Name of the Odoo model"},
                             "ids": {"type": "array", "description": "Record IDs to read", "items": {"type": "integer"}},
                             "fields": {"type": "array", "description": "Fields to return", "items": {"type": "string"}}
-                        },
-                        "required": ["model", "ids"]
+                },
+                "required": ["model", "ids"]
                     }
                 },
                 "required": ["arguments"]
@@ -343,8 +343,8 @@ class CapabilitiesManager:
                         "properties": {
                             "model": {"type": "string", "description": "Name of the Odoo model"},
                             "values": {"type": "object", "description": "Field values for the new record", "additionalProperties": True}
-                        },
-                        "required": ["model", "values"]
+                },
+                "required": ["model", "values"]
                     }
                 },
                 "required": ["arguments"]
@@ -369,7 +369,7 @@ class CapabilitiesManager:
                             "model": {"type": "string", "description": "Name of the Odoo model"},
                             "ids": {"type": "array", "description": "Record IDs to update", "items": {"type": "integer"}},
                             "values": {"type": "object", "description": "Field values to update", "additionalProperties": True}
-                        },
+                },
                         "required": ["model", "ids", "values"]
                     }
                 },
@@ -393,7 +393,7 @@ class CapabilitiesManager:
                         "properties": {
                             "model": {"type": "string", "description": "Name of the Odoo model"},
                             "ids": {"type": "array", "description": "Record IDs to delete", "items": {"type": "integer"}}
-                        },
+                },
                         "required": ["model", "ids"]
                     }
                 },
