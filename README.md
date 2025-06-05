@@ -1,4 +1,4 @@
-# Odoo MCP Server
+# Panda Odoo MCP Server
 
 <div align="center">
   <img src="assets/Odoo MCP Server.png" alt="Odoo MCP Server Logo" width="100%"/> 
