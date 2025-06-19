@@ -1783,8 +1783,13 @@ class OdooMCPServer(Server):
                                 if key in valid_kwargs:
                                     method_kwargs[key] = value
                     elif method == "create":
-                        # For create method: args[0] = values, no IDs needed
-                        values = args[0] if args else {}
+                        # For create method: values can come from args[0] or kwargs.values
+                        if args and len(args) > 0:
+                            values = args[0]
+                        elif kwargs_ and "values" in kwargs_:
+                            values = kwargs_["values"]
+                        else:
+                            values = {}
                         method_args = [values]
                         method_kwargs = {}
                     else:
@@ -1904,8 +1909,13 @@ class OdooMCPServer(Server):
                                 if key in valid_kwargs:
                                     method_kwargs[key] = value
                     elif method == "create":
-                        # For create method: args[0] = values, no IDs needed
-                        values = args[0] if args else {}
+                        # For create method: values can come from args[0] or kwargs.values
+                        if args and len(args) > 0:
+                            values = args[0]
+                        elif kwargs_ and "values" in kwargs_:
+                            values = kwargs_["values"]
+                        else:
+                            values = {}
                         method_args = [values]
                         method_kwargs = {}
                     else:
