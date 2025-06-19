@@ -1706,7 +1706,13 @@ class OdooMCPServer(Server):
                     kwargs = tool_args.get("kwargs", {})
                     
                     # For call_method, we need to handle different cases:
-                    if method == "read":
+                    if method == "search_read":
+                        # For search_read method: domain and fields come from kwargs
+                        domain = kwargs.get("domain", [])
+                        fields = kwargs.get("fields", ["id", "name"])
+                        method_args = [domain, fields]
+                        method_kwargs = {}
+                    elif method == "read":
                         # For read method: args[0] = IDs, args[1] = fields
                         ids = args[0] if args else []
                         fields = args[1] if len(args) > 1 else ["id", "name"]
@@ -1766,7 +1772,13 @@ class OdooMCPServer(Server):
                     kwargs_ = tool_args.get("kwargs", {})
                     
                     # For execute_kw, we need to handle different cases:
-                    if method == "read":
+                    if method == "search_read":
+                        # For search_read method: domain and fields come from kwargs
+                        domain = kwargs_.get("domain", [])
+                        fields = kwargs_.get("fields", ["id", "name"])
+                        method_args = [domain, fields]
+                        method_kwargs = {}
+                    elif method == "read":
                         # For read method: args[0] = IDs, args[1] = fields
                         ids = args[0] if args else []
                         fields = args[1] if len(args) > 1 else ["id", "name"]
