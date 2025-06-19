@@ -1562,10 +1562,19 @@ class OdooMCPServer(Server):
                 if tool_name == "odoo_search_read":
                     # Get parameters
                     model = tool_args.get("model")
-                    # Extract domain and fields from kwargs if they exist
+                    # Extract domain and fields from arguments array first, then kwargs, then tool_args
+                    arguments = tool_args.get("arguments", [])
                     kwargs = tool_args.get("kwargs", {})
-                    domain = kwargs.get("domain", tool_args.get("domain", []))
-                    fields = kwargs.get("fields", tool_args.get("fields", ["id", "name"]))
+                    
+                    # Check if domain and fields are in arguments array
+                    if arguments and len(arguments) >= 2:
+                        domain = arguments[0]
+                        fields = arguments[1]
+                    else:
+                        # Fall back to kwargs or tool_args
+                        domain = kwargs.get("domain", tool_args.get("domain", []))
+                        fields = kwargs.get("fields", tool_args.get("fields", ["id", "name"]))
+                    
                     limit = kwargs.get("limit", tool_args.get("limit", 100))
                     offset = kwargs.get("offset", tool_args.get("offset", 0))
                     
@@ -1773,6 +1782,11 @@ class OdooMCPServer(Server):
                             for key, value in kwargs.items():
                                 if key in valid_kwargs:
                                     method_kwargs[key] = value
+                    elif method == "create":
+                        # For create method: args[0] = values, no IDs needed
+                        values = args[0] if args else {}
+                        method_args = [values]
+                        method_kwargs = {}
                     else:
                         # For other methods, args[0] = IDs, args[1:] = additional method args
                         ids = args[0] if args else []
@@ -1889,6 +1903,11 @@ class OdooMCPServer(Server):
                             for key, value in kwargs_.items():
                                 if key in valid_kwargs:
                                     method_kwargs[key] = value
+                    elif method == "create":
+                        # For create method: args[0] = values, no IDs needed
+                        values = args[0] if args else {}
+                        method_args = [values]
+                        method_kwargs = {}
                     else:
                         # For other methods, args[0] = IDs, args[1:] = additional method args
                         ids = args[0] if args else []
@@ -1925,10 +1944,21 @@ class OdooMCPServer(Server):
                     }
                 elif tool_name == "odoo_create":
                     model = tool_args.get("model")
-                    # Extract parameters from args and kwargs
+                    # Extract parameters from arguments array first, then args, then kwargs, then tool_args
+                    arguments = tool_args.get("arguments", [])
                     args = tool_args.get("args", [])
                     kwargs = tool_args.get("kwargs", {})
-                    values = args[0] if args else (kwargs if kwargs else tool_args.get("values", {}))
+                    
+                    # Check if values are in arguments array
+                    if arguments and len(arguments) > 0:
+                        values = arguments[0]
+                    elif args and len(args) > 0:
+                        values = args[0]
+                    elif kwargs:
+                        values = kwargs
+                    else:
+                        values = tool_args.get("values", {})
+                    
                     result = await self.pool.execute_kw(
                         model=model,
                         method="create",
