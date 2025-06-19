@@ -1698,9 +1698,22 @@ class OdooMCPServer(Server):
                     # Extract parameters from args and kwargs
                     args = tool_args.get("args", [])
                     kwargs = tool_args.get("kwargs", {})
-                    # For call_method, method_args start from args[1] (args[0] contains IDs)
-                    method_args = args[1:] if len(args) > 1 else (tool_args.get("args", []) if not args else [])
-                    method_kwargs = kwargs if kwargs else tool_args.get("kwargs", {})
+                    
+                    # For call_method, we need to handle different cases:
+                    # 1. If method is write/read/unlink: args[0] contains IDs, values in kwargs
+                    # 2. If method has additional args: args[0] = IDs, args[1:] = method args
+                    if method in ["write", "read", "unlink"]:
+                        # For these methods, args[0] contains IDs, values are in kwargs
+                        ids = args[0] if args else []
+                        method_args = [ids]  # IDs as first argument
+                        method_kwargs = kwargs if kwargs else {}
+                    else:
+                        # For other methods, args[0] = IDs, args[1:] = additional method args
+                        ids = args[0] if args else []
+                        additional_args = args[1:] if len(args) > 1 else []
+                        method_args = [ids] + additional_args
+                        method_kwargs = kwargs if kwargs else {}
+                    
                     result = await self.pool.execute_kw(
                         model=model,
                         method=method,
@@ -1735,9 +1748,22 @@ class OdooMCPServer(Server):
                     # Extract parameters from args and kwargs
                     args = tool_args.get("args", [])
                     kwargs_ = tool_args.get("kwargs", {})
-                    # For execute_kw, method_args start from args[1] (args[0] contains IDs)
-                    method_args = args[1:] if len(args) > 1 else (tool_args.get("args", []) if not args else [])
-                    method_kwargs = kwargs_ if kwargs_ else tool_args.get("kwargs", {})
+                    
+                    # For execute_kw, we need to handle different cases:
+                    # 1. If method is write/read/unlink: args[0] contains IDs, values in kwargs
+                    # 2. If method has additional args: args[0] = IDs, args[1:] = method args
+                    if method in ["write", "read", "unlink"]:
+                        # For these methods, args[0] contains IDs, values are in kwargs
+                        ids = args[0] if args else []
+                        method_args = [ids]  # IDs as first argument
+                        method_kwargs = kwargs_ if kwargs_ else {}
+                    else:
+                        # For other methods, args[0] = IDs, args[1:] = additional method args
+                        ids = args[0] if args else []
+                        additional_args = args[1:] if len(args) > 1 else []
+                        method_args = [ids] + additional_args
+                        method_kwargs = kwargs_ if kwargs_ else {}
+                    
                     result = await self.pool.execute_kw(
                         model=model,
                         method=method,
