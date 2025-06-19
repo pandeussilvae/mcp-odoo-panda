@@ -1707,9 +1707,15 @@ class OdooMCPServer(Server):
                     
                     # For call_method, we need to handle different cases:
                     if method == "search_read":
-                        # For search_read method: domain and fields come from kwargs
-                        domain = kwargs.get("domain", [])
-                        fields = kwargs.get("fields", ["id", "name"])
+                        # For search_read method: domain and fields can come from args or kwargs
+                        if args and len(args) >= 2:
+                            # Parameters in args: args[0] = domain, args[1] = fields
+                            domain = args[0]
+                            fields = args[1]
+                        else:
+                            # Parameters in kwargs
+                            domain = kwargs.get("domain", [])
+                            fields = kwargs.get("fields", ["id", "name"])
                         method_args = [domain, fields]
                         method_kwargs = {}
                     elif method == "read":
@@ -1773,9 +1779,15 @@ class OdooMCPServer(Server):
                     
                     # For execute_kw, we need to handle different cases:
                     if method == "search_read":
-                        # For search_read method: domain and fields come from kwargs
-                        domain = kwargs_.get("domain", [])
-                        fields = kwargs_.get("fields", ["id", "name"])
+                        # For search_read method: domain and fields can come from args or kwargs
+                        if args and len(args) >= 2:
+                            # Parameters in args: args[0] = domain, args[1] = fields
+                            domain = args[0]
+                            fields = args[1]
+                        else:
+                            # Parameters in kwargs
+                            domain = kwargs_.get("domain", [])
+                            fields = kwargs_.get("fields", ["id", "name"])
                         method_args = [domain, fields]
                         method_kwargs = {}
                     elif method == "read":
