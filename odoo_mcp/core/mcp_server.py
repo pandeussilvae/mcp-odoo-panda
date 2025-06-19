@@ -1706,9 +1706,13 @@ class OdooMCPServer(Server):
                     kwargs = tool_args.get("kwargs", {})
                     
                     # For call_method, we need to handle different cases:
-                    # 1. If method is write/read/unlink: args[0] contains IDs, values in kwargs
-                    # 2. If method has additional args: args[0] = IDs, args[1:] = method args
-                    if method in ["write", "read", "unlink"]:
+                    if method == "read":
+                        # For read method: args[0] = IDs, args[1] = fields
+                        ids = args[0] if args else []
+                        fields = args[1] if len(args) > 1 else ["id", "name"]
+                        method_args = [ids, fields]
+                        method_kwargs = kwargs if kwargs else {}
+                    elif method in ["write", "unlink"]:
                         # For these methods, args[0] contains IDs, values are in kwargs
                         ids = args[0] if args else []
                         method_args = [ids]  # IDs as first argument
@@ -1762,9 +1766,13 @@ class OdooMCPServer(Server):
                     kwargs_ = tool_args.get("kwargs", {})
                     
                     # For execute_kw, we need to handle different cases:
-                    # 1. If method is write/read/unlink: args[0] contains IDs, values in kwargs
-                    # 2. If method has additional args: args[0] = IDs, args[1:] = method args
-                    if method in ["write", "read", "unlink"]:
+                    if method == "read":
+                        # For read method: args[0] = IDs, args[1] = fields
+                        ids = args[0] if args else []
+                        fields = args[1] if len(args) > 1 else ["id", "name"]
+                        method_args = [ids, fields]
+                        method_kwargs = kwargs_ if kwargs_ else {}
+                    elif method in ["write", "unlink"]:
                         # For these methods, args[0] contains IDs, values are in kwargs
                         ids = args[0] if args else []
                         method_args = [ids]  # IDs as first argument
