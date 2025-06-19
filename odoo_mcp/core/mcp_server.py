@@ -1698,7 +1698,8 @@ class OdooMCPServer(Server):
                     # Extract parameters from args and kwargs
                     args = tool_args.get("args", [])
                     kwargs = tool_args.get("kwargs", {})
-                    method_args = args if args else tool_args.get("args", [])
+                    # For call_method, method_args start from args[1] (args[0] contains IDs)
+                    method_args = args[1:] if len(args) > 1 else (tool_args.get("args", []) if not args else [])
                     method_kwargs = kwargs if kwargs else tool_args.get("kwargs", {})
                     result = await self.pool.execute_kw(
                         model=model,
@@ -1734,7 +1735,8 @@ class OdooMCPServer(Server):
                     # Extract parameters from args and kwargs
                     args = tool_args.get("args", [])
                     kwargs_ = tool_args.get("kwargs", {})
-                    method_args = args if args else tool_args.get("args", [])
+                    # For execute_kw, method_args start from args[1] (args[0] contains IDs)
+                    method_args = args[1:] if len(args) > 1 else (tool_args.get("args", []) if not args else [])
                     method_kwargs = kwargs_ if kwargs_ else tool_args.get("kwargs", {})
                     result = await self.pool.execute_kw(
                         model=model,
