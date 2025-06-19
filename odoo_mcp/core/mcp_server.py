@@ -1638,7 +1638,8 @@ class OdooMCPServer(Server):
                     args = tool_args.get("args", [])
                     kwargs = tool_args.get("kwargs", {})
                     ids = args[0] if args else tool_args.get("ids", [])
-                    values = kwargs if kwargs else tool_args.get("values", {})
+                    # For write, values are in args[1], not in kwargs
+                    values = args[1] if len(args) > 1 else (kwargs if kwargs else tool_args.get("values", {}))
                     result = await self.pool.execute_kw(
                         model=model,
                         method="write",
