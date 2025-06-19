@@ -1724,11 +1724,17 @@ class OdooMCPServer(Server):
                         fields = args[1] if len(args) > 1 else ["id", "name"]
                         method_args = [ids, fields]
                         method_kwargs = kwargs if kwargs else {}
-                    elif method in ["write", "unlink"]:
-                        # For these methods, args[0] contains IDs, values are in kwargs
+                    elif method == "write":
+                        # For write method: args[0] = IDs, args[1] = values
+                        ids = args[0] if args else []
+                        values = args[1] if len(args) > 1 else {}
+                        method_args = [ids, values]  # IDs and values as positional arguments
+                        method_kwargs = {}
+                    elif method == "unlink":
+                        # For unlink method: args[0] contains IDs
                         ids = args[0] if args else []
                         method_args = [ids]  # IDs as first argument
-                        method_kwargs = kwargs if kwargs else {}
+                        method_kwargs = {}
                     else:
                         # For other methods, args[0] = IDs, args[1:] = additional method args
                         ids = args[0] if args else []
@@ -1796,11 +1802,17 @@ class OdooMCPServer(Server):
                         fields = args[1] if len(args) > 1 else ["id", "name"]
                         method_args = [ids, fields]
                         method_kwargs = kwargs_ if kwargs_ else {}
-                    elif method in ["write", "unlink"]:
-                        # For these methods, args[0] contains IDs, values are in kwargs
+                    elif method == "write":
+                        # For write method: args[0] = IDs, args[1] = values
+                        ids = args[0] if args else []
+                        values = args[1] if len(args) > 1 else {}
+                        method_args = [ids, values]  # IDs and values as positional arguments
+                        method_kwargs = {}
+                    elif method == "unlink":
+                        # For unlink method: args[0] contains IDs
                         ids = args[0] if args else []
                         method_args = [ids]  # IDs as first argument
-                        method_kwargs = kwargs_ if kwargs_ else {}
+                        method_kwargs = {}
                     else:
                         # For other methods, args[0] = IDs, args[1:] = additional method args
                         ids = args[0] if args else []
