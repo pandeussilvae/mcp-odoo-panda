@@ -1735,6 +1735,44 @@ class OdooMCPServer(Server):
                         ids = args[0] if args else []
                         method_args = [ids]  # IDs as first argument
                         method_kwargs = {}
+                    elif method == "fields_get":
+                        # For fields_get method: no IDs needed, only optional kwargs like 'attributes', 'allfields'
+                        # Remove 'fields' from kwargs if present, as it's not valid for fields_get
+                        method_kwargs = {}
+                        if kwargs:
+                            # Only pass valid kwargs for fields_get
+                            valid_kwargs = ['attributes', 'allfields']
+                            for key, value in kwargs.items():
+                                if key in valid_kwargs:
+                                    method_kwargs[key] = value
+                        method_args = []
+                    elif method == "search":
+                        # For search method: args[0] = domain, optional kwargs like 'offset', 'limit', 'order'
+                        domain = args[0] if args else []
+                        method_args = [domain]
+                        method_kwargs = {}
+                        if kwargs:
+                            # Only pass valid kwargs for search
+                            valid_kwargs = ['offset', 'limit', 'order', 'count']
+                            for key, value in kwargs.items():
+                                if key in valid_kwargs:
+                                    method_kwargs[key] = value
+                    elif method == "search_count":
+                        # For search_count method: args[0] = domain
+                        domain = args[0] if args else []
+                        method_args = [domain]
+                        method_kwargs = {}
+                    elif method == "default_get":
+                        # For default_get method: args[0] = fields list, optional kwargs
+                        fields = args[0] if args else []
+                        method_args = [fields]
+                        method_kwargs = {}
+                        if kwargs:
+                            # Only pass valid kwargs for default_get
+                            valid_kwargs = ['context']
+                            for key, value in kwargs.items():
+                                if key in valid_kwargs:
+                                    method_kwargs[key] = value
                     else:
                         # For other methods, args[0] = IDs, args[1:] = additional method args
                         ids = args[0] if args else []
@@ -1813,6 +1851,44 @@ class OdooMCPServer(Server):
                         ids = args[0] if args else []
                         method_args = [ids]  # IDs as first argument
                         method_kwargs = {}
+                    elif method == "fields_get":
+                        # For fields_get method: no IDs needed, only optional kwargs like 'attributes', 'allfields'
+                        # Remove 'fields' from kwargs if present, as it's not valid for fields_get
+                        method_kwargs = {}
+                        if kwargs_:
+                            # Only pass valid kwargs for fields_get
+                            valid_kwargs = ['attributes', 'allfields']
+                            for key, value in kwargs_.items():
+                                if key in valid_kwargs:
+                                    method_kwargs[key] = value
+                        method_args = []
+                    elif method == "search":
+                        # For search method: args[0] = domain, optional kwargs like 'offset', 'limit', 'order'
+                        domain = args[0] if args else []
+                        method_args = [domain]
+                        method_kwargs = {}
+                        if kwargs_:
+                            # Only pass valid kwargs for search
+                            valid_kwargs = ['offset', 'limit', 'order', 'count']
+                            for key, value in kwargs_.items():
+                                if key in valid_kwargs:
+                                    method_kwargs[key] = value
+                    elif method == "search_count":
+                        # For search_count method: args[0] = domain
+                        domain = args[0] if args else []
+                        method_args = [domain]
+                        method_kwargs = {}
+                    elif method == "default_get":
+                        # For default_get method: args[0] = fields list, optional kwargs
+                        fields = args[0] if args else []
+                        method_args = [fields]
+                        method_kwargs = {}
+                        if kwargs_:
+                            # Only pass valid kwargs for default_get
+                            valid_kwargs = ['context']
+                            for key, value in kwargs_.items():
+                                if key in valid_kwargs:
+                                    method_kwargs[key] = value
                     else:
                         # For other methods, args[0] = IDs, args[1:] = additional method args
                         ids = args[0] if args else []
