@@ -1694,7 +1694,13 @@ class OdooMCPServer(Server):
                     }
                 elif tool_name == "odoo_call_method":
                     model = tool_args.get("model")
+                    # Extract method from tool_args or kwargs
                     method = tool_args.get("method")
+                    if not method:
+                        # Try to get method from kwargs
+                        kwargs = tool_args.get("kwargs", {})
+                        method = kwargs.get("method")
+                    
                     # Extract parameters from args and kwargs
                     args = tool_args.get("args", [])
                     kwargs = tool_args.get("kwargs", {})
@@ -1744,7 +1750,13 @@ class OdooMCPServer(Server):
                     }
                 elif tool_name == "odoo_execute_kw":
                     model = tool_args.get("model")
+                    # Extract method from tool_args or kwargs
                     method = tool_args.get("method")
+                    if not method:
+                        # Try to get method from kwargs
+                        kwargs_ = tool_args.get("kwargs", {})
+                        method = kwargs_.get("method")
+                    
                     # Extract parameters from args and kwargs
                     args = tool_args.get("args", [])
                     kwargs_ = tool_args.get("kwargs", {})
