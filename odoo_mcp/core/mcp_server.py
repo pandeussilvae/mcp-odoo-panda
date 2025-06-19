@@ -1482,6 +1482,46 @@ class OdooMCPServer(Server):
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process a JSON-RPC request."""
         try:
+            # Check if this is a custom tool format (array with tool objects)
+            if isinstance(request, list) and len(request) > 0:
+                # Handle custom tool format
+                tool_request = request[0]
+                if isinstance(tool_request, dict) and "tool" in tool_request:
+                    # Convert to standard format
+                    tool_name = tool_request["tool"]
+                    tool_params = tool_request.get("params", {})
+                    
+                    # Create a standard JSON-RPC request
+                    standard_request = {
+                        "jsonrpc": "2.0",
+                        "method": "call_tool",
+                        "params": {
+                            "name": tool_name,
+                            "arguments": tool_params
+                        },
+                        "id": None
+                    }
+                    
+                    # Process as standard request
+                    return await self._process_standard_request(standard_request)
+            
+            # Process as standard JSON-RPC request
+            return await self._process_standard_request(request)
+            
+        except Exception as e:
+            logger.error(f"Error processing request: {str(e)}")
+            return {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32603,
+                    "message": str(e)
+                },
+                "id": request.get("id") if isinstance(request, dict) else None
+            }
+
+    async def _process_standard_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Process a standard JSON-RPC request."""
+        try:
             # Parse request
             jsonrpc_request = JsonRpcRequest.from_dict(request)
             # PATCH: alias per compatibilità n8n
@@ -1522,10 +1562,12 @@ class OdooMCPServer(Server):
                 if tool_name == "odoo_search_read":
                     # Get parameters
                     model = tool_args.get("model")
-                    domain = tool_args.get("domain", [])
-                    fields = tool_args.get("fields", ["id", "name"])
-                    limit = tool_args.get("limit", 100)
-                    offset = tool_args.get("offset", 0)
+                    # Extract domain and fields from kwargs if they exist
+                    kwargs = tool_args.get("kwargs", {})
+                    domain = kwargs.get("domain", tool_args.get("domain", []))
+                    fields = kwargs.get("fields", tool_args.get("fields", ["id", "name"]))
+                    limit = kwargs.get("limit", tool_args.get("limit", 100))
+                    offset = kwargs.get("offset", tool_args.get("offset", 0))
                     
                     # Create URI for the list resource
                     uri = f"odoo://{model}/list"
@@ -1557,8 +1599,11 @@ class OdooMCPServer(Server):
                     }
                 elif tool_name == "odoo_read":
                     model = tool_args.get("model")
-                    ids = tool_args.get("ids", [])
-                    fields = tool_args.get("fields", ["id", "name"])
+                    # Extract parameters from args and kwargs
+                    args = tool_args.get("args", [])
+                    kwargs = tool_args.get("kwargs", {})
+                    ids = args[0] if args else tool_args.get("ids", [])
+                    fields = kwargs.get("fields", tool_args.get("fields", ["id", "name"]))
                     records = await self.pool.execute_kw(
                         model=model,
                         method="read",
@@ -1589,8 +1634,11 @@ class OdooMCPServer(Server):
                     }
                 elif tool_name == "odoo_write":
                     model = tool_args.get("model")
-                    ids = tool_args.get("ids", [])
-                    values = tool_args.get("values", {})
+                    # Extract parameters from args and kwargs
+                    args = tool_args.get("args", [])
+                    kwargs = tool_args.get("kwargs", {})
+                    ids = args[0] if args else tool_args.get("ids", [])
+                    values = kwargs if kwargs else tool_args.get("values", {})
                     result = await self.pool.execute_kw(
                         model=model,
                         method="write",
@@ -1621,7 +1669,9 @@ class OdooMCPServer(Server):
                     }
                 elif tool_name == "odoo_unlink":
                     model = tool_args.get("model")
-                    ids = tool_args.get("ids", [])
+                    # Extract parameters from args
+                    args = tool_args.get("args", [])
+                    ids = args[0] if args else tool_args.get("ids", [])
                     result = await self.pool.execute_kw(
                         model=model,
                         method="unlink",
@@ -1643,13 +1693,16 @@ class OdooMCPServer(Server):
                 elif tool_name == "odoo_call_method":
                     model = tool_args.get("model")
                     method = tool_args.get("method")
+                    # Extract parameters from args and kwargs
                     args = tool_args.get("args", [])
                     kwargs = tool_args.get("kwargs", {})
+                    method_args = args if args else tool_args.get("args", [])
+                    method_kwargs = kwargs if kwargs else tool_args.get("kwargs", {})
                     result = await self.pool.execute_kw(
                         model=model,
                         method=method,
-                        args=args,
-                        kwargs=kwargs
+                        args=method_args,
+                        kwargs=method_kwargs
                     )
                     # Se il risultato è una lista di dict, trasforma
                     if isinstance(result, list) and result and isinstance(result[0], dict):
@@ -1676,13 +1729,16 @@ class OdooMCPServer(Server):
                 elif tool_name == "odoo_execute_kw":
                     model = tool_args.get("model")
                     method = tool_args.get("method")
+                    # Extract parameters from args and kwargs
                     args = tool_args.get("args", [])
                     kwargs_ = tool_args.get("kwargs", {})
+                    method_args = args if args else tool_args.get("args", [])
+                    method_kwargs = kwargs_ if kwargs_ else tool_args.get("kwargs", {})
                     result = await self.pool.execute_kw(
                         model=model,
                         method=method,
-                        args=args,
-                        kwargs=kwargs_
+                        args=method_args,
+                        kwargs=method_kwargs
                     )
                     if isinstance(result, list) and result and isinstance(result[0], dict):
                         content = [
@@ -1707,7 +1763,10 @@ class OdooMCPServer(Server):
                     }
                 elif tool_name == "odoo_create":
                     model = tool_args.get("model")
-                    values = tool_args.get("values", {})
+                    # Extract parameters from args and kwargs
+                    args = tool_args.get("args", [])
+                    kwargs = tool_args.get("kwargs", {})
+                    values = args[0] if args else (kwargs if kwargs else tool_args.get("values", {}))
                     result = await self.pool.execute_kw(
                         model=model,
                         method="create",
