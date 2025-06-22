@@ -19,6 +19,7 @@ from abc import ABC, abstractmethod
 import aiohttp
 import aiohttp.web as web
 import base64
+import ast
 
 # Import core components
 from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
@@ -48,6 +49,34 @@ PROTOCOL_VERSION = "2025-03-26"  # Current protocol version
 LEGACY_PROTOCOL_VERSIONS = ["2024-11-05"]  # Supported legacy versions
 
 logger = logging.getLogger(__name__)
+
+def parse_domain(domain_input):
+    """
+    Parse domain from various input formats.
+    
+    Args:
+        domain_input: Can be a list, tuple, or string representation of a domain
+        
+    Returns:
+        list: Properly formatted domain list
+    """
+    if isinstance(domain_input, (list, tuple)):
+        return list(domain_input)
+    elif isinstance(domain_input, str):
+        try:
+            # Try to parse as Python literal (safer than eval)
+            parsed = ast.literal_eval(domain_input)
+            if isinstance(parsed, (list, tuple)):
+                return list(parsed)
+            else:
+                logger.warning(f"Parsed domain is not a list/tuple: {parsed}")
+                return []
+        except (ValueError, SyntaxError) as e:
+            logger.error(f"Failed to parse domain string '{domain_input}': {e}")
+            return []
+    else:
+        logger.warning(f"Unexpected domain type: {type(domain_input)}")
+        return []
 
 @dataclass
 class ServerInfo:
@@ -292,7 +321,7 @@ class StreamableHTTPProtocol:
                 await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"Error running HTTP server: {e}")
-            self.running = False
+            raise
 
     def stop(self):
         """Stop the protocol."""
@@ -1568,11 +1597,11 @@ class OdooMCPServer(Server):
                     
                     # Check if domain and fields are in arguments array
                     if arguments and len(arguments) >= 2:
-                        domain = arguments[0]
+                        domain = parse_domain(arguments[0])
                         fields = arguments[1]
                     else:
                         # Fall back to kwargs or tool_args
-                        domain = kwargs.get("domain", tool_args.get("domain", []))
+                        domain = parse_domain(kwargs.get("domain", tool_args.get("domain", [])))
                         fields = kwargs.get("fields", tool_args.get("fields", ["id", "name"]))
                     
                     limit = kwargs.get("limit", tool_args.get("limit", 100))
@@ -1719,11 +1748,11 @@ class OdooMCPServer(Server):
                         # For search_read method: domain and fields can come from args or kwargs
                         if args and len(args) >= 2:
                             # Parameters in args: args[0] = domain, args[1] = fields
-                            domain = args[0]
+                            domain = parse_domain(args[0])
                             fields = args[1]
                         else:
                             # Parameters in kwargs
-                            domain = kwargs.get("domain", [])
+                            domain = parse_domain(kwargs.get("domain", []))
                             fields = kwargs.get("fields", ["id", "name"])
                         method_args = [domain, fields]
                         method_kwargs = {}
@@ -1757,7 +1786,7 @@ class OdooMCPServer(Server):
                         method_args = []
                     elif method == "search":
                         # For search method: args[0] = domain, optional kwargs like 'offset', 'limit', 'order'
-                        domain = args[0] if args else []
+                        domain = parse_domain(args[0] if args else [])
                         method_args = [domain]
                         method_kwargs = {}
                         if kwargs:
@@ -1768,7 +1797,7 @@ class OdooMCPServer(Server):
                                     method_kwargs[key] = value
                     elif method == "search_count":
                         # For search_count method: args[0] = domain
-                        domain = args[0] if args else []
+                        domain = parse_domain(args[0] if args else [])
                         method_args = [domain]
                         method_kwargs = {}
                     elif method == "default_get":
@@ -1845,11 +1874,11 @@ class OdooMCPServer(Server):
                         # For search_read method: domain and fields can come from args or kwargs
                         if args and len(args) >= 2:
                             # Parameters in args: args[0] = domain, args[1] = fields
-                            domain = args[0]
+                            domain = parse_domain(args[0])
                             fields = args[1]
                         else:
                             # Parameters in kwargs
-                            domain = kwargs_.get("domain", [])
+                            domain = parse_domain(kwargs_.get("domain", []))
                             fields = kwargs_.get("fields", ["id", "name"])
                         method_args = [domain, fields]
                         method_kwargs = {}
@@ -1883,7 +1912,7 @@ class OdooMCPServer(Server):
                         method_args = []
                     elif method == "search":
                         # For search method: args[0] = domain, optional kwargs like 'offset', 'limit', 'order'
-                        domain = args[0] if args else []
+                        domain = parse_domain(args[0] if args else [])
                         method_args = [domain]
                         method_kwargs = {}
                         if kwargs_:
@@ -1894,7 +1923,7 @@ class OdooMCPServer(Server):
                                     method_kwargs[key] = value
                     elif method == "search_count":
                         # For search_count method: args[0] = domain
-                        domain = args[0] if args else []
+                        domain = parse_domain(args[0] if args else [])
                         method_args = [domain]
                         method_kwargs = {}
                     elif method == "default_get":
