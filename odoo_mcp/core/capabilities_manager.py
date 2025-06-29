@@ -200,26 +200,32 @@ class CapabilitiesManager:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Name of the Odoo model"
-                    },
-                    "method": {
-                        "type": "string",
-                        "description": "Name of the method to execute"
-                    },
-                    "args": {
-                        "type": "array",
-                        "description": "Positional arguments for the method",
-                        "items": {"type": "any"}
-                    },
-                    "kwargs": {
+                    "arguments": {
                         "type": "object",
-                        "description": "Keyword arguments for the method",
-                        "additionalProperties": True
+                        "properties": {
+                            "model": {
+                                "type": "string",
+                                "description": "Name of the Odoo model"
+                            },
+                            "method": {
+                                "type": "string",
+                                "description": "Name of the method to execute"
+                            },
+                            "args": {
+                                "type": "array",
+                                "description": "Positional arguments for the method",
+                                "items": {"type": "any"}
+                            },
+                            "kwargs": {
+                                "type": "object",
+                                "description": "Keyword arguments for the method",
+                                "additionalProperties": True
+                            }
+                        },
+                        "required": ["model", "method"]
                     }
                 },
-                "required": ["model", "method"]
+                "required": ["arguments"]
             }
         ))
 
@@ -236,31 +242,37 @@ class CapabilitiesManager:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Name of the Odoo model"
-                    },
-                    "ids": {
-                        "type": "array",
-                        "description": "List of record IDs to export",
-                        "items": {
-                            "type": "integer"
-                        }
-                    },
-                    "fields": {
-                        "type": "array",
-                        "description": "List of fields to export",
-                        "items": {
-                            "type": "string"
-                        }
-                    },
-                    "format": {
-                        "type": "string",
-                        "description": "Export format",
-                        "enum": ["csv", "excel", "json", "xml"]
+                    "arguments": {
+                        "type": "object",
+                        "properties": {
+                            "model": {
+                                "type": "string",
+                                "description": "Name of the Odoo model"
+                            },
+                            "ids": {
+                                "type": "array",
+                                "description": "List of record IDs to export",
+                                "items": {
+                                    "type": "integer"
+                                }
+                            },
+                            "fields": {
+                                "type": "array",
+                                "description": "List of fields to export",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "format": {
+                                "type": "string",
+                                "description": "Export format",
+                                "enum": ["csv", "excel", "json", "xml"]
+                            }
+                        },
+                        "required": ["model", "format"]
                     }
                 },
-                "required": ["model", "format"]
+                "required": ["arguments"]
             }
         ))
 
@@ -276,21 +288,27 @@ class CapabilitiesManager:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Name of the Odoo model"
-                    },
-                    "data": {
-                        "type": "string",
-                        "description": "Data to import in the specified format"
-                    },
-                    "format": {
-                        "type": "string",
-                        "description": "Import format",
-                        "enum": ["csv", "excel", "json", "xml"]
+                    "arguments": {
+                        "type": "object",
+                        "properties": {
+                            "model": {
+                                "type": "string",
+                                "description": "Name of the Odoo model"
+                            },
+                            "data": {
+                                "type": "string",
+                                "description": "Data to import in the specified format"
+                            },
+                            "format": {
+                                "type": "string",
+                                "description": "Import format",
+                                "enum": ["csv", "excel", "json", "xml"]
+                            }
+                        },
+                        "required": ["model", "data", "format"]
                     }
                 },
-                "required": ["model", "data", "format"]
+                "required": ["arguments"]
             }
         ))
 
@@ -306,24 +324,30 @@ class CapabilitiesManager:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "report_name": {
-                        "type": "string",
-                        "description": "Name of the report to generate"
-                    },
-                    "ids": {
-                        "type": "array",
-                        "description": "List of record IDs to include in the report",
-                        "items": {
-                            "type": "integer"
-                        }
-                    },
-                    "format": {
-                        "type": "string",
-                        "description": "Report format",
-                        "enum": ["pdf", "html"]
+                    "arguments": {
+                        "type": "object",
+                        "properties": {
+                            "report_name": {
+                                "type": "string",
+                                "description": "Name of the report to generate"
+                            },
+                            "ids": {
+                                "type": "array",
+                                "description": "List of record IDs to include in the report",
+                                "items": {
+                                    "type": "integer"
+                                }
+                            },
+                            "format": {
+                                "type": "string",
+                                "description": "Report format",
+                                "enum": ["pdf", "html"]
+                            }
+                        },
+                        "required": ["report_name", "ids", "format"]
                     }
                 },
-                "required": ["report_name", "ids", "format"]
+                "required": ["arguments"]
             }
         ))
 

@@ -1,7 +1,7 @@
 from xmlrpc.client import ServerProxy, Fault, ProtocolError as XmlRpcProtocolError
 # Corrected imports - ensure all needed types from typing are imported
 from typing import Dict, Any, Optional, List, Tuple, Set, Union
-from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, ProtocolError, OdooMCPError, ConfigurationError, OdooValidationError, OdooRecordNotFoundError
+from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, ProtocolError, OdooMCPError, ConfigurationError, OdooValidationError, OdooRecordNotFoundError, OdooMethodNotFoundError
 from odoo_mcp.performance.caching import get_cache_manager, CACHE_TYPE, initialize_cache_manager
 import socket
 import logging
@@ -9,6 +9,7 @@ import ssl # Import ssl module
 import sys
 from functools import wraps
 import asyncio
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +179,23 @@ class XMLRPCHandler:
                 proxy.close()
         except Fault as e:
             logger.error(f"XML-RPC Fault: {str(e)}")
-            raise ProtocolError(f"XML-RPC Fault: {str(e)}")
+            # Check if this is a method not found error
+            if "does not exist on the model" in str(e) or "AttributeError" in str(e):
+                match = re.search(r"The method '([^']+)' does not exist on the model '([^']+)'", str(e))
+                if match:
+                    method_name = match.group(1)
+                    model_name = match.group(2)
+                    raise OdooMethodNotFoundError(model_name, method_name, original_exception=e)
+                else:
+                    raise ProtocolError(f"XML-RPC Method Not Found Error: {str(e)}", original_exception=e)
+            # Check if this is a validation error (UserError, ValidationError, aggregation error)
+            elif "UserError" in str(e) or "ValidationError" in str(e) or "Funzione di aggregazione" in str(e):
+                if "Funzione di aggregazione" in str(e):
+                    raise OdooValidationError(f"XML-RPC Aggregation Error: {str(e)}", original_exception=e)
+                else:
+                    raise OdooValidationError(f"XML-RPC Validation Error: {str(e)}", original_exception=e)
+            else:
+                raise ProtocolError(f"XML-RPC Fault: {str(e)}", original_exception=e)
         except Exception as e:
             logger.error(f"Error executing XML-RPC method: {str(e)}")
-            raise NetworkError(f"Error executing XML-RPC method: {str(e)}")
+            raise NetworkError(f"Error executing XML-RPC method: {str(e)}", original_exception=e)

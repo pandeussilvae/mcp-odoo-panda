@@ -7,11 +7,12 @@ from typing import Dict, Any, Optional, Union, Tuple, List, Set # Added Union, T
 import aiohttp
 from functools import wraps
 import os
+import re
 
 # Import specific exceptions for mapping
 from odoo_mcp.error_handling.exceptions import (
     NetworkError, ProtocolError, OdooMCPError, AuthError, ConfigurationError,
-    OdooValidationError, OdooRecordNotFoundError
+    OdooValidationError, OdooRecordNotFoundError, OdooMethodNotFoundError
 )
 from odoo_mcp.performance.caching import get_cache_manager, CACHE_TYPE, initialize_cache_manager
 
@@ -339,11 +340,25 @@ class JSONRPCHandler:
 
                 if error_code == 100 or "AccessDenied" in error_message or "AccessError" in error_message:
                     raise AuthError(f"JSON-RPC Access/Auth Error: {full_error}", original_exception=Exception(str(error_data)))
-                elif "UserError" in error_message or "ValidationError" in error_message:
+                elif "UserError" in error_message or "ValidationError" in error_message or "Funzione di aggregazione" in error_message:
+                    # Extract the actual error message from the data if available
                     clean_message = error_data.get('data', {}).get('message', error_message.split('\n')[0])
-                    raise OdooValidationError(f"JSON-RPC Validation Error: {clean_message}", original_exception=Exception(str(error_data)))
+                    # If the message contains aggregation function error, make it more specific
+                    if "Funzione di aggregazione" in clean_message:
+                        raise OdooValidationError(f"JSON-RPC Aggregation Error: {clean_message}", original_exception=Exception(str(error_data)))
+                    else:
+                        raise OdooValidationError(f"JSON-RPC Validation Error: {clean_message}", original_exception=Exception(str(error_data)))
                 elif "Record does not exist" in error_message:
                     raise OdooRecordNotFoundError(f"JSON-RPC Record Not Found: {full_error}", original_exception=Exception(str(error_data)))
+                elif "does not exist on the model" in error_message or "AttributeError" in error_message:
+                    # Extract model and method from error message
+                    match = re.search(r"The method '([^']+)' does not exist on the model '([^']+)'", error_message)
+                    if match:
+                        method_name = match.group(1)
+                        model_name = match.group(2)
+                        raise OdooMethodNotFoundError(model_name, method_name, original_exception=Exception(str(error_data)))
+                    else:
+                        raise ProtocolError(f"JSON-RPC Method Not Found Error: {full_error}", original_exception=Exception(str(error_data)))
                 else:
                     raise ProtocolError(f"JSON-RPC Error Response: {full_error}", original_exception=Exception(str(error_data)))
 

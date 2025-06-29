@@ -148,8 +148,11 @@ async def test_call_tool_search_read(server, mock_pool):
     assert "content" in result
     assert len(result["content"]) == 1
     assert result["content"][0]["type"] == "text"
-    assert "id" in result["content"][0]["content"]
-    assert "name" in result["content"][0]["content"]
+    assert "text" in result["content"][0]
+    # Verify the text contains the record data
+    record_data = json.loads(result["content"][0]["text"])
+    assert "id" in record_data
+    assert "name" in record_data
 
     # Test with limit and offset
     result = await server.call_tool("odoo_search_read", {
@@ -267,6 +270,54 @@ async def test_shutdown(server):
     """Test server shutdown."""
     await server.shutdown()
     # TODO: Add assertions to verify cleanup
+
+@pytest.mark.asyncio
+async def test_odoo_search_read_response_format(server, mock_pool):
+    """Test that odoo_search_read returns the correct response format."""
+    server.pool = mock_pool
+    mock_pool.get_connection.return_value.__aenter__.return_value.connection.execute_kw.return_value = [
+        {"id": 1, "name": "Test Record"}
+    ]
+
+    # Create a JSON-RPC request
+    request = {
+        "jsonrpc": "2.0",
+        "method": "call_tool",
+        "params": {
+            "name": "odoo_search_read",
+            "arguments": {
+                "model": "res.partner",
+                "domain": [["name", "=", "Test"]],
+                "fields": ["id", "name"]
+            }
+        },
+        "id": 1
+    }
+
+    # Process the request
+    response = await server.process_request(request)
+    
+    # Verify the response format
+    assert "jsonrpc" in response
+    assert response["jsonrpc"] == "2.0"
+    assert "result" in response
+    assert "content" in response["result"]
+    assert isinstance(response["result"]["content"], list)
+    assert len(response["result"]["content"]) == 1
+    
+    # Verify each content item has the correct format
+    content_item = response["result"]["content"][0]
+    assert "type" in content_item
+    assert content_item["type"] == "text"
+    assert "text" in content_item
+    
+    # Verify the text contains valid JSON
+    try:
+        record_data = json.loads(content_item["text"])
+        assert "id" in record_data
+        assert "name" in record_data
+    except json.JSONDecodeError:
+        pytest.fail("Response text is not valid JSON")
 
 if __name__ == "__main__":
     pytest.main([__file__]) 

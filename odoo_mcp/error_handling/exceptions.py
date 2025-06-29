@@ -101,3 +101,11 @@ class BusError(OdooMCPError):
     """Bus error."""
     def __init__(self, message: str = "Bus error occurred", original_exception: Optional[Exception] = None):
         super().__init__(message, code=-32015, original_exception=original_exception)
+
+class OdooMethodNotFoundError(OdooMCPError):
+    """Odoo method not found error."""
+    def __init__(self, model: str, method: str, original_exception: Optional[Exception] = None):
+        message = f"The method '{method}' does not exist on the model '{model}'"
+        super().__init__(message, code=-32016, original_exception=original_exception)
+        self.model = model
+        self.method = method

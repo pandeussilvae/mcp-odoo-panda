@@ -33,7 +33,7 @@ from odoo_mcp.error_handling.exceptions import (
     ConfigurationError, ConnectionError, SessionError,
     OdooValidationError, OdooRecordNotFoundError, PoolTimeoutError,
     RateLimitError, ResourceError, ToolError, PromptError,
-    CacheError, BusError
+    CacheError, BusError, OdooMethodNotFoundError
 )
 from odoo_mcp.core.logging_config import setup_logging, setup_logging_from_config
 from odoo_mcp.performance.caching import get_cache_manager, CACHE_TYPE, initialize_cache_manager
@@ -1620,18 +1620,46 @@ class OdooMCPServer(Server):
                         offset=offset
                     )
                     # Trasforma ogni record in formato compatibile con n8n/langchain
-                    content = [
-                        {
+                    records = resource.content if isinstance(resource.content, (list, dict)) else str(resource.content)
+                    
+                    # Converti in formato n8n/langchain come negli altri tool
+                    if isinstance(records, dict):
+                        # Converti singolo dict in formato n8n
+                        content = [{
                             "type": "text",
-                            "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
-                        }
-                        for record in resource.content
-                    ]
+                            "text": json.dumps(records, default=str)
+                        }]
+                    elif isinstance(records, list):
+                        # Converti lista di dict in formato n8n
+                        content = []
+                        if records:  # Se la lista non è vuota
+                            for item in records:
+                                if isinstance(item, dict):
+                                    content.append({
+                                        "type": "text", 
+                                        "text": json.dumps(item, default=str)
+                                    })
+                                else:
+                                    content.append({
+                                        "type": "text",
+                                        "text": str(item)
+                                    })
+                        else:  # Se la lista è vuota, restituisci un messaggio informativo
+                            content = [{
+                                "type": "text",
+                                "text": "Nessun record trovato"
+                            }]
+                    else:
+                        # Converti altro in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": str(records)
+                        }]
+                    
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": content,
-                            "metadata": resource.metadata
+                            "content": content
                         },
                         "id": jsonrpc_request.id
                     }
@@ -1649,25 +1677,43 @@ class OdooMCPServer(Server):
                         args=[ids, fields],
                         kwargs={}
                     )
-                    # Trasforma in formato compatibile se records è una lista di dict
-                    if isinstance(records, list) and records and isinstance(records[0], dict):
-                        content = [
-                            {
+                    # Trasforma in formato compatibile come negli altri tool
+                    if isinstance(records, dict):
+                        # Converti singolo dict in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": json.dumps(records, default=str)
+                        }]
+                    elif isinstance(records, list):
+                        # Converti lista di dict in formato n8n
+                        content = []
+                        if records:  # Se la lista non è vuota
+                            for item in records:
+                                if isinstance(item, dict):
+                                    content.append({
+                                        "type": "text", 
+                                        "text": json.dumps(item, default=str)
+                                    })
+                                else:
+                                    content.append({
+                                        "type": "text",
+                                        "text": str(item)
+                                    })
+                        else:  # Se la lista è vuota, restituisci un messaggio informativo
+                            content = [{
                                 "type": "text",
-                                "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
-                            }
-                            for record in records
-                        ]
+                                "text": "Nessun record trovato"
+                            }]
                     else:
-                        content = records
+                        # Converti altro in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": str(records)
+                        }]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": content,
-                            "metadata": {
-                                "model": model,
-                                "count": len(records)
-                            }
+                            "content": content
                         },
                         "id": jsonrpc_request.id
                     }
@@ -1686,24 +1732,42 @@ class OdooMCPServer(Server):
                         kwargs={}
                     )
                     # result può essere bool o lista, gestiamo entrambi
-                    if isinstance(result, list) and result and isinstance(result[0], dict):
-                        content = [
-                            {
+                    if isinstance(result, dict):
+                        # Converti singolo dict in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": json.dumps(result, default=str)
+                        }]
+                    elif isinstance(result, list):
+                        # Converti lista di dict in formato n8n
+                        content = []
+                        if result:  # Se la lista non è vuota
+                            for item in result:
+                                if isinstance(item, dict):
+                                    content.append({
+                                        "type": "text", 
+                                        "text": json.dumps(item, default=str)
+                                    })
+                                else:
+                                    content.append({
+                                        "type": "text",
+                                        "text": str(item)
+                                    })
+                        else:  # Se la lista è vuota, restituisci un messaggio informativo
+                            content = [{
                                 "type": "text",
-                                "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
-                            }
-                            for record in result
-                        ]
+                                "text": "Nessun record trovato"
+                            }]
                     else:
-                        content = [{"type": "text", "text": str(result)}]
+                        # Converti altro in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": str(result)
+                        }]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": content,
-                            "metadata": {
-                                "model": model,
-                                "operation": "write"
-                            }
+                            "content": content
                         },
                         "id": jsonrpc_request.id
                     }
@@ -1718,15 +1782,42 @@ class OdooMCPServer(Server):
                         args=[ids],
                         kwargs={}
                     )
-                    content = [{"type": "text", "text": str(result)}]
+                    if isinstance(result, dict):
+                        # Converti singolo dict in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": json.dumps(result, default=str)
+                        }]
+                    elif isinstance(result, list):
+                        # Converti lista di dict in formato n8n
+                        content = []
+                        if result:  # Se la lista non è vuota
+                            for item in result:
+                                if isinstance(item, dict):
+                                    content.append({
+                                        "type": "text", 
+                                        "text": json.dumps(item, default=str)
+                                    })
+                                else:
+                                    content.append({
+                                        "type": "text",
+                                        "text": str(item)
+                                    })
+                        else:  # Se la lista è vuota, restituisci un messaggio informativo
+                            content = [{
+                                "type": "text",
+                                "text": "Nessun record trovato"
+                            }]
+                    else:
+                        # Converti altro in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": str(result)
+                        }]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": content,
-                            "metadata": {
-                                "model": model,
-                                "operation": "unlink"
-                            }
+                            "content": content
                         },
                         "id": jsonrpc_request.id
                     }
@@ -1811,12 +1902,26 @@ class OdooMCPServer(Server):
                             for key, value in kwargs.items():
                                 if key in valid_kwargs:
                                     method_kwargs[key] = value
+                    elif method == "read_group":
+                        # For read_group method: args[0] = domain, args[1] = fields, args[2] = groupby
+                        # Optional kwargs: limit, offset, orderby, lazy
+                        domain = parse_domain(args[0] if args else [])
+                        fields = args[1] if len(args) > 1 else []
+                        groupby = args[2] if len(args) > 2 else []
+                        method_args = [domain, fields, groupby]
+                        method_kwargs = {}
+                        if kwargs:
+                            # Only pass valid kwargs for read_group
+                            valid_kwargs = ['limit', 'offset', 'orderby', 'lazy']
+                            for key, value in kwargs.items():
+                                if key in valid_kwargs:
+                                    method_kwargs[key] = value
                     elif method == "create":
                         # For create method: values can come from args[0] or kwargs.values
                         if args and len(args) > 0:
                             values = args[0]
-                        elif kwargs_ and "values" in kwargs_:
-                            values = kwargs_["values"]
+                        elif kwargs and "values" in kwargs:
+                            values = kwargs["values"]
                         else:
                             values = {}
                         method_args = [values]
@@ -1835,24 +1940,42 @@ class OdooMCPServer(Server):
                         kwargs=method_kwargs
                     )
                     # Se il risultato è una lista di dict, trasforma
-                    if isinstance(result, list) and result and isinstance(result[0], dict):
-                        content = [
-                            {
+                    if isinstance(result, dict):
+                        # Converti singolo dict in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": json.dumps(result, default=str)
+                        }]
+                    elif isinstance(result, list):
+                        # Converti lista di dict in formato n8n
+                        content = []
+                        if result:  # Se la lista non è vuota
+                            for item in result:
+                                if isinstance(item, dict):
+                                    content.append({
+                                        "type": "text", 
+                                        "text": json.dumps(item, default=str)
+                                    })
+                                else:
+                                    content.append({
+                                        "type": "text",
+                                        "text": str(item)
+                                    })
+                        else:  # Se la lista è vuota, restituisci un messaggio informativo
+                            content = [{
                                 "type": "text",
-                                "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
-                            }
-                            for record in result
-                        ]
+                                "text": "Nessun record trovato"
+                            }]
                     else:
-                        content = [{"type": "text", "text": str(result)}]
+                        # Converti altro in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": str(result)
+                        }]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": content,
-                            "metadata": {
-                                "model": model,
-                                "method": method
-                            }
+                            "content": content
                         },
                         "id": jsonrpc_request.id
                     }
@@ -1937,12 +2060,26 @@ class OdooMCPServer(Server):
                             for key, value in kwargs_.items():
                                 if key in valid_kwargs:
                                     method_kwargs[key] = value
+                    elif method == "read_group":
+                        # For read_group method: args[0] = domain, args[1] = fields, args[2] = groupby
+                        # Optional kwargs: limit, offset, orderby, lazy
+                        domain = parse_domain(args[0] if args else [])
+                        fields = args[1] if len(args) > 1 else []
+                        groupby = args[2] if len(args) > 2 else []
+                        method_args = [domain, fields, groupby]
+                        method_kwargs = {}
+                        if kwargs_:
+                            # Only pass valid kwargs for read_group
+                            valid_kwargs = ['limit', 'offset', 'orderby', 'lazy']
+                            for key, value in kwargs_.items():
+                                if key in valid_kwargs:
+                                    method_kwargs[key] = value
                     elif method == "create":
                         # For create method: values can come from args[0] or kwargs.values
                         if args and len(args) > 0:
                             values = args[0]
-                        elif kwargs_ and "values" in kwargs_:
-                            values = kwargs_["values"]
+                        elif kwargs and "values" in kwargs:
+                            values = kwargs["values"]
                         else:
                             values = {}
                         method_args = [values]
@@ -1960,24 +2097,42 @@ class OdooMCPServer(Server):
                         args=method_args,
                         kwargs=method_kwargs
                     )
-                    if isinstance(result, list) and result and isinstance(result[0], dict):
-                        content = [
-                            {
+                    if isinstance(result, dict):
+                        # Converti singolo dict in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": json.dumps(result, default=str)
+                        }]
+                    elif isinstance(result, list):
+                        # Converti lista di dict in formato n8n
+                        content = []
+                        if result:  # Se la lista non è vuota
+                            for item in result:
+                                if isinstance(item, dict):
+                                    content.append({
+                                        "type": "text", 
+                                        "text": json.dumps(item, default=str)
+                                    })
+                                else:
+                                    content.append({
+                                        "type": "text",
+                                        "text": str(item)
+                                    })
+                        else:  # Se la lista è vuota, restituisci un messaggio informativo
+                            content = [{
                                 "type": "text",
-                                "text": ", ".join([f"{k}: {v}" for k, v in record.items()])
-                            }
-                            for record in result
-                        ]
+                                "text": "Nessun record trovato"
+                            }]
                     else:
-                        content = [{"type": "text", "text": str(result)}]
+                        # Converti altro in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": str(result)
+                        }]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": content,
-                            "metadata": {
-                                "model": model,
-                                "method": method
-                            }
+                            "content": content
                         },
                         "id": jsonrpc_request.id
                     }
@@ -2004,17 +2159,42 @@ class OdooMCPServer(Server):
                         args=[values],
                         kwargs={}
                     )
-                    content = [
-                        {"type": "text", "text": str(result)}
-                    ]
+                    if isinstance(result, dict):
+                        # Converti singolo dict in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": json.dumps(result, default=str)
+                        }]
+                    elif isinstance(result, list):
+                        # Converti lista di dict in formato n8n
+                        content = []
+                        if result:  # Se la lista non è vuota
+                            for item in result:
+                                if isinstance(item, dict):
+                                    content.append({
+                                        "type": "text", 
+                                        "text": json.dumps(item, default=str)
+                                    })
+                                else:
+                                    content.append({
+                                        "type": "text",
+                                        "text": str(item)
+                                    })
+                        else:  # Se la lista è vuota, restituisci un messaggio informativo
+                            content = [{
+                                "type": "text",
+                                "text": "Nessun record trovato"
+                            }]
+                    else:
+                        # Converti altro in formato n8n
+                        content = [{
+                            "type": "text",
+                            "text": str(result)
+                        }]
                     return {
                         "jsonrpc": "2.0",
                         "result": {
-                            "content": content,
-                            "metadata": {
-                                "model": model,
-                                "operation": "create"
-                            }
+                            "content": content
                         },
                         "id": jsonrpc_request.id
                     }
