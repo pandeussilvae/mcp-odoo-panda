@@ -60,22 +60,58 @@ def parse_domain(domain_input):
     Returns:
         list: Properly formatted domain list
     """
+    # Handle None case
+    if domain_input is None:
+        logger.debug("Domain input is None, returning empty list")
+        return []
+    
+    # Handle boolean case - this is likely an error
+    if isinstance(domain_input, bool):
+        logger.warning(f"Domain input is boolean: {domain_input}. This is likely an error. Returning empty list.")
+        return []
+    
+    # Handle empty string case
+    if isinstance(domain_input, str) and not domain_input.strip():
+        logger.debug("Domain input is empty string, returning empty list")
+        return []
+    
     if isinstance(domain_input, (list, tuple)):
+        # Validate that the domain is properly structured
+        if not domain_input:  # Empty list/tuple is valid
+            return []
+        
+        # Check if it's a valid domain structure
+        for item in domain_input:
+            if isinstance(item, (list, tuple)):
+                # This should be a domain condition like ['field', 'operator', 'value']
+                if len(item) != 3:
+                    logger.warning(f"Invalid domain condition structure: {item}. Expected 3 elements.")
+                    continue
+            elif isinstance(item, str):
+                # This should be a logical operator like '&', '|', '!'
+                if item not in ['&', '|', '!']:
+                    logger.warning(f"Invalid logical operator in domain: {item}")
+                    continue
+            else:
+                logger.warning(f"Invalid domain element type: {type(item)} for value: {item}")
+                continue
+        
         return list(domain_input)
     elif isinstance(domain_input, str):
         try:
             # Try to parse as Python literal (safer than eval)
             parsed = ast.literal_eval(domain_input)
             if isinstance(parsed, (list, tuple)):
-                return list(parsed)
+                # Recursively validate the parsed domain
+                return parse_domain(parsed)
             else:
-                logger.warning(f"Parsed domain is not a list/tuple: {parsed}")
+                logger.warning(f"Parsed domain is not a list/tuple: {parsed} (type: {type(parsed)})")
                 return []
         except (ValueError, SyntaxError) as e:
             logger.error(f"Failed to parse domain string '{domain_input}': {e}")
             return []
     else:
-        logger.warning(f"Unexpected domain type: {type(domain_input)}")
+        logger.warning(f"Unexpected domain type: {type(domain_input)} for value: {domain_input}")
         return []
 
 @dataclass
@@ -1845,6 +1881,10 @@ class OdooMCPServer(Server):
                             # Parameters in kwargs
                             domain = parse_domain(kwargs.get("domain", []))
                             fields = kwargs.get("fields", ["id", "name"])
+                        # Additional validation to ensure domain is a valid list
+                        if not isinstance(domain, list):
+                            logger.error(f"Invalid domain type for search_read: {type(domain)}. Converting to empty list.")
+                            domain = []
                         method_args = [domain, fields]
                         method_kwargs = {}
                     elif method == "read":
@@ -1878,6 +1918,10 @@ class OdooMCPServer(Server):
                     elif method == "search":
                         # For search method: args[0] = domain, optional kwargs like 'offset', 'limit', 'order'
                         domain = parse_domain(args[0] if args else [])
+                        # Additional validation to ensure domain is a valid list
+                        if not isinstance(domain, list):
+                            logger.error(f"Invalid domain type for search: {type(domain)}. Converting to empty list.")
+                            domain = []
                         method_args = [domain]
                         method_kwargs = {}
                         if kwargs:
@@ -1889,6 +1933,10 @@ class OdooMCPServer(Server):
                     elif method == "search_count":
                         # For search_count method: args[0] = domain
                         domain = parse_domain(args[0] if args else [])
+                        # Additional validation to ensure domain is a valid list
+                        if not isinstance(domain, list):
+                            logger.error(f"Invalid domain type for search_count: {type(domain)}. Converting to empty list.")
+                            domain = []
                         method_args = [domain]
                         method_kwargs = {}
                     elif method == "default_get":
@@ -1908,6 +1956,10 @@ class OdooMCPServer(Server):
                         domain = parse_domain(args[0] if args else [])
                         fields = args[1] if len(args) > 1 else []
                         groupby = args[2] if len(args) > 2 else []
+                        # Additional validation to ensure domain is a valid list
+                        if not isinstance(domain, list):
+                            logger.error(f"Invalid domain type for read_group: {type(domain)}. Converting to empty list.")
+                            domain = []
                         method_args = [domain, fields, groupby]
                         method_kwargs = {}
                         if kwargs:
@@ -2003,6 +2055,10 @@ class OdooMCPServer(Server):
                             # Parameters in kwargs
                             domain = parse_domain(kwargs_.get("domain", []))
                             fields = kwargs_.get("fields", ["id", "name"])
+                        # Additional validation to ensure domain is a valid list
+                        if not isinstance(domain, list):
+                            logger.error(f"Invalid domain type for search_read: {type(domain)}. Converting to empty list.")
+                            domain = []
                         method_args = [domain, fields]
                         method_kwargs = {}
                     elif method == "read":
@@ -2036,17 +2092,25 @@ class OdooMCPServer(Server):
                     elif method == "search":
                         # For search method: args[0] = domain, optional kwargs like 'offset', 'limit', 'order'
                         domain = parse_domain(args[0] if args else [])
+                        # Additional validation to ensure domain is a valid list
+                        if not isinstance(domain, list):
+                            logger.error(f"Invalid domain type for search: {type(domain)}. Converting to empty list.")
+                            domain = []
                         method_args = [domain]
                         method_kwargs = {}
-                        if kwargs_:
+                        if kwargs:
                             # Only pass valid kwargs for search
                             valid_kwargs = ['offset', 'limit', 'order', 'count']
-                            for key, value in kwargs_.items():
+                            for key, value in kwargs.items():
                                 if key in valid_kwargs:
                                     method_kwargs[key] = value
                     elif method == "search_count":
                         # For search_count method: args[0] = domain
                         domain = parse_domain(args[0] if args else [])
+                        # Additional validation to ensure domain is a valid list
+                        if not isinstance(domain, list):
+                            logger.error(f"Invalid domain type for search_count: {type(domain)}. Converting to empty list.")
+                            domain = []
                         method_args = [domain]
                         method_kwargs = {}
                     elif method == "default_get":
@@ -2066,12 +2130,16 @@ class OdooMCPServer(Server):
                         domain = parse_domain(args[0] if args else [])
                         fields = args[1] if len(args) > 1 else []
                         groupby = args[2] if len(args) > 2 else []
+                        # Additional validation to ensure domain is a valid list
+                        if not isinstance(domain, list):
+                            logger.error(f"Invalid domain type for read_group: {type(domain)}. Converting to empty list.")
+                            domain = []
                         method_args = [domain, fields, groupby]
                         method_kwargs = {}
-                        if kwargs_:
+                        if kwargs:
                             # Only pass valid kwargs for read_group
                             valid_kwargs = ['limit', 'offset', 'orderby', 'lazy']
-                            for key, value in kwargs_.items():
+                            for key, value in kwargs.items():
                                 if key in valid_kwargs:
                                     method_kwargs[key] = value
                     elif method == "create":
@@ -2148,7 +2216,10 @@ class OdooMCPServer(Server):
                         values = arguments[0]
                     elif args and len(args) > 0:
                         values = args[0]
+                    elif kwargs and "values" in kwargs:
+                        values = kwargs["values"]
                     elif kwargs:
+                        # If kwargs doesn't have a "values" key, use the entire kwargs as values
                         values = kwargs
                     else:
                         values = tool_args.get("values", {})
