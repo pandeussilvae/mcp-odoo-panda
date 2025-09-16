@@ -1,12 +1,19 @@
 import logging
 from typing import Dict, Any, Optional, Tuple
-import hashlib # For basic hashing if storing tokens locally (use stronger methods for production)
+import hashlib  # For basic hashing if storing tokens locally (use stronger methods for production)
+
 # Consider using 'cryptography' library for actual encryption
 import socket
 from xmlrpc.client import Fault, ProtocolError as XmlRpcProtocolError
 
 from odoo_mcp.core.connection_pool import ConnectionPool
-from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, OdooMCPError, PoolTimeoutError, ConnectionError as PoolConnectionError
+from odoo_mcp.error_handling.exceptions import (
+    AuthError,
+    NetworkError,
+    OdooMCPError,
+    PoolTimeoutError,
+    ConnectionError as PoolConnectionError,
+)
 
 # Placeholder for ConnectionPool and custom exceptions
 # from odoo_mcp.connection.connection_pool import ConnectionPool
@@ -16,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Import custom exceptions
 # from odoo_mcp.error_handling.exceptions import AuthError, NetworkError, OdooMCPError, PoolTimeoutError, ConnectionError as PoolConnectionError # Alias to avoid name clash
+
 
 class OdooAuthenticator:
     """
@@ -37,11 +45,11 @@ class OdooAuthenticator:
         self.config = config
         self.connection_pool = ConnectionPool(config)
         self._authenticated_users: Dict[str, Dict[str, Any]] = {}
-        self.odoo_url = config.get('odoo_url')
-        self.database = config.get('database')
+        self.odoo_url = config.get("odoo_url")
+        self.database = config.get("database")
         # TODO: Implement secure storage/retrieval if caching tokens/credentials
-        self._token_cache: Dict[str, Tuple[int, float]] = {} # Example: {username: (uid, expiry_time)}
-        self.token_lifetime = config.get('auth_token_lifetime', 3600) # e.g., 1 hour
+        self._token_cache: Dict[str, Tuple[int, float]] = {}  # Example: {username: (uid, expiry_time)}
+        self.token_lifetime = config.get("auth_token_lifetime", 3600)  # e.g., 1 hour
 
     async def authenticate(self, username: str, password: str) -> Dict[str, Any]:
         """
@@ -147,6 +155,7 @@ class OdooAuthenticator:
         """
         # TODO: Implement secure token generation (e.g., using secrets module)
         import uuid
+
         # Example using UUID4 - NOT SECURE FOR PRODUCTION
         token = str(uuid.uuid4())
         logger.debug(f"Generated placeholder token: {token} for user {user_id}")
@@ -186,32 +195,52 @@ class OdooAuthenticator:
         # return keyring.get_password(f"odoo_mcp_{self.config.get('database', 'defaultdb')}", username)
         return None
 
+
 # Example Usage (Conceptual)
 async def auth_example():
     # Assume config and pool_mock are set up
-    config = {'odoo_url': 'http://localhost:8069', 'database': 'db', 'username': 'user', 'api_key': 'key'}
+    config = {
+        "odoo_url": "http://localhost:8069",
+        "database": "db",
+        "username": "user",
+        "api_key": "key",
+    }
     # Mock pool that returns a mock connection with a mock 'common' object
-    mock_common = type('CommonMock', (), {'authenticate': lambda db, u, p, _: 1 if u == 'user' and p == 'key' and db == 'db' else False})()
-    mock_connection = type('ConnectionMock', (), {'common': mock_common})()
-    mock_wrapper = type('WrapperMock', (), {'connection': mock_connection})()
-    pool_mock = type('PoolMock', (), {'get_connection': lambda: type('AsyncContextManager', (), {'__aenter__': lambda: mock_wrapper, '__aexit__': lambda *a: None})()})()
-
+    mock_common = type(
+        "CommonMock",
+        (),
+        {"authenticate": lambda db, u, p, _: (1 if u == "user" and p == "key" and db == "db" else False)},
+    )()
+    mock_connection = type("ConnectionMock", (), {"common": mock_common})()
+    mock_wrapper = type("WrapperMock", (), {"connection": mock_connection})()
+    pool_mock = type(
+        "PoolMock",
+        (),
+        {
+            "get_connection": lambda: type(
+                "AsyncContextManager",
+                (),
+                {"__aenter__": lambda: mock_wrapper, "__aexit__": lambda *a: None},
+            )()
+        },
+    )()
 
     authenticator = OdooAuthenticator(config)
     try:
         print("Authenticating valid user...")
-        uid = await authenticator.authenticate('user', 'key')
+        uid = await authenticator.authenticate("user", "key")
         print(f"Authentication successful! UID: {uid}")
 
         print("\nAuthenticating invalid user...")
-        await authenticator.authenticate('wrong_user', 'key')
+        await authenticator.authenticate("wrong_user", "key")
 
     except AuthError as e:
         print(f"Authentication failed as expected: {e}")
     except NetworkError as e:
-         print(f"Network error during authentication: {e}")
+        print(f"Network error during authentication: {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

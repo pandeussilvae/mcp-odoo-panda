@@ -3,19 +3,26 @@ Connection Pool implementation for Odoo.
 This module provides connection pooling functionality for Odoo API connections.
 """
 
-import logging
 import asyncio
-from typing import Dict, Any, Type, Optional, Union, List, Tuple, Set
-from datetime import datetime, timedelta
+import logging
 from collections import deque
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
-from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler
+from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 from odoo_mcp.error_handling.exceptions import (
-    OdooMCPError, ConfigurationError, NetworkError, AuthError,
-    ProtocolError, ConnectionError, SessionError,
-    OdooValidationError, OdooRecordNotFoundError, PoolTimeoutError
+    AuthError,
+    ConfigurationError,
+    ConnectionError,
+    NetworkError,
+    OdooMCPError,
+    OdooRecordNotFoundError,
+    OdooValidationError,
+    PoolTimeoutError,
+    ProtocolError,
+    SessionError,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,7 +30,10 @@ logger = logging.getLogger(__name__)
 # Global connection pool instance
 _connection_pool = None
 
-def initialize_connection_pool(config: Dict[str, Any], handler_class: Type[Union[XMLRPCHandler, JSONRPCHandler]]) -> None:
+
+def initialize_connection_pool(
+    config: Dict[str, Any], handler_class: Type[Union[XMLRPCHandler, JSONRPCHandler]]
+) -> None:
     """
     Initialize the global connection pool.
 
@@ -37,11 +47,12 @@ def initialize_connection_pool(config: Dict[str, Any], handler_class: Type[Union
     global _connection_pool
     if _connection_pool is not None:
         raise ConfigurationError("Connection pool is already initialized")
-    
+
     _connection_pool = ConnectionPool(config, handler_class)
     logger.info("Connection pool initialized successfully")
 
-def get_connection_pool() -> 'ConnectionPool':
+
+def get_connection_pool() -> "ConnectionPool":
     """
     Get the global connection pool instance.
 
@@ -55,10 +66,12 @@ def get_connection_pool() -> 'ConnectionPool':
         raise ConfigurationError("Connection pool is not initialized")
     return _connection_pool
 
+
 class ConnectionWrapper:
     """
     Wrapper for a connection that manages its lifecycle and usage state.
     """
+
     def __init__(self, connection: Union[XMLRPCHandler, JSONRPCHandler]):
         self.connection = connection
         self.in_use = False
@@ -73,10 +86,12 @@ class ConnectionWrapper:
         self.in_use = False
         self.last_used = asyncio.get_event_loop().time()
 
+
 class ConnectionPool:
     """
     Manages a pool of connections to Odoo.
     """
+
     def __init__(self, config: Dict[str, Any], handler_class: Type[Union[XMLRPCHandler, JSONRPCHandler]]):
         """
         Initialize the connection pool.
@@ -88,10 +103,10 @@ class ConnectionPool:
         logger.info(f"Initializing connection pool with config: {config}")
         self.config = config.copy()  # Make a copy of the config to avoid modifying the original
         self.handler_class = handler_class
-        self.max_size = config.get('max_connections', 10)
-        self.timeout = config.get('connection_timeout', 30)
+        self.max_size = config.get("max_connections", 10)
+        self.timeout = config.get("connection_timeout", 30)
         self.connections: List[ConnectionWrapper] = []
-        self.health_check_interval = config.get('health_check_interval', 300)  # 5 minutes
+        self.health_check_interval = config.get("health_check_interval", 300)  # 5 minutes
         self._lock = asyncio.Lock()
         self._cleanup_task = None
         logger.info(f"Connection pool initialized with max_size={self.max_size}, timeout={self.timeout}")
@@ -168,7 +183,7 @@ class ConnectionPool:
         async with self._lock:
             for wrapper in self.connections:
                 try:
-                    if hasattr(wrapper.connection, 'close'):
+                    if hasattr(wrapper.connection, "close"):
                         await wrapper.connection.close()
                 except Exception as e:
                     logger.error(f"Error closing connection: {e}")
@@ -184,7 +199,7 @@ class ConnectionPool:
                     for wrapper in self.connections[:]:  # Copy list to allow modification during iteration
                         if not wrapper.in_use and (current_time - wrapper.last_used) > self.health_check_interval:
                             try:
-                                if hasattr(wrapper.connection, 'close'):
+                                if hasattr(wrapper.connection, "close"):
                                     await wrapper.connection.close()
                                 self.connections.remove(wrapper)
                                 logger.debug("Removed stale connection from pool")
@@ -203,7 +218,7 @@ class ConnectionPool:
         args: List[Any],
         kwargs: Dict[str, Any],
         uid: Optional[int] = None,
-        password: Optional[str] = None
+        password: Optional[str] = None,
     ) -> Any:
         """
         Execute a method on an Odoo model using a connection from the pool.
@@ -226,12 +241,7 @@ class ConnectionPool:
             connection = await self.get_connection()
             try:
                 return await connection.connection.execute_kw(
-                    model=model,
-                    method=method,
-                    args=args,
-                    kwargs=kwargs,
-                    uid=uid,
-                    password=password
+                    model=model, method=method, args=args, kwargs=kwargs, uid=uid, password=password
                 )
             finally:
                 await self.release_connection(connection.connection)
@@ -250,4 +260,4 @@ class ConnectionPool:
         # Close all connections in pool
         await self.close_all()
 
-        logger.info("Connection pool closed") 
+        logger.info("Connection pool closed")

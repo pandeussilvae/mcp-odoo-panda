@@ -1,0 +1,203 @@
+# Odoo Actions Registry Configuration
+# This file defines declarative action mappings for Odoo models
+# Used by the MCP server for action discovery and next steps suggestions
+
+# Sales Order actions
+sale.order:
+  action_confirm:
+    label: "Confirm Order"
+    description: "Confirm the sales order and send it to the customer"
+    icon: "check-circle"
+    category: "workflow"
+    preconditions: ["state == 'draft'", "state == 'sent'"]
+    tooltip: "Confirm this sales order"
+  
+  action_cancel:
+    label: "Cancel Order"
+    description: "Cancel the sales order"
+    icon: "x-circle"
+    category: "workflow"
+    preconditions: ["state in ['draft', 'sent', 'sale']"]
+    tooltip: "Cancel this sales order"
+  
+  action_done:
+    label: "Mark Done"
+    description: "Mark the sales order as done"
+    icon: "flag"
+    category: "workflow"
+    preconditions: ["state == 'sale'"]
+    tooltip: "Mark this order as completed"
+  
+  action_draft:
+    label: "Reset to Draft"
+    description: "Reset the order to draft state"
+    icon: "refresh-cw"
+    category: "workflow"
+    preconditions: ["state == 'cancel'"]
+    tooltip: "Reset this order to draft"
+
+# Account Move actions
+account.move:
+  action_post:
+    label: "Post Entry"
+    description: "Post the journal entry"
+    icon: "check-circle"
+    category: "workflow"
+    preconditions: ["state == 'draft'"]
+    tooltip: "Post this journal entry"
+  
+  action_cancel:
+    label: "Cancel Entry"
+    description: "Cancel the journal entry"
+    icon: "x-circle"
+    category: "workflow"
+    preconditions: ["state in ['draft', 'posted']"]
+    tooltip: "Cancel this journal entry"
+  
+  action_reverse:
+    label: "Reverse Entry"
+    description: "Create a reversing entry"
+    icon: "rotate-ccw"
+    category: "workflow"
+    preconditions: ["state == 'posted'"]
+    tooltip: "Create a reversing entry"
+
+# Stock Picking actions
+stock.picking:
+  action_confirm:
+    label: "Confirm Transfer"
+    description: "Confirm the stock transfer"
+    icon: "check-circle"
+    category: "workflow"
+    preconditions: ["state == 'draft'"]
+    tooltip: "Confirm this stock transfer"
+  
+  action_assign:
+    label: "Assign Operations"
+    description: "Assign stock operations to available quants"
+    icon: "link"
+    category: "workflow"
+    preconditions: ["state in ['confirmed', 'assigned']"]
+    tooltip: "Assign stock operations"
+  
+  button_validate:
+    label: "Validate Transfer"
+    description: "Validate and complete the stock transfer"
+    icon: "check"
+    category: "workflow"
+    preconditions: ["state == 'assigned'"]
+    tooltip: "Validate this transfer"
+
+# CRM Lead actions
+crm.lead:
+  action_set_won:
+    label: "Mark as Won"
+    description: "Mark the lead/opportunity as won"
+    icon: "trophy"
+    category: "workflow"
+    preconditions: ["state in ['new', 'qualified']"]
+    tooltip: "Mark this lead as won"
+  
+  action_set_lost:
+    label: "Mark as Lost"
+    description: "Mark the lead/opportunity as lost"
+    icon: "x"
+    category: "workflow"
+    preconditions: ["state in ['new', 'qualified', 'won']"]
+    tooltip: "Mark this lead as lost"
+  
+  action_convert:
+    label: "Convert to Opportunity"
+    description: "Convert lead to opportunity"
+    icon: "refresh-cw"
+    category: "workflow"
+    preconditions: ["type == 'lead'"]
+    tooltip: "Convert this lead to opportunity"
+
+# Purchase Order actions
+purchase.order:
+  action_confirm:
+    label: "Confirm Order"
+    description: "Confirm the purchase order"
+    icon: "check-circle"
+    category: "workflow"
+    preconditions: ["state == 'draft'"]
+    tooltip: "Confirm this purchase order"
+  
+  action_cancel:
+    label: "Cancel Order"
+    description: "Cancel the purchase order"
+    icon: "x-circle"
+    category: "workflow"
+    preconditions: ["state in ['draft', 'sent', 'purchase']"]
+    tooltip: "Cancel this purchase order"
+  
+  button_confirm:
+    label: "Confirm to Supplier"
+    description: "Send confirmation to supplier"
+    icon: "send"
+    category: "workflow"
+    preconditions: ["state == 'draft'"]
+    tooltip: "Send confirmation to supplier"
+
+# Project actions
+project.project:
+  action_open_tasks:
+    label: "View Tasks"
+    description: "Open the project tasks view"
+    icon: "list"
+    category: "navigation"
+    preconditions: []
+    tooltip: "View project tasks"
+  
+  action_view_project:
+    label: "Project Dashboard"
+    description: "Open the project dashboard"
+    icon: "bar-chart-2"
+    category: "navigation"
+    preconditions: []
+    tooltip: "Open project dashboard"
+
+# HR Employee actions
+hr.employee:
+  action_view_attendance:
+    label: "View Attendance"
+    description: "View employee attendance records"
+    icon: "clock"
+    category: "navigation"
+    preconditions: []
+    tooltip: "View attendance records"
+  
+  action_view_timesheet:
+    label: "View Timesheet"
+    description: "View employee timesheet entries"
+    icon: "calendar"
+    category: "navigation"
+    preconditions: []
+    tooltip: "View timesheet entries"
+
+# Mail Message actions
+mail.message:
+  action_reply:
+    label: "Reply"
+    description: "Reply to this message"
+    icon: "message-square"
+    category: "communication"
+    preconditions: []
+    tooltip: "Reply to this message"
+  
+  action_forward:
+    label: "Forward"
+    description: "Forward this message"
+    icon: "share"
+    category: "communication"
+    preconditions: []
+    tooltip: "Forward this message"
+  
+  action_mark_read:
+    label: "Mark as Read"
+    description: "Mark message as read"
+    icon: "eye"
+    category: "communication"
+    preconditions: ["message_type == 'notification'"]
+    tooltip: "Mark as read"

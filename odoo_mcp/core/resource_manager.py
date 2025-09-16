@@ -15,9 +15,11 @@ from odoo_mcp.performance.caching import get_cache_manager, CACHE_TYPE
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class Resource:
     """Resource definition."""
+
     uri: str
     type: str
     content: Any
@@ -29,19 +31,20 @@ class Resource:
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert the resource to a JSON-serializable dictionary.
-        
+
         Returns:
             Dict[str, Any]: A dictionary representation of the resource
         """
         return {
-            'uri': self.uri,
-            'type': self.type,
-            'content': self.content,
-            'mime_type': self.mime_type,
-            'metadata': self.metadata or {},
-            'last_modified': self.last_modified.isoformat() if self.last_modified else None,
-            'etag': self.etag
+            "uri": self.uri,
+            "type": self.type,
+            "content": self.content,
+            "mime_type": self.mime_type,
+            "metadata": self.metadata or {},
+            "last_modified": self.last_modified.isoformat() if self.last_modified else None,
+            "etag": self.etag,
         }
+
 
 class ResourceManager:
     """
@@ -195,19 +198,19 @@ class ResourceManager:
             bool: True if the pattern matches
         """
         # Split the full URI into parts
-        pattern_parts = pattern.split('/')
-        uri_parts = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".split('/')
-        
+        pattern_parts = pattern.split("/")
+        uri_parts = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".split("/")
+
         if len(pattern_parts) != len(uri_parts):
             return False
-            
+
         for pattern_part, uri_part in zip(pattern_parts, uri_parts):
-            if pattern_part.startswith('{') and pattern_part.endswith('}'):
+            if pattern_part.startswith("{") and pattern_part.endswith("}"):
                 # This is a parameter, any value is valid
                 continue
             if pattern_part != uri_part:
                 return False
-                
+
         return True
 
     async def _notify_subscribers(self, uri: str, resource: Resource) -> None:
@@ -228,4 +231,4 @@ class ResourceManager:
     def clear_cache(self) -> None:
         """Clear the resource cache."""
         self._resource_cache.clear()
-        logger.info("Resource cache cleared") 
+        logger.info("Resource cache cleared")

@@ -11,13 +11,17 @@ from datetime import datetime, timedelta
 from odoo_mcp.core.authenticator import Authenticator, get_authenticator
 from odoo_mcp.core.connection_pool import ConnectionPool, get_connection_pool
 from odoo_mcp.error_handling.exceptions import (
-    OdooMCPError, ConfigurationError, NetworkError, AuthError
+    OdooMCPError,
+    ConfigurationError,
+    NetworkError,
+    AuthError,
 )
 
 logger = logging.getLogger(__name__)
 
 # Global session manager instance
 _session_manager = None
+
 
 def initialize_session_manager(config: Dict[str, Any]) -> None:
     """
@@ -32,13 +36,14 @@ def initialize_session_manager(config: Dict[str, Any]) -> None:
     global _session_manager
     if _session_manager is not None:
         raise ConfigurationError("Session manager is already initialized")
-    
+
     authenticator = get_authenticator()
     pool = get_connection_pool()
     _session_manager = SessionManager(config, authenticator, pool)
     logger.info("Session manager initialized successfully")
 
-def get_session_manager() -> 'SessionManager':
+
+def get_session_manager() -> "SessionManager":
     """
     Get the global session manager instance.
 
@@ -52,18 +57,14 @@ def get_session_manager() -> 'SessionManager':
         raise ConfigurationError("Session manager is not initialized")
     return _session_manager
 
+
 class SessionManager:
     """
     Manages Odoo sessions and provides session-related functionality.
     Handles session creation, validation, and cleanup.
     """
 
-    def __init__(
-        self,
-        config: Dict[str, Any],
-        authenticator: Authenticator,
-        pool: ConnectionPool
-    ):
+    def __init__(self, config: Dict[str, Any], authenticator: Authenticator, pool: ConnectionPool):
         """
         Initialize the session manager.
 
@@ -75,19 +76,20 @@ class SessionManager:
         self.config = config
         self.authenticator = authenticator
         self.pool = pool
-        self.session_timeout = timedelta(minutes=config.get('session_timeout_minutes', 120))
-        self.max_sessions = config.get('max_sessions', 100)
-        
+        self.session_timeout = timedelta(minutes=config.get("session_timeout_minutes", 120))
+        self.max_sessions = config.get("max_sessions", 100)
+
         # Session storage
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._user_sessions: Dict[str, List[str]] = {}
-        
+
         # Initialize cleanup task
         self._cleanup_task = None
         self._start_cleanup_task()
 
     def _start_cleanup_task(self):
         """Start the periodic cleanup task."""
+
         async def cleanup():
             while True:
                 try:
@@ -102,10 +104,9 @@ class SessionManager:
         """Clean up expired sessions."""
         now = datetime.now()
         expired_keys = [
-            key for key, session in self._sessions.items()
-            if now - session['created_at'] > self.session_timeout
+            key for key, session in self._sessions.items() if now - session["created_at"] > self.session_timeout
         ]
-        
+
         for key in expired_keys:
             await self._remove_session(key)
 
@@ -113,23 +114,18 @@ class SessionManager:
         """Remove a session and update user sessions."""
         if session_id in self._sessions:
             session = self._sessions[session_id]
-            username = session['username']
-            
+            username = session["username"]
+
             # Remove from user sessions
             if username in self._user_sessions:
                 self._user_sessions[username].remove(session_id)
                 if not self._user_sessions[username]:
                     del self._user_sessions[username]
-            
+
             # Remove from sessions
             del self._sessions[session_id]
 
-    async def create_session(
-        self,
-        username: str,
-        password: str,
-        database: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def create_session(self, username: str, password: str, database: Optional[str] = None) -> Dict[str, Any]:
         """
         Create a new session for a user.
 
@@ -154,14 +150,12 @@ class SessionManager:
 
             # Authenticate and create session
             session_id, session = await self.authenticator.authenticate(
-                username=username,
-                password=password,
-                database=database
+                username=username, password=password, database=database
             )
 
             # Store session
             self._sessions[session_id] = session
-            
+
             # Update user sessions
             if username not in self._user_sessions:
                 self._user_sessions[username] = []
@@ -190,7 +184,7 @@ class SessionManager:
         try:
             # Validate with authenticator
             session = await self.authenticator.validate_session(session_id)
-            
+
             # Update session data
             self._sessions[session_id] = session
             return session
@@ -253,4 +247,4 @@ class SessionManager:
 
         # Remove all sessions
         for session_id in list(self._sessions.keys()):
-            await self._remove_session(session_id) 
+            await self._remove_session(session_id)

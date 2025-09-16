@@ -10,13 +10,17 @@ from datetime import datetime, timedelta
 
 from odoo_mcp.core.connection_pool import ConnectionPool, get_connection_pool
 from odoo_mcp.error_handling.exceptions import (
-    OdooMCPError, ConfigurationError, NetworkError, AuthError
+    OdooMCPError,
+    ConfigurationError,
+    NetworkError,
+    AuthError,
 )
 
 logger = logging.getLogger(__name__)
 
 # Global authenticator instance
 _authenticator = None
+
 
 def initialize_authenticator(config: Dict[str, Any]) -> None:
     """
@@ -31,12 +35,13 @@ def initialize_authenticator(config: Dict[str, Any]) -> None:
     global _authenticator
     if _authenticator is not None:
         raise ConfigurationError("Authenticator is already initialized")
-    
+
     pool = get_connection_pool()
     _authenticator = Authenticator(config, pool)
     logger.info("Authenticator initialized successfully")
 
-def get_authenticator() -> 'Authenticator':
+
+def get_authenticator() -> "Authenticator":
     """
     Get the global authenticator instance.
 
@@ -49,6 +54,7 @@ def get_authenticator() -> 'Authenticator':
     if _authenticator is None:
         raise ConfigurationError("Authenticator is not initialized")
     return _authenticator
+
 
 class Authenticator:
     """
@@ -66,19 +72,20 @@ class Authenticator:
         """
         self.config = config
         self.pool = pool
-        self.session_timeout = timedelta(minutes=config.get('session_timeout_minutes', 120))
-        self.refresh_threshold = timedelta(minutes=config.get('refresh_threshold_minutes', 10))
-        
+        self.session_timeout = timedelta(minutes=config.get("session_timeout_minutes", 120))
+        self.refresh_threshold = timedelta(minutes=config.get("refresh_threshold_minutes", 10))
+
         # Session storage
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._refresh_tasks: Dict[str, asyncio.Task] = {}
-        
+
         # Initialize cleanup task
         self._cleanup_task = None
         self._start_cleanup_task()
 
     def _start_cleanup_task(self):
         """Start the periodic cleanup task."""
+
         async def cleanup():
             while True:
                 try:
@@ -93,10 +100,9 @@ class Authenticator:
         """Clean up expired sessions."""
         now = datetime.now()
         expired_keys = [
-            key for key, session in self._sessions.items()
-            if now - session['created_at'] > self.session_timeout
+            key for key, session in self._sessions.items() if now - session["created_at"] > self.session_timeout
         ]
-        
+
         for key in expired_keys:
             await self._remove_session(key)
 
@@ -109,15 +115,12 @@ class Authenticator:
             except asyncio.CancelledError:
                 pass
             del self._refresh_tasks[session_id]
-        
+
         if session_id in self._sessions:
             del self._sessions[session_id]
 
     async def authenticate(
-        self,
-        username: str,
-        password: str,
-        database: Optional[str] = None
+        self, username: str, password: str, database: Optional[str] = None
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Authenticate with Odoo and create a session.
@@ -136,17 +139,12 @@ class Authenticator:
         """
         try:
             # Get database from config if not provided
-            db = database or self.config.get('database')
+            db = database or self.config.get("database")
             if not db:
                 raise ConfigurationError("Database name is required")
 
             # Authenticate with Odoo
-            uid = await self.pool.execute_kw(
-                model="common",
-                method="login",
-                args=[db, username, password],
-                kwargs={}
-            )
+            uid = await self.pool.execute_kw(model="common", method="login", args=[db, username, password], kwargs={})
 
             if not uid:
                 raise AuthError("Invalid credentials")
@@ -154,19 +152,17 @@ class Authenticator:
             # Create session
             session_id = f"{db}_{username}_{datetime.now().timestamp()}"
             session = {
-                'id': session_id,
-                'uid': uid,
-                'username': username,
-                'database': db,
-                'created_at': datetime.now(),
-                'last_activity': datetime.now()
+                "id": session_id,
+                "uid": uid,
+                "username": username,
+                "database": db,
+                "created_at": datetime.now(),
+                "last_activity": datetime.now(),
             }
             self._sessions[session_id] = session
 
             # Start refresh task
-            self._refresh_tasks[session_id] = asyncio.create_task(
-                self._refresh_session(session_id)
-            )
+            self._refresh_tasks[session_id] = asyncio.create_task(self._refresh_session(session_id))
 
             return session_id, session
 
@@ -184,14 +180,14 @@ class Authenticator:
                     break
 
                 # Check if refresh is needed
-                if datetime.now() - session['created_at'] > self.session_timeout - self.refresh_threshold:
+                if datetime.now() - session["created_at"] > self.session_timeout - self.refresh_threshold:
                     # Re-authenticate
                     new_session_id, new_session = await self.authenticate(
-                        username=session['username'],
-                        password=self.config.get('password', ''),
-                        database=session['database']
+                        username=session["username"],
+                        password=self.config.get("password", ""),
+                        database=session["database"],
                     )
-                    
+
                     # Update session
                     self._sessions[new_session_id] = new_session
                     await self._remove_session(session_id)
@@ -220,12 +216,12 @@ class Authenticator:
         if not session:
             raise AuthError("Invalid session")
 
-        if datetime.now() - session['created_at'] > self.session_timeout:
+        if datetime.now() - session["created_at"] > self.session_timeout:
             await self._remove_session(session_id)
             raise AuthError("Session expired")
 
         # Update last activity
-        session['last_activity'] = datetime.now()
+        session["last_activity"] = datetime.now()
         return session
 
     async def logout(self, session_id: str):
@@ -248,4 +244,4 @@ class Authenticator:
 
         # Remove all sessions
         for session_id in list(self._sessions.keys()):
-            await self._remove_session(session_id) 
+            await self._remove_session(session_id)

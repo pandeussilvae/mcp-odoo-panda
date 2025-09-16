@@ -11,13 +11,17 @@ from datetime import datetime, timedelta
 from collections import deque
 
 from odoo_mcp.error_handling.exceptions import (
-    OdooMCPError, ConfigurationError, NetworkError, RateLimitError
+    OdooMCPError,
+    ConfigurationError,
+    NetworkError,
+    RateLimitError,
 )
 
 logger = logging.getLogger(__name__)
 
 # Global rate limiter instance
 _rate_limiter = None
+
 
 def initialize_rate_limiter(config: Dict[str, Any]) -> None:
     """
@@ -32,12 +36,13 @@ def initialize_rate_limiter(config: Dict[str, Any]) -> None:
     global _rate_limiter
     if _rate_limiter is not None:
         raise ConfigurationError("Rate limiter is already initialized")
-    
-    requests_per_minute = config.get('requests_per_minute', 120)
+
+    requests_per_minute = config.get("requests_per_minute", 120)
     _rate_limiter = RateLimiter(requests_per_minute=requests_per_minute)
     logger.info("Rate limiter initialized successfully")
 
-def get_rate_limiter() -> 'RateLimiter':
+
+def get_rate_limiter() -> "RateLimiter":
     """
     Get the global rate limiter instance.
 
@@ -50,6 +55,7 @@ def get_rate_limiter() -> 'RateLimiter':
     if _rate_limiter is None:
         raise ConfigurationError("Rate limiter is not initialized")
     return _rate_limiter
+
 
 class RateLimiter:
     """
@@ -66,7 +72,7 @@ class RateLimiter:
         """
         self.requests_per_minute = requests_per_minute
         self.window_size = 60  # 1 minute window
-        
+
         # Request tracking
         self._request_times: Dict[str, deque] = {}
         self._lock = asyncio.Lock()
@@ -109,9 +115,7 @@ class RateLimiter:
         """
         async with self._lock:
             if not await self.check_rate_limit(key):
-                raise RateLimitError(
-                    f"Rate limit exceeded: {self.requests_per_minute} requests per minute"
-                )
+                raise RateLimitError(f"Rate limit exceeded: {self.requests_per_minute} requests per minute")
 
             # Record request time
             self._request_times[key].append(time.time())
@@ -168,4 +172,4 @@ class RateLimiter:
     async def close(self):
         """Close the rate limiter and cleanup resources."""
         async with self._lock:
-            self._request_times.clear() 
+            self._request_times.clear()

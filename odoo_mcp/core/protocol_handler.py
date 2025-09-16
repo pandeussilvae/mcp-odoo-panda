@@ -8,25 +8,28 @@ import logging
 from typing import Dict, Any, Optional, Union, Type, Literal
 from pydantic import BaseModel, Field, ValidationError
 
-from odoo_mcp.error_handling.exceptions import (
-    ProtocolError, OdooMCPError, AuthError, NetworkError
-)
+from odoo_mcp.error_handling.exceptions import ProtocolError, OdooMCPError, AuthError, NetworkError
 
 logger = logging.getLogger(__name__)
 
+
 class JsonRpcRequest(BaseModel):
     """JSON-RPC 2.0 request model."""
+
     jsonrpc: Literal["2.0"] = "2.0"
     method: str
     params: Optional[Dict[str, Any]] = None
     id: Optional[Union[str, int]] = None
 
+
 class JsonRpcResponse(BaseModel):
     """JSON-RPC 2.0 response model."""
+
     jsonrpc: Literal["2.0"] = "2.0"
     result: Optional[Any] = None
     error: Optional[Dict[str, Any]] = None
     id: Optional[Union[str, int]] = None
+
 
 class ProtocolHandler:
     """
@@ -80,7 +83,7 @@ class ProtocolHandler:
         self,
         request_id: Optional[Union[str, int]],
         result: Optional[Any] = None,
-        error: Optional[Dict[str, Any]] = None
+        error: Optional[Dict[str, Any]] = None,
     ) -> JsonRpcResponse:
         """
         Create a JSON-RPC response.
@@ -93,18 +96,14 @@ class ProtocolHandler:
         Returns:
             JsonRpcResponse: The formatted response
         """
-        return JsonRpcResponse(
-            result=result,
-            error=error,
-            id=request_id
-        )
+        return JsonRpcResponse(result=result, error=error, id=request_id)
 
     def create_error_response(
         self,
         request_id: Optional[Union[str, int]],
         code: int,
         message: str,
-        data: Optional[Any] = None
+        data: Optional[Any] = None,
     ) -> JsonRpcResponse:
         """
         Create a JSON-RPC error response.
@@ -118,10 +117,7 @@ class ProtocolHandler:
         Returns:
             JsonRpcResponse: The formatted error response
         """
-        error = {
-            "code": code,
-            "message": message
-        }
+        error = {"code": code, "message": message}
         if data is not None:
             error["data"] = data
 
@@ -138,26 +134,10 @@ class ProtocolHandler:
             JsonRpcResponse: The formatted error response
         """
         if isinstance(error, ProtocolError):
-            return self.create_error_response(
-                request_id=None,
-                code=-32602,
-                message=str(error)
-            )
+            return self.create_error_response(request_id=None, code=-32602, message=str(error))
         elif isinstance(error, AuthError):
-            return self.create_error_response(
-                request_id=None,
-                code=-32001,
-                message=str(error)
-            )
+            return self.create_error_response(request_id=None, code=-32001, message=str(error))
         elif isinstance(error, NetworkError):
-            return self.create_error_response(
-                request_id=None,
-                code=-32002,
-                message=str(error)
-            )
+            return self.create_error_response(request_id=None, code=-32002, message=str(error))
         else:
-            return self.create_error_response(
-                request_id=None,
-                code=-32603,
-                message=f"Internal error: {str(error)}"
-            ) 
+            return self.create_error_response(request_id=None, code=-32603, message=f"Internal error: {str(error)}")

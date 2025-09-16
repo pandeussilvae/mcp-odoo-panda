@@ -8,10 +8,12 @@ from odoo_mcp.error_handling.exceptions import OdooMCPError, NetworkError, AuthE
 
 logger = logging.getLogger(__name__)
 
+
 class OdooBusHandler:
     """
     Handles real-time updates from Odoo's bus system.
     """
+
     def __init__(self, config: Dict[str, Any], notify_callback: Callable[[str, Dict[str, Any]], None]):
         """
         Initialize the Odoo bus handler.
@@ -23,9 +25,9 @@ class OdooBusHandler:
         self.config = config
         self.notify_callback = notify_callback
         self.ws_url = f"ws://{config['odoo_url'].replace('http://', '')}/websocket"
-        self.db = config['database']
-        self.uid = config.get('uid')
-        self.password = config.get('password')
+        self.db = config["database"]
+        self.uid = config.get("uid")
+        self.password = config.get("password")
         self.channels: Set[str] = set()
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self._running = False
@@ -154,7 +156,10 @@ class OdooBusHandler:
                     self._running = False
                     break
 
-                delay = min(self._reconnect_delay * (2 ** (self._reconnect_attempts - 1)), self._max_reconnect_delay)
+                delay = min(
+                    self._reconnect_delay * (2 ** (self._reconnect_attempts - 1)),
+                    self._max_reconnect_delay,
+                )
                 logger.info(f"Reconnecting to Odoo bus in {delay} seconds... (attempt {self._reconnect_attempts})")
                 await asyncio.sleep(delay)
 
@@ -169,11 +174,7 @@ class OdooBusHandler:
         auth_message = {
             "jsonrpc": "2.0",
             "method": "call",
-            "params": {
-                "db": self.db,
-                "login": self.uid,
-                "password": self.password
-            }
+            "params": {"db": self.db, "login": self.uid, "password": self.password},
         }
 
         try:
@@ -202,10 +203,7 @@ class OdooBusHandler:
         subscribe_message = {
             "jsonrpc": "2.0",
             "method": "call",
-            "params": {
-                "channel": channel,
-                "action": "subscribe"
-            }
+            "params": {"channel": channel, "action": "subscribe"},
         }
 
         try:
@@ -232,10 +230,7 @@ class OdooBusHandler:
         unsubscribe_message = {
             "jsonrpc": "2.0",
             "method": "call",
-            "params": {
-                "channel": channel,
-                "action": "unsubscribe"
-            }
+            "params": {"channel": channel, "action": "unsubscribe"},
         }
 
         try:
@@ -261,7 +256,7 @@ class OdooBusHandler:
             if "method" in data and data["method"] == "notification":
                 channel = data["params"].get("channel")
                 message_data = data["params"].get("message", {})
-                
+
                 if not channel:
                     logger.warning("Received notification without channel")
                     return
@@ -279,4 +274,4 @@ class OdooBusHandler:
         except json.JSONDecodeError:
             logger.error(f"Failed to decode message: {message}")
         except Exception as e:
-            logger.exception(f"Error handling message: {e}") 
+            logger.exception(f"Error handling message: {e}")

@@ -4,44 +4,53 @@ This module provides capability management and feature flag handling.
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Union
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
+
 class ResourceType(str, Enum):
     """Resource types supported by the server."""
+
     MODEL = "model"
     BINARY = "binary"
     LIST = "list"
     RECORD = "record"
 
+
 @dataclass
 class ResourceTemplate:
     """Resource template definition."""
+
     name: str
     type: ResourceType
     description: str
     operations: List[str]
     parameters: Optional[Dict[str, Any]] = None
 
+
 @dataclass
 class Tool:
     """Tool definition."""
+
     name: str
     description: str
     operations: List[str]
     parameters: Optional[Dict[str, Any]] = None
     inputSchema: Optional[Dict[str, Any]] = None
 
+
 @dataclass
 class Prompt:
     """Prompt definition."""
+
     name: str
     description: str
     template: str
     parameters: Optional[Dict[str, Any]] = None
+
 
 class CapabilitiesManager:
     """Manages server capabilities and feature flags."""
@@ -58,446 +67,502 @@ class CapabilitiesManager:
         self.tools: Dict[str, Tool] = {}
         self.prompts: Dict[str, Prompt] = {}
         self.feature_flags: Dict[str, bool] = {
-            'prompts.listChanged': True,
-            'resources.subscribelistChanged': True,
-            'tools.listChanged': True,
-            'logging': True,
-            'completion': True
+            "prompts.listChanged": True,
+            "resources.subscribelistChanged": True,
+            "tools.listChanged": True,
+            "logging": True,
+            "completion": True,
         }
-        
+
         # Register default capabilities
         self._register_default_capabilities()
 
     def _register_default_capabilities(self) -> None:
         """Register default server capabilities."""
         # Register resource templates
-        self.register_resource(ResourceTemplate(
-            name="res.partner",
-            type=ResourceType.MODEL,
-            description="Odoo Partner/Contact resource",
-            operations=["create", "read", "update", "delete", "search"],
-            parameters={
-                "uri_template": "odoo://{model}/{id}",
-                "list_uri_template": "odoo://{model}/list",
-                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
-            }
-        ))
-        
-        self.register_resource(ResourceTemplate(
-            name="res.users",
-            type=ResourceType.MODEL,
-            description="Odoo User resource",
-            operations=["create", "read", "update", "delete", "search"],
-            parameters={
-                "uri_template": "odoo://{model}/{id}",
-                "list_uri_template": "odoo://{model}/list",
-                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
-            }
-        ))
+        self.register_resource(
+            ResourceTemplate(
+                name="res.partner",
+                type=ResourceType.MODEL,
+                description="Odoo Partner/Contact resource",
+                operations=["create", "read", "update", "delete", "search"],
+                parameters={
+                    "uri_template": "odoo://{model}/{id}",
+                    "list_uri_template": "odoo://{model}/list",
+                    "binary_uri_template": "odoo://{model}/binary/{field}/{id}",
+                },
+            )
+        )
 
-        self.register_resource(ResourceTemplate(
-            name="product.product",
-            type=ResourceType.MODEL,
-            description="Odoo Product resource",
-            operations=["create", "read", "update", "delete", "search"],
-            parameters={
-                "uri_template": "odoo://{model}/{id}",
-                "list_uri_template": "odoo://{model}/list",
-                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
-            }
-        ))
+        self.register_resource(
+            ResourceTemplate(
+                name="res.users",
+                type=ResourceType.MODEL,
+                description="Odoo User resource",
+                operations=["create", "read", "update", "delete", "search"],
+                parameters={
+                    "uri_template": "odoo://{model}/{id}",
+                    "list_uri_template": "odoo://{model}/list",
+                    "binary_uri_template": "odoo://{model}/binary/{field}/{id}",
+                },
+            )
+        )
 
-        self.register_resource(ResourceTemplate(
-            name="sale.order",
-            type=ResourceType.MODEL,
-            description="Odoo Sales Order resource",
-            operations=["create", "read", "update", "delete", "search"],
-            parameters={
-                "uri_template": "odoo://{model}/{id}",
-                "list_uri_template": "odoo://{model}/list",
-                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
-            }
-        ))
+        self.register_resource(
+            ResourceTemplate(
+                name="product.product",
+                type=ResourceType.MODEL,
+                description="Odoo Product resource",
+                operations=["create", "read", "update", "delete", "search"],
+                parameters={
+                    "uri_template": "odoo://{model}/{id}",
+                    "list_uri_template": "odoo://{model}/list",
+                    "binary_uri_template": "odoo://{model}/binary/{field}/{id}",
+                },
+            )
+        )
 
-        self.register_resource(ResourceTemplate(
-            name="ir.attachment",
-            type=ResourceType.BINARY,
-            description="Odoo Attachment resource",
-            operations=["create", "read", "update", "delete"],
-            parameters={
-                "uri_template": "odoo://{model}/{id}",
-                "binary_uri_template": "odoo://{model}/binary/{field}/{id}"
-            }
-        ))
-        
+        self.register_resource(
+            ResourceTemplate(
+                name="sale.order",
+                type=ResourceType.MODEL,
+                description="Odoo Sales Order resource",
+                operations=["create", "read", "update", "delete", "search"],
+                parameters={
+                    "uri_template": "odoo://{model}/{id}",
+                    "list_uri_template": "odoo://{model}/list",
+                    "binary_uri_template": "odoo://{model}/binary/{field}/{id}",
+                },
+            )
+        )
+
+        self.register_resource(
+            ResourceTemplate(
+                name="ir.attachment",
+                type=ResourceType.BINARY,
+                description="Odoo Attachment resource",
+                operations=["create", "read", "update", "delete"],
+                parameters={
+                    "uri_template": "odoo://{model}/{id}",
+                    "binary_uri_template": "odoo://{model}/binary/{field}/{id}",
+                },
+            )
+        )
+
         # Register tools with proper inputSchema
-        self.register_tool(Tool(
-            name="odoo_search_read",
-            description="Search and read records in Odoo",
-            operations=["search_read"],
-            parameters={
-                "model": {"type": "string", "description": "Model name"},
-                "domain": {"type": "array", "description": "Search domain"},
-                "fields": {"type": "array", "description": "Fields to return"},
-                "limit": {"type": "integer", "description": "Maximum number of records to return"},
-                "offset": {"type": "integer", "description": "Number of records to skip"}
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Name of the Odoo model"},
-                            "domain": {"type": "array", "description": "Search domain", "items": {"type": "any"}},
-                            "fields": {"type": "array", "description": "Fields to return", "items": {"type": "string"}},
-                            "limit": {"type": "integer", "description": "Maximum number of records to return"},
-                            "offset": {"type": "integer", "description": "Number of records to skip"}
+        self.register_tool(
+            Tool(
+                name="odoo_search_read",
+                description="Search and read records in Odoo",
+                operations=["search_read"],
+                parameters={
+                    "model": {"type": "string", "description": "Model name"},
+                    "domain": {"type": "array", "description": "Search domain"},
+                    "fields": {"type": "array", "description": "Fields to return"},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of records to return",
+                    },
+                    "offset": {"type": "integer", "description": "Number of records to skip"},
                 },
-                "required": ["model"]
-                    }
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "model": {
+                                    "type": "string",
+                                    "description": "Name of the Odoo model",
+                                },
+                                "domain": {
+                                    "type": "array",
+                                    "description": "Search domain",
+                                    "items": {"type": "any"},
+                                },
+                                "fields": {
+                                    "type": "array",
+                                    "description": "Fields to return",
+                                    "items": {"type": "string"},
+                                },
+                                "limit": {
+                                    "type": "integer",
+                                    "description": "Maximum number of records to return",
+                                },
+                                "offset": {
+                                    "type": "integer",
+                                    "description": "Number of records to skip",
+                                },
+                            },
+                            "required": ["model"],
+                        }
+                    },
+                    "required": ["arguments"],
                 },
-                "required": ["arguments"]
-            }
-        ))
+            )
+        )
 
-        self.register_tool(Tool(
-            name="odoo_read",
-            description="Read records from Odoo",
-            operations=["read"],
-            parameters={
-                "model": {"type": "string", "description": "Model name"},
-                "ids": {"type": "array", "description": "Record IDs"},
-                "fields": {"type": "array", "description": "Fields to return"}
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Name of the Odoo model"},
-                            "ids": {"type": "array", "description": "Record IDs to read", "items": {"type": "integer"}},
-                            "fields": {"type": "array", "description": "Fields to return", "items": {"type": "string"}}
+        self.register_tool(
+            Tool(
+                name="odoo_read",
+                description="Read records from Odoo",
+                operations=["read"],
+                parameters={
+                    "model": {"type": "string", "description": "Model name"},
+                    "ids": {"type": "array", "description": "Record IDs"},
+                    "fields": {"type": "array", "description": "Fields to return"},
                 },
-                "required": ["model", "ids"]
-                    }
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "model": {
+                                    "type": "string",
+                                    "description": "Name of the Odoo model",
+                                },
+                                "ids": {
+                                    "type": "array",
+                                    "description": "Record IDs to read",
+                                    "items": {"type": "integer"},
+                                },
+                                "fields": {
+                                    "type": "array",
+                                    "description": "Fields to return",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["model", "ids"],
+                        }
+                    },
+                    "required": ["arguments"],
                 },
-                "required": ["arguments"]
-            }
-        ))
+            )
+        )
 
-        self.register_tool(Tool(
-            name="odoo_execute_kw",
-            description="Execute an arbitrary method on an Odoo model",
-            operations=["execute"],
-            parameters={
-                "model": "string",
-                "method": "string",
-                "args": "array",
-                "kwargs": "object"
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "model": {
-                                "type": "string",
-                                "description": "Name of the Odoo model"
-                            },
-                            "method": {
-                                "type": "string",
-                                "description": "Name of the method to execute"
-                            },
-                            "args": {
-                                "type": "array",
-                                "description": "Positional arguments for the method",
-                                "items": {"type": "any"}
-                            },
-                            "kwargs": {
-                                "type": "object",
-                                "description": "Keyword arguments for the method",
-                                "additionalProperties": True
-                            }
-                        },
-                        "required": ["model", "method"]
-                    }
+        self.register_tool(
+            Tool(
+                name="odoo_execute_kw",
+                description="Execute an arbitrary method on an Odoo model",
+                operations=["execute"],
+                parameters={
+                    "model": "string",
+                    "method": "string",
+                    "args": "array",
+                    "kwargs": "object",
                 },
-                "required": ["arguments"]
-            }
-        ))
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "model": {
+                                    "type": "string",
+                                    "description": "Name of the Odoo model",
+                                },
+                                "method": {
+                                    "type": "string",
+                                    "description": "Name of the method to execute",
+                                },
+                                "args": {
+                                    "type": "array",
+                                    "description": "Positional arguments for the method",
+                                    "items": {"type": "any"},
+                                },
+                                "kwargs": {
+                                    "type": "object",
+                                    "description": "Keyword arguments for the method",
+                                    "additionalProperties": True,
+                                },
+                            },
+                            "required": ["model", "method"],
+                        }
+                    },
+                    "required": ["arguments"],
+                },
+            )
+        )
 
-        self.register_tool(Tool(
-            name="data_export",
-            description="Export Odoo data to various formats",
-            operations=["csv", "excel", "json", "xml"],
-            parameters={
-                "model": "string",
-                "ids": "array",
-                "fields": "array",
-                "format": "string"
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "model": {
-                                "type": "string",
-                                "description": "Name of the Odoo model"
-                            },
-                            "ids": {
-                                "type": "array",
-                                "description": "List of record IDs to export",
-                                "items": {
-                                    "type": "integer"
-                                }
-                            },
-                            "fields": {
-                                "type": "array",
-                                "description": "List of fields to export",
-                                "items": {
-                                    "type": "string"
-                                }
-                            },
-                            "format": {
-                                "type": "string",
-                                "description": "Export format",
-                                "enum": ["csv", "excel", "json", "xml"]
-                            }
-                        },
-                        "required": ["model", "format"]
-                    }
+        self.register_tool(
+            Tool(
+                name="data_export",
+                description="Export Odoo data to various formats",
+                operations=["csv", "excel", "json", "xml"],
+                parameters={
+                    "model": "string",
+                    "ids": "array",
+                    "fields": "array",
+                    "format": "string",
                 },
-                "required": ["arguments"]
-            }
-        ))
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "model": {
+                                    "type": "string",
+                                    "description": "Name of the Odoo model",
+                                },
+                                "ids": {
+                                    "type": "array",
+                                    "description": "List of record IDs to export",
+                                    "items": {"type": "integer"},
+                                },
+                                "fields": {
+                                    "type": "array",
+                                    "description": "List of fields to export",
+                                    "items": {"type": "string"},
+                                },
+                                "format": {
+                                    "type": "string",
+                                    "description": "Export format",
+                                    "enum": ["csv", "excel", "json", "xml"],
+                                },
+                            },
+                            "required": ["model", "format"],
+                        }
+                    },
+                    "required": ["arguments"],
+                },
+            )
+        )
 
-        self.register_tool(Tool(
-            name="data_import",
-            description="Import data into Odoo",
-            operations=["csv", "excel", "json", "xml"],
-            parameters={
-                "model": "string",
-                "data": "string",
-                "format": "string"
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "model": {
-                                "type": "string",
-                                "description": "Name of the Odoo model"
+        self.register_tool(
+            Tool(
+                name="data_import",
+                description="Import data into Odoo",
+                operations=["csv", "excel", "json", "xml"],
+                parameters={"model": "string", "data": "string", "format": "string"},
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "model": {
+                                    "type": "string",
+                                    "description": "Name of the Odoo model",
+                                },
+                                "data": {
+                                    "type": "string",
+                                    "description": "Data to import in the specified format",
+                                },
+                                "format": {
+                                    "type": "string",
+                                    "description": "Import format",
+                                    "enum": ["csv", "excel", "json", "xml"],
+                                },
                             },
-                            "data": {
-                                "type": "string",
-                                "description": "Data to import in the specified format"
+                            "required": ["model", "data", "format"],
+                        }
+                    },
+                    "required": ["arguments"],
+                },
+            )
+        )
+
+        self.register_tool(
+            Tool(
+                name="report_generator",
+                description="Generate an Odoo report",
+                operations=["pdf", "html"],
+                parameters={"report_name": "string", "ids": "array", "format": "string"},
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "report_name": {
+                                    "type": "string",
+                                    "description": "Name of the report to generate",
+                                },
+                                "ids": {
+                                    "type": "array",
+                                    "description": "List of record IDs to include in the report",
+                                    "items": {"type": "integer"},
+                                },
+                                "format": {
+                                    "type": "string",
+                                    "description": "Report format",
+                                    "enum": ["pdf", "html"],
+                                },
                             },
-                            "format": {
-                                "type": "string",
-                                "description": "Import format",
-                                "enum": ["csv", "excel", "json", "xml"]
-                            }
-                        },
-                        "required": ["model", "data", "format"]
-                    }
+                            "required": ["report_name", "ids", "format"],
+                        }
+                    },
+                    "required": ["arguments"],
                 },
-                "required": ["arguments"]
-            }
-        ))
+            )
+        )
 
-        self.register_tool(Tool(
-            name="report_generator",
-            description="Generate an Odoo report",
-            operations=["pdf", "html"],
-            parameters={
-                "report_name": "string",
-                "ids": "array",
-                "format": "string"
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "report_name": {
-                                "type": "string",
-                                "description": "Name of the report to generate"
+        self.register_tool(
+            Tool(
+                name="odoo_create",
+                description="Create a new record in an Odoo model",
+                operations=["create"],
+                parameters={"model": "string", "values": "object"},
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "model": {
+                                    "type": "string",
+                                    "description": "Name of the Odoo model",
+                                },
+                                "values": {
+                                    "type": "object",
+                                    "description": "Field values for the new record",
+                                    "additionalProperties": True,
+                                },
                             },
-                            "ids": {
-                                "type": "array",
-                                "description": "List of record IDs to include in the report",
-                                "items": {
-                                    "type": "integer"
-                                }
+                            "required": ["model", "values"],
+                        }
+                    },
+                    "required": ["arguments"],
+                },
+            )
+        )
+
+        self.register_tool(
+            Tool(
+                name="odoo_write",
+                description="Update an existing record in an Odoo model",
+                operations=["write"],
+                parameters={"model": "string", "ids": "array", "values": "object"},
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "model": {
+                                    "type": "string",
+                                    "description": "Name of the Odoo model",
+                                },
+                                "ids": {
+                                    "type": "array",
+                                    "description": "Record IDs to update",
+                                    "items": {"type": "integer"},
+                                },
+                                "values": {
+                                    "type": "object",
+                                    "description": "Field values to update",
+                                    "additionalProperties": True,
+                                },
                             },
-                            "format": {
-                                "type": "string",
-                                "description": "Report format",
-                                "enum": ["pdf", "html"]
-                            }
-                        },
-                        "required": ["report_name", "ids", "format"]
-                    }
+                            "required": ["model", "ids", "values"],
+                        }
+                    },
+                    "required": ["arguments"],
                 },
-                "required": ["arguments"]
-            }
-        ))
+            )
+        )
 
-        self.register_tool(Tool(
-            name="odoo_create",
-            description="Create a new record in an Odoo model",
-            operations=["create"],
-            parameters={
-                "model": "string",
-                "values": "object"
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Name of the Odoo model"},
-                            "values": {"type": "object", "description": "Field values for the new record", "additionalProperties": True}
+        self.register_tool(
+            Tool(
+                name="odoo_unlink",
+                description="Delete a record from an Odoo model",
+                operations=["unlink"],
+                parameters={"model": "string", "ids": "array"},
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "arguments": {
+                            "type": "object",
+                            "properties": {
+                                "model": {
+                                    "type": "string",
+                                    "description": "Name of the Odoo model",
+                                },
+                                "ids": {
+                                    "type": "array",
+                                    "description": "Record IDs to delete",
+                                    "items": {"type": "integer"},
+                                },
+                            },
+                            "required": ["model", "ids"],
+                        }
+                    },
+                    "required": ["arguments"],
                 },
-                "required": ["model", "values"]
-                    }
-                },
-                "required": ["arguments"]
-            }
-        ))
+            )
+        )
 
-        self.register_tool(Tool(
-            name="odoo_write",
-            description="Update an existing record in an Odoo model",
-            operations=["write"],
-            parameters={
-                "model": "string",
-                "ids": "array",
-                "values": "object"
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Name of the Odoo model"},
-                            "ids": {"type": "array", "description": "Record IDs to update", "items": {"type": "integer"}},
-                            "values": {"type": "object", "description": "Field values to update", "additionalProperties": True}
-                },
-                        "required": ["model", "ids", "values"]
-                    }
-                },
-                "required": ["arguments"]
-            }
-        ))
-
-        self.register_tool(Tool(
-            name="odoo_unlink",
-            description="Delete a record from an Odoo model",
-            operations=["unlink"],
-            parameters={
-                "model": "string",
-                "ids": "array"
-            },
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "arguments": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "string", "description": "Name of the Odoo model"},
-                            "ids": {"type": "array", "description": "Record IDs to delete", "items": {"type": "integer"}}
-                },
-                        "required": ["model", "ids"]
-                    }
-                },
-                "required": ["arguments"]
-            }
-        ))
-        
         # Register prompts
-        self.register_prompt(Prompt(
-            name="analyze_record",
-            description="Analyze an Odoo record",
-            template="Analyze the following Odoo record: {record}",
-            parameters={
-                "model": "string",
-                "id": "integer"
-            }
-        ))
-        
-        self.register_prompt(Prompt(
-            name="create_record",
-            description="Create a new Odoo record",
-            template="Create a new {model} record with the following data: {data}",
-            parameters={
-                "model": "string"
-            }
-        ))
+        self.register_prompt(
+            Prompt(
+                name="analyze_record",
+                description="Analyze an Odoo record",
+                template="Analyze the following Odoo record: {record}",
+                parameters={"model": "string", "id": "integer"},
+            )
+        )
 
-        self.register_prompt(Prompt(
-            name="update_record",
-            description="Update an existing Odoo record",
-            template="Update the {model} record with ID {id} with the following data: {data}",
-            parameters={
-                "model": "string",
-                "id": "integer"
-            }
-        ))
+        self.register_prompt(
+            Prompt(
+                name="create_record",
+                description="Create a new Odoo record",
+                template="Create a new {model} record with the following data: {data}",
+                parameters={"model": "string"},
+            )
+        )
 
-        self.register_prompt(Prompt(
-            name="advanced_search",
-            description="Perform an advanced search on an Odoo model",
-            template="Search {model} records with the following criteria: {criteria}",
-            parameters={
-                "model": "string"
-            }
-        ))
+        self.register_prompt(
+            Prompt(
+                name="update_record",
+                description="Update an existing Odoo record",
+                template="Update the {model} record with ID {id} with the following data: {data}",
+                parameters={"model": "string", "id": "integer"},
+            )
+        )
 
-        self.register_prompt(Prompt(
-            name="call_method",
-            description="Call a specific method on a model or record",
-            template="Call method {method} on {model} with ID {id} and arguments: {args}",
-            parameters={
-                "model": "string",
-                "method": "string",
-                "id": "integer",
-                "args": "array",
-                "kwargs": "object"
-            }
-        ))
+        self.register_prompt(
+            Prompt(
+                name="advanced_search",
+                description="Perform an advanced search on an Odoo model",
+                template="Search {model} records with the following criteria: {criteria}",
+                parameters={"model": "string"},
+            )
+        )
 
-        self.register_prompt(Prompt(
-            name="view_related_records",
-            description="View records related to a specific record",
-            template="Show records related to {model} with ID {id} through field {field}",
-            parameters={
-                "model": "string",
-                "id": "integer",
-                "field": "string"
-            }
-        ))
+        self.register_prompt(
+            Prompt(
+                name="call_method",
+                description="Call a specific method on a model or record",
+                template="Call method {method} on {model} with ID {id} and arguments: {args}",
+                parameters={
+                    "model": "string",
+                    "method": "string",
+                    "id": "integer",
+                    "args": "array",
+                    "kwargs": "object",
+                },
+            )
+        )
 
-        self.register_prompt(Prompt(
-            name="upload_attachment",
-            description="Upload a file attachment to a record",
-            template="Upload file {filename} to {model} with ID {id}",
-            parameters={
-                "model": "string",
-                "id": "integer",
-                "filename": "string"
-            }
-        ))
+        self.register_prompt(
+            Prompt(
+                name="view_related_records",
+                description="View records related to a specific record",
+                template="Show records related to {model} with ID {id} through field {field}",
+                parameters={"model": "string", "id": "integer", "field": "string"},
+            )
+        )
+
+        self.register_prompt(
+            Prompt(
+                name="upload_attachment",
+                description="Upload a file attachment to a record",
+                template="Upload file {filename} to {model} with ID {id}",
+                parameters={"model": "string", "id": "integer", "filename": "string"},
+            )
+        )
 
     def register_resource(self, resource: ResourceTemplate) -> None:
         """
@@ -587,7 +652,7 @@ class CapabilitiesManager:
                 "description": resource.description,
                 "operations": resource.operations,
                 "parameters": resource.parameters or {},
-                "uri": f"odoo://{resource.name}"  # Add URI field in odoo:// format
+                "uri": f"odoo://{resource.name}",  # Add URI field in odoo:// format
             }
             for resource in self.resources.values()
         ]
@@ -612,11 +677,7 @@ class CapabilitiesManager:
                 "description": tool.description,
                 "operations": tool.operations,
                 "parameters": tool.parameters or {},
-                "inputSchema": tool.inputSchema or {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
+                "inputSchema": tool.inputSchema or {"type": "object", "properties": {}, "required": []},
             }
             for tool in self.tools.values()
         ]
@@ -639,7 +700,7 @@ class CapabilitiesManager:
                 "name": prompt.name,
                 "description": prompt.description,
                 "template": prompt.template,
-                "parameters": prompt.parameters or {}
+                "parameters": prompt.parameters or {},
             }
             for prompt in self.prompts.values()
         ]
@@ -666,7 +727,7 @@ class CapabilitiesManager:
                 "description": resource.description,
                 "operations": resource.operations,
                 "parameters": resource.parameters or {},
-                "uriTemplate": resource.parameters.get("uri_template", f"odoo://{resource.name}")
+                "uriTemplate": resource.parameters.get("uri_template", f"odoo://{resource.name}"),
             }
             for resource in self.resources.values()
         ]
@@ -725,14 +786,10 @@ class CapabilitiesManager:
         """
         return {
             "logging": {},  # Empty object indicates basic logging support
-            "prompts": {
-                "listChanged": self.is_feature_enabled('prompts.listChanged')
-            },
+            "prompts": {"listChanged": self.is_feature_enabled("prompts.listChanged")},
             "resources": {
-                "subscribe": self.is_feature_enabled('resources.subscribe'),
-                "listChanged": self.is_feature_enabled('resources.listChanged')
+                "subscribe": self.is_feature_enabled("resources.subscribe"),
+                "listChanged": self.is_feature_enabled("resources.listChanged"),
             },
-            "tools": {
-                "listChanged": self.is_feature_enabled('tools.listChanged')
-            }
-        } 
+            "tools": {"listChanged": self.is_feature_enabled("tools.listChanged")},
+        }

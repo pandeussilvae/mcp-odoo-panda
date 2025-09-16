@@ -7,17 +7,21 @@ from typing import Dict, Any, Optional, List, Union
 from dataclasses import dataclass
 from enum import Enum
 
+
 class MCPMethod(str, Enum):
     """MCP method types."""
+
     GET = "GET"
     POST = "POST"
     PUT = "PUT"
     DELETE = "DELETE"
     PATCH = "PATCH"
 
+
 @dataclass
 class MCPRequest:
     """MCP request object."""
+
     method: str
     resource: Optional[str] = None
     tool: Optional[str] = None
@@ -33,9 +37,11 @@ class MCPRequest:
         if self.headers is None:
             self.headers = {}
 
+
 @dataclass
 class MCPResponse:
     """MCP response object."""
+
     success: bool
     data: Optional[Any] = None
     error: Optional[str] = None
@@ -47,14 +53,15 @@ class MCPResponse:
             self.headers = {}
 
     @classmethod
-    def success(cls, data: Any = None, headers: Dict[str, str] = None) -> 'MCPResponse':
+    def success(cls, data: Any = None, headers: Dict[str, str] = None) -> "MCPResponse":
         """Create a success response."""
         return cls(success=True, data=data, headers=headers)
 
     @classmethod
-    def error(cls, error: str, headers: Dict[str, str] = None) -> 'MCPResponse':
+    def error(cls, error: str, headers: Dict[str, str] = None) -> "MCPResponse":
         """Create an error response."""
         return cls(success=False, error=error, headers=headers)
+
 
 class FastMCP:
     """FastMCP server implementation."""
@@ -67,17 +74,17 @@ class FastMCP:
 
     def register_resource_handler(self, handler: callable) -> None:
         """Register a resource handler."""
-        self.resource_handlers['resource'] = handler
+        self.resource_handlers["resource"] = handler
 
     def register_tool_handler(self, handler: callable) -> None:
         """Register a tool handler."""
-        self.tool_handlers['tool'] = handler
+        self.tool_handlers["tool"] = handler
 
     def register_default_handler(self, handler: callable) -> None:
         """Register a default handler."""
         self.default_handler = handler
 
-    async def start(self, host: str = 'localhost', port: int = 8000) -> None:
+    async def start(self, host: str = "localhost", port: int = 8000) -> None:
         """Start the FastMCP server."""
         # Implementation will be added when needed
         pass
@@ -87,14 +94,17 @@ class FastMCP:
         # Implementation will be added when needed
         pass
 
+
 def mcp_handler(func):
     """Decorator for MCP handlers."""
     return func
+
 
 def mcp_resource(func):
     """Decorator for MCP resource handlers."""
     return func
 
+
 def mcp_tool(func):
     """Decorator for MCP tool handlers."""
-    return func 
+    return func

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 # Global tool manager instance
 _tool_manager = None
 
+
 def initialize_tool_manager(config: Dict[str, Any]) -> None:
     """
     Initialize the global tool manager.
@@ -27,11 +28,12 @@ def initialize_tool_manager(config: Dict[str, Any]) -> None:
     global _tool_manager
     if _tool_manager is not None:
         raise ConfigurationError("Tool manager is already initialized")
-    
+
     _tool_manager = ToolManager(config)
     logger.info("Tool manager initialized successfully")
 
-def get_tool_manager() -> 'ToolManager':
+
+def get_tool_manager() -> "ToolManager":
     """
     Get the global tool manager instance.
 
@@ -44,6 +46,7 @@ def get_tool_manager() -> 'ToolManager':
     if _tool_manager is None:
         raise ConfigurationError("Tool manager is not initialized")
     return _tool_manager
+
 
 class ToolManager:
     """Manages Odoo tools and their operations."""
@@ -65,19 +68,19 @@ class ToolManager:
         self.register_tool(
             name="data_export",
             description="Export Odoo data to various formats",
-            operations=["csv", "excel", "json", "xml"]
+            operations=["csv", "excel", "json", "xml"],
         )
-        
+
         self.register_tool(
             name="data_import",
             description="Import data into Odoo",
-            operations=["csv", "excel", "json", "xml"]
+            operations=["csv", "excel", "json", "xml"],
         )
-        
+
         self.register_tool(
             name="report_generator",
             description="Generate Odoo reports",
-            operations=["pdf", "html", "excel"]
+            operations=["pdf", "html", "excel"],
         )
 
     def register_tool(self, name: str, description: str, operations: List[str]) -> None:
@@ -89,10 +92,7 @@ class ToolManager:
             description: Description of the tool
             operations: List of supported operations
         """
-        self.tools[name] = {
-            'description': description,
-            'operations': operations
-        }
+        self.tools[name] = {"description": description, "operations": operations}
         logger.info(f"Registered tool: {name}")
 
     def register_operation(self, tool_name: str, operation_name: str, handler: Callable) -> None:
@@ -106,15 +106,15 @@ class ToolManager:
         """
         if tool_name not in self.tools:
             raise ValueError(f"Tool not found: {tool_name}")
-        
-        if operation_name not in self.tools[tool_name]['operations']:
+
+        if operation_name not in self.tools[tool_name]["operations"]:
             raise ValueError(f"Operation not supported for tool {tool_name}: {operation_name}")
-        
+
         operation_key = f"{tool_name}.{operation_name}"
         self.operations[operation_key] = {
-            'handler': handler,
-            'tool': tool_name,
-            'operation': operation_name
+            "handler": handler,
+            "tool": tool_name,
+            "operation": operation_name,
         }
         logger.info(f"Registered operation: {operation_key}")
 
@@ -162,9 +162,9 @@ class ToolManager:
         operation = self.get_operation(tool_name, operation_name)
         if not operation:
             raise ValueError(f"Operation not found: {tool_name}.{operation_name}")
-        
+
         try:
-            return operation['handler'](**kwargs)
+            return operation["handler"](**kwargs)
         except Exception as e:
             logger.error(f"Error executing operation {tool_name}.{operation_name}: {str(e)}")
             raise
@@ -207,7 +207,7 @@ class ToolManager:
             operations_to_remove = [op for op in self.operations.keys() if op.startswith(f"{name}.")]
             for op in operations_to_remove:
                 del self.operations[op]
-            
+
             # Remove the tool
             del self.tools[name]
             logger.info(f"Removed tool: {name}")
@@ -232,6 +232,7 @@ class ToolManager:
             return True
         return False
 
+
 def tool_operation_handler(tool_name: str, operation_name: str):
     """
     Decorator for registering tool operation handlers.
@@ -243,9 +244,12 @@ def tool_operation_handler(tool_name: str, operation_name: str):
     Returns:
         Callable: Decorator function
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
+
         return wrapper
-    return decorator 
+
+    return decorator

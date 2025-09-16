@@ -11,6 +11,7 @@ from odoo_mcp.error_handling.exceptions import SessionError, AuthError, OdooMCPE
 
 logger = logging.getLogger(__name__)
 
+
 class Session:
     """Session class for managing user sessions."""
 
@@ -43,6 +44,7 @@ class Session:
         """Update last activity timestamp."""
         self.last_activity = time.time()
 
+
 class SessionManager:
     """Session manager implementation."""
 
@@ -57,7 +59,7 @@ class SessionManager:
         self.authenticator = OdooAuthenticator(config)
         self.connection_pool = ConnectionPool(config)
         self._sessions: Dict[str, Session] = {}
-        self._session_lifetime = config.get('session_lifetime', 3600)  # 1 hour default
+        self._session_lifetime = config.get("session_lifetime", 3600)  # 1 hour default
 
     async def create_session(self, username: str, password: str) -> Session:
         """
@@ -83,7 +85,7 @@ class SessionManager:
             # Create session
             session_id = f"{username}_{int(time.time())}"
             expires_at = time.time() + self._session_lifetime
-            session = Session(session_id, auth_result['uid'], username, expires_at)
+            session = Session(session_id, auth_result["uid"], username, expires_at)
             self._sessions[session_id] = session
 
             return session
@@ -122,9 +124,6 @@ class SessionManager:
     def cleanup_expired_sessions(self) -> None:
         """Remove expired sessions."""
         current_time = time.time()
-        expired_sessions = [
-            session_id for session_id, session in self._sessions.items()
-            if session.is_expired()
-        ]
+        expired_sessions = [session_id for session_id, session in self._sessions.items() if session.is_expired()]
         for session_id in expired_sessions:
             del self._sessions[session_id]

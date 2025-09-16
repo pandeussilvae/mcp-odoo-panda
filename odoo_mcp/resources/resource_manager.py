@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 # Global resource manager instance
 _resource_manager = None
 
+
 def initialize_resource_manager(config: Dict[str, Any]) -> None:
     """
     Initialize the global resource manager.
@@ -27,11 +28,12 @@ def initialize_resource_manager(config: Dict[str, Any]) -> None:
     global _resource_manager
     if _resource_manager is not None:
         raise ConfigurationError("Resource manager is already initialized")
-    
+
     _resource_manager = ResourceManager(config)
     logger.info("Resource manager initialized successfully")
 
-def get_resource_manager() -> 'ResourceManager':
+
+def get_resource_manager() -> "ResourceManager":
     """
     Get the global resource manager instance.
 
@@ -44,6 +46,7 @@ def get_resource_manager() -> 'ResourceManager':
     if _resource_manager is None:
         raise ConfigurationError("Resource manager is not initialized")
     return _resource_manager
+
 
 class ResourceManager:
     """Manages Odoo resources and their operations."""
@@ -65,20 +68,16 @@ class ResourceManager:
         self.register_resource(
             name="res.partner",
             description="Odoo Partner/Contact resource",
-            operations=["create", "read", "update", "delete", "search"]
+            operations=["create", "read", "update", "delete", "search"],
         )
-        
+
         self.register_resource(
             name="res.users",
             description="Odoo User resource",
-            operations=["create", "read", "update", "delete", "search"]
+            operations=["create", "read", "update", "delete", "search"],
         )
-        
-        self.register_resource(
-            name="res.company",
-            description="Odoo Company resource",
-            operations=["read", "update"]
-        )
+
+        self.register_resource(name="res.company", description="Odoo Company resource", operations=["read", "update"])
 
     def register_resource(self, name: str, description: str, operations: List[str]) -> None:
         """
@@ -89,10 +88,7 @@ class ResourceManager:
             description: Description of the resource
             operations: List of supported operations
         """
-        self.resources[name] = {
-            'description': description,
-            'operations': operations
-        }
+        self.resources[name] = {"description": description, "operations": operations}
         logger.info(f"Registered resource: {name}")
 
     def register_operation(self, resource_name: str, operation_name: str, handler: Callable) -> None:
@@ -106,15 +102,15 @@ class ResourceManager:
         """
         if resource_name not in self.resources:
             raise ValueError(f"Resource not found: {resource_name}")
-        
-        if operation_name not in self.resources[resource_name]['operations']:
+
+        if operation_name not in self.resources[resource_name]["operations"]:
             raise ValueError(f"Operation not supported for resource {resource_name}: {operation_name}")
-        
+
         operation_key = f"{resource_name}.{operation_name}"
         self.operations[operation_key] = {
-            'handler': handler,
-            'resource': resource_name,
-            'operation': operation_name
+            "handler": handler,
+            "resource": resource_name,
+            "operation": operation_name,
         }
         logger.info(f"Registered operation: {operation_key}")
 
@@ -162,9 +158,9 @@ class ResourceManager:
         operation = self.get_operation(resource_name, operation_name)
         if not operation:
             raise ValueError(f"Operation not found: {resource_name}.{operation_name}")
-        
+
         try:
-            return operation['handler'](**kwargs)
+            return operation["handler"](**kwargs)
         except Exception as e:
             logger.error(f"Error executing operation {resource_name}.{operation_name}: {str(e)}")
             raise
@@ -207,7 +203,7 @@ class ResourceManager:
             operations_to_remove = [op for op in self.operations.keys() if op.startswith(f"{name}.")]
             for op in operations_to_remove:
                 del self.operations[op]
-            
+
             # Remove the resource
             del self.resources[name]
             logger.info(f"Removed resource: {name}")
@@ -232,6 +228,7 @@ class ResourceManager:
             return True
         return False
 
+
 def operation_handler(resource_name: str, operation_name: str):
     """
     Decorator for registering operation handlers.
@@ -243,9 +240,12 @@ def operation_handler(resource_name: str, operation_name: str):
     Returns:
         Callable: Decorator function
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
+
         return wrapper
-    return decorator 
+
+    return decorator
