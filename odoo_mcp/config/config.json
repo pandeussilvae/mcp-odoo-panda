@@ -32,7 +32,7 @@
     "max_fields_limit": 100,
     "max_records_limit": 200,
     "schema_cache_ttl": 600,
-    "actions_registry": "./config/actions_registry.yaml"
+    "actions_registry": "./config/actions_registry.yaml",
     "http": {
         "host": "0.0.0.0",
         "port": 8080,

@@ -28,14 +28,11 @@ from odoo_mcp.core.capabilities_manager import (
     Tool,
 )
 from odoo_mcp.core.connection_pool import ConnectionPool
-from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler
+from odoo_mcp.core.handler_factory import HandlerFactory
 from odoo_mcp.core.logging_config import setup_logging, setup_logging_from_config
 from odoo_mcp.core.protocol_handler import ProtocolHandler
 from odoo_mcp.core.resource_manager import Resource, ResourceManager
 from odoo_mcp.core.session_manager import SessionManager
-
-# Import core components
-from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
 from odoo_mcp.error_handling.exceptions import (
     ConfigurationError,
     OdooRecordNotFoundError,
@@ -394,7 +391,7 @@ class OdooMCPServer(Server):
 
         # Initialize Odoo components
         logger.info(f"Initializing connection pool with protocol type: {self.protocol_type}")
-        self.pool = ConnectionPool(self.config, self._get_handler_class())
+        self.pool = ConnectionPool(self.config, HandlerFactory.create_handler)
         self.authenticator = Authenticator(self.config, self.pool)
         self.session_manager = SessionManager(self.config, self.authenticator, self.pool)
         self.rate_limiter = RateLimiter(
@@ -423,14 +420,6 @@ class OdooMCPServer(Server):
         # Register tools and prompts
         self._register_tools_and_prompts()
 
-    def _get_handler_class(self) -> Type[Union[XMLRPCHandler, JSONRPCHandler]]:
-        """Get the appropriate handler class based on protocol type."""
-        if self.protocol_type == "xmlrpc":
-            return XMLRPCHandler
-        elif self.protocol_type == "jsonrpc":
-            return JSONRPCHandler
-        else:
-            raise ConfigurationError(f"Unsupported protocol type: {self.protocol_type}")
 
     def _register_resource_handlers(self) -> None:
         """Register resource handlers."""

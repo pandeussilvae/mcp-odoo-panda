@@ -3,14 +3,11 @@ import json
 import logging
 import os
 import re
-import ssl  # Import ssl for context creation
-from functools import wraps
-from typing import Any, Dict, List, Optional, Set, Tuple, Union  # Added Union, Tuple, List, Set
+from typing import Any, Dict, List, Optional, Union
 
-import aiohttp
-import httpx  # Import httpx
+import httpx
 
-# Import specific exceptions for mapping
+from odoo_mcp.core.base_handler import BaseOdooHandler, safe_cache_decorator
 from odoo_mcp.error_handling.exceptions import (
     AuthError,
     ConfigurationError,
@@ -21,29 +18,12 @@ from odoo_mcp.error_handling.exceptions import (
     OdooValidationError,
     ProtocolError,
 )
-from odoo_mcp.performance.caching import CACHE_TYPE, get_cache_manager, initialize_cache_manager
+from odoo_mcp.performance.caching import get_cache_manager, CACHE_TYPE
 
 logger = logging.getLogger(__name__)
 
 
-def safe_cache_decorator(func):
-    """Safe wrapper for cache decorator that handles None cache_manager."""
-
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        try:
-            cache_manager = get_cache_manager()
-            if cache_manager and CACHE_TYPE == "cachetools":
-                cache_decorator = cache_manager.get_ttl_cache_decorator(cache_instance=cache_manager.odoo_read_cache)
-                return await cache_decorator(func)(*args, **kwargs)
-        except ConfigurationError:
-            logger.warning("Cache manager not initialized, executing without cache")
-        return await func(*args, **kwargs)
-
-    return wrapper
-
-
-class JSONRPCHandler:
+class JSONRPCHandler(BaseOdooHandler):
     """
     Handles communication with Odoo using the JSON-RPC protocol via HTTPX.
 
@@ -56,7 +36,7 @@ class JSONRPCHandler:
         Initialize the JSONRPCHandler.
 
         Sets up the base URL and an `httpx.AsyncClient` for making async HTTP calls.
-        Configures TLS based on the provided configuration.
+        Uses the base class for common functionality.
 
         Args:
             config: The server configuration dictionary. Requires 'odoo_url', 'database'.
@@ -66,117 +46,123 @@ class JSONRPCHandler:
         Raises:
             ConfigurationError: If TLS configuration fails.
         """
-        logger.info(f"Initializing JSONRPCHandler with config: {config}")
-        self.config = config
-
-        # Get Odoo URL from environment or config
-        self.odoo_url = os.getenv("ODOO_URL") or config.get("odoo_url")
-        logger.info(f"Got odoo_url: {self.odoo_url}")
-
-        if not self.odoo_url:
-            logger.error("odoo_url is missing from config and environment")
-            raise ConfigurationError("odoo_url is required in configuration or environment")
-
-        # Ensure odoo_url has the correct protocol
+        # Handle environment variables for URL and database
+        config = config.copy()
+        config["odoo_url"] = os.getenv("ODOO_URL") or config.get("odoo_url")
+        config["database"] = os.getenv("ODOO_DB") or config.get("database")
+        config["username"] = os.getenv("ODOO_USERNAME") or config.get("username")
+        config["api_key"] = os.getenv("ODOO_PASSWORD") or config.get("api_key")
+        
+        super().__init__(config)
+        
+        # Ensure URL has correct protocol
         if not self.odoo_url.startswith(("http://", "https://")):
-            logger.info(f"Adding https:// protocol to odoo_url: {self.odoo_url}")
             self.odoo_url = f"https://{self.odoo_url}"
-
+        
         self.jsonrpc_url = f"{self.odoo_url}/jsonrpc"
-        logger.info(f"Final jsonrpc_url: {self.jsonrpc_url}")
+        
+        # Create HTTP client
+        self._create_http_client()
+        
+        # Initialize authentication
+        self.uid = None
 
-        # Get database from environment or config
-        self.database = os.getenv("ODOO_DB") or config.get("database")
-        if not self.database:
-            logger.error("database is missing from config and environment")
-            raise ConfigurationError("database is required in configuration or environment")
-
-        # Initialize cache manager if not already initialized
-        try:
-            get_cache_manager()
-        except ConfigurationError:
-            initialize_cache_manager(config)
-
-        # --- Configure HTTPX AsyncClient with TLS ---
-        verify: Union[str, bool, ssl.SSLContext] = True
-        cert: Optional[Union[str, Tuple[str, str]]] = None
-        ssl_context: Optional[ssl.SSLContext] = None
-
-        if self.odoo_url.startswith("https://"):
-            logger.info("Configuring TLS for JSONRPC handler (httpx client).")
-            ca_cert_path = config.get("ca_cert_path")
+    def _create_http_client(self) -> None:
+        """Create and configure the HTTPX client."""
+        # Configure TLS settings
+        verify: Union[str, bool] = True
+        cert: Optional[Union[str, tuple]] = None
+        
+        # Use SSL context from base class if available
+        if self.ssl_context:
+            verify = self.ssl_context
+        elif self.odoo_url.startswith("https://"):
+            # Configure custom certificates if provided
+            ca_cert_path = self.config.get("ca_cert_path")
             if ca_cert_path:
                 verify = ca_cert_path
-                logger.info(f"JSONRPC using custom CA bundle: {ca_cert_path}")
-            else:
-                verify = True  # Default: Use certifi or system CAs
-                logger.info("JSONRPC using default CA bundle for TLS verification.")
 
-            client_cert_path = config.get("client_cert_path")
-            client_key_path = config.get("client_key_path")
+            client_cert_path = self.config.get("client_cert_path")
+            client_key_path = self.config.get("client_key_path")
             if client_cert_path and client_key_path:
                 cert = (client_cert_path, client_key_path)
-                logger.info(f"JSONRPC using client certificate: {client_cert_path}")
             elif client_cert_path:
                 cert = client_cert_path
-                logger.info(f"JSONRPC using client certificate (key assumed within): {client_cert_path}")
 
-            # Configure TLS version
-            try:
-                # Create SSL context with default settings
-                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-                context.check_hostname = True
-                context.verify_mode = ssl.CERT_REQUIRED
-
-                # Load certificates
-                if isinstance(verify, bool) and verify:
-                    context.load_default_certs(ssl.Purpose.SERVER_AUTH)
-                elif isinstance(verify, str):
-                    context.load_verify_locations(cafile=verify)
-
-                # Set minimum TLS version using options
-                context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-                logger.info("Set minimum TLS version to TLSv1.2 using context options")
-
-                if cert:
-                    if isinstance(cert, tuple):
-                        context.load_cert_chain(certfile=cert[0], keyfile=cert[1])
-                    else:
-                        context.load_cert_chain(certfile=cert)
-
-                ssl_context = context
-                verify = ssl_context
-                logger.info("Using custom SSLContext for httpx TLS configuration.")
-
-            except Exception as e:
-                logger.error(f"Failed to create SSL context for httpx: {e}", exc_info=True)
-                raise ConfigurationError(f"Failed to configure TLS for httpx: {e}", original_exception=e)
-
-        # Create the AsyncClient with timeout from environment or config
-        request_timeout = int(os.getenv("TIMEOUT", config.get("timeout", 30)))
+        # Create the AsyncClient
+        request_timeout = int(os.getenv("TIMEOUT", self.config.get("timeout", 30)))
         self.async_client = httpx.AsyncClient(verify=verify, cert=cert, timeout=request_timeout)
-        logger.info(
-            f"httpx.AsyncClient initialized. Verify={type(verify)}, Cert={cert is not None}, Timeout={request_timeout}s"
-        )
+        logger.info(f"httpx.AsyncClient initialized with timeout={request_timeout}s")
 
-        # Store credentials for later use
-        self.username = os.getenv("ODOO_USERNAME")
-        self.password = os.getenv("ODOO_PASSWORD")
-
-        # Se non troviamo le credenziali nell'ambiente, prova a prenderle dal config
-        if not self.username:
-            self.username = config.get("username")
-        if not self.password:
-            self.password = config.get("api_key")
-
-        if not self.username or not self.password:
-            logger.error(
-                f"Missing credentials. Username: {'present' if self.username else 'missing'}, Password: {'present' if self.password else 'missing'}"
+    async def _perform_authentication(self, username: str, password: str, database: str) -> Union[int, bool, None]:
+        """Perform authentication using JSON-RPC."""
+        try:
+            auth_result = await self.call(
+                service="common",
+                method="login",
+                args=[database, username, password],
             )
-            raise ConfigurationError("Both username and password are required in environment or config")
+            return auth_result
+        except Exception as e:
+            logger.error(f"JSON-RPC authentication failed: {e}")
+            raise AuthError(f"Authentication failed: {e}")
 
-        # Initialize uid as None - will be set during first authentication
-        self.uid = None
+    async def call(self, service: str, method: str, args: list) -> Any:
+        """Make a direct call to a service method using JSON-RPC."""
+        try:
+            # Prepare payload
+            payload = self._prepare_payload(method, args)
+            
+            # Make HTTP request
+            response = await self.async_client.post(
+                self.jsonrpc_url,
+                json=payload,
+                headers=self._get_headers()
+            )
+            
+            # Handle response
+            if response.status_code != 200:
+                raise NetworkError(f"HTTP {response.status_code}: {response.text}")
+            
+            result = response.json()
+            
+            if "error" in result:
+                error = result["error"]
+                raise OdooMCPError(f"JSON-RPC error: {error.get('message', 'Unknown error')}")
+            
+            return result.get("result")
+            
+        except Exception as e:
+            logger.error(f"JSON-RPC call failed for {service}.{method}: {e}")
+            raise OdooMCPError(f"Call failed: {e}")
+
+    async def cleanup(self) -> None:
+        """Clean up JSON-RPC connections."""
+        try:
+            if hasattr(self, 'async_client'):
+                await self.async_client.aclose()
+        except Exception as e:
+            logger.warning(f"Error during JSONRPC cleanup: {e}")
+
+    def _prepare_payload(self, method: str, params: Union[dict, list]) -> dict:
+        """Prepare JSON-RPC payload."""
+        return {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": method,
+                "args": params
+            },
+            "id": 1
+        }
+
+    def _get_headers(self) -> Dict[str, str]:
+        """Get HTTP headers for requests."""
+        return {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
 
     async def ensure_authenticated(self):
         """Ensure we have a valid uid by authenticating if needed."""
@@ -343,7 +329,10 @@ class JSONRPCHandler:
 
             logger.debug(f"JSON-RPC Response Status: {response.status_code}")
             logger.debug(f"JSON-RPC Response Headers: {dict(response.headers)}")
-            logger.debug(f"JSON-RPC Response Body: {json.dumps(result, indent=2)}")
+            try:
+                logger.debug(f"JSON-RPC Response Body: {json.dumps(result, indent=2)}")
+            except (TypeError, ValueError):
+                logger.debug(f"JSON-RPC Response Body: {str(result)}")
 
             if result.get("error"):
                 error_data = result["error"]
@@ -353,7 +342,10 @@ class JSONRPCHandler:
                 full_error = f"Code {error_code}: {error_message} - {error_debug_info}".strip(" -")
 
                 logger.error(f"JSON-RPC Error Response: {full_error}")
-                logger.error(f"JSON-RPC Error Data: {json.dumps(error_data, indent=2)}")
+                try:
+                    logger.error(f"JSON-RPC Error Data: {json.dumps(error_data, indent=2)}")
+                except (TypeError, ValueError):
+                    logger.error(f"JSON-RPC Error Data: {str(error_data)}")
 
                 if error_code == 100 or "AccessDenied" in error_message or "AccessError" in error_message:
                     raise AuthError(
@@ -418,6 +410,9 @@ class JSONRPCHandler:
                 f"JSON-RPC Connection Error: Unable to connect to {self.jsonrpc_url}",
                 original_exception=e,
             )
+        except httpx.HTTPStatusError as e:
+            logger.error(f"JSON-RPC HTTP Status Error: {str(e)}")
+            raise NetworkError(f"JSON-RPC HTTP {e.response.status_code}: {e.response.text}", original_exception=e)
         except httpx.RequestError as e:
             logger.error(f"JSON-RPC Request Error: {str(e)}")
             raise NetworkError(f"JSON-RPC Network/HTTP Error: {e}", original_exception=e)

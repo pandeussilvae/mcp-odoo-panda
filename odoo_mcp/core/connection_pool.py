@@ -10,8 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
-from odoo_mcp.core.jsonrpc_handler import JSONRPCHandler
-from odoo_mcp.core.xmlrpc_handler import XMLRPCHandler
+from odoo_mcp.core.base_handler import BaseOdooHandler
 from odoo_mcp.error_handling.exceptions import (
     AuthError,
     ConfigurationError,
@@ -32,14 +31,14 @@ _connection_pool = None
 
 
 def initialize_connection_pool(
-    config: Dict[str, Any], handler_class: Type[Union[XMLRPCHandler, JSONRPCHandler]]
+    config: Dict[str, Any], handler_factory: callable
 ) -> None:
     """
     Initialize the global connection pool.
 
     Args:
         config: The server configuration dictionary
-        handler_class: The handler class to use (XMLRPCHandler or JSONRPCHandler)
+        handler_factory: The handler factory function to use
 
     Raises:
         ConfigurationError: If the pool is already initialized
@@ -48,7 +47,7 @@ def initialize_connection_pool(
     if _connection_pool is not None:
         raise ConfigurationError("Connection pool is already initialized")
 
-    _connection_pool = ConnectionPool(config, handler_class)
+    _connection_pool = ConnectionPool(config, handler_factory)
     logger.info("Connection pool initialized successfully")
 
 
@@ -72,7 +71,7 @@ class ConnectionWrapper:
     Wrapper for a connection that manages its lifecycle and usage state.
     """
 
-    def __init__(self, connection: Union[XMLRPCHandler, JSONRPCHandler]):
+    def __init__(self, connection: BaseOdooHandler):
         self.connection = connection
         self.in_use = False
         self.last_used = asyncio.get_event_loop().time()
@@ -92,17 +91,17 @@ class ConnectionPool:
     Manages a pool of connections to Odoo.
     """
 
-    def __init__(self, config: Dict[str, Any], handler_class: Type[Union[XMLRPCHandler, JSONRPCHandler]]):
+    def __init__(self, config: Dict[str, Any], handler_factory: callable):
         """
         Initialize the connection pool.
 
         Args:
             config: The server configuration dictionary
-            handler_class: The handler class to use (XMLRPCHandler or JSONRPCHandler)
+            handler_factory: The handler factory function to use
         """
         logger.info(f"Initializing connection pool with config: {config}")
         self.config = config.copy()  # Make a copy of the config to avoid modifying the original
-        self.handler_class = handler_class
+        self.handler_factory = handler_factory
         self.max_size = config.get("max_connections", 10)
         self.timeout = config.get("connection_timeout", 30)
         self.connections: List[ConnectionWrapper] = []
@@ -150,7 +149,7 @@ class ConnectionPool:
             if len(self.connections) < self.max_size:
                 try:
                     logger.info(f"Creating new connection with config: {self.config}")
-                    handler = self.handler_class(self.config)
+                    handler = self.handler_factory(self.config.get("protocol", "xmlrpc"), self.config)
                     conn = ConnectionWrapper(handler)
                     self.connections.append(conn)
                     conn.in_use = True
@@ -164,7 +163,7 @@ class ConnectionPool:
             logger.warning("Connection pool at max size, waiting for available connection")
             raise PoolTimeoutError("No connections available in pool")
 
-    async def release_connection(self, connection: Union[XMLRPCHandler, JSONRPCHandler]):
+    async def release_connection(self, connection: BaseOdooHandler):
         """
         Release a connection back to the pool.
 
@@ -183,8 +182,7 @@ class ConnectionPool:
         async with self._lock:
             for wrapper in self.connections:
                 try:
-                    if hasattr(wrapper.connection, "close"):
-                        await wrapper.connection.close()
+                    await wrapper.connection.cleanup()
                 except Exception as e:
                     logger.error(f"Error closing connection: {e}")
             self.connections.clear()
