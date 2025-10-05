@@ -1,0 +1,50 @@
+version: '3.8'
+
+# Example override file for docker-compose.yml
+# Copy this file to docker-compose.override.yml and customize for your environment
+
+services:
+  mcp-odoo-server:
+    environment:
+      # Override Odoo connection settings
+      - ODOO_URL=http://your-odoo-server:8069
+      - ODOO_DB=your_database
+      - ODOO_USER=your_username
+      - ODOO_PASSWORD=your_password
+      
+      # Override MCP Server configuration
+      - PROTOCOL=jsonrpc
+      - CONNECTION_TYPE=streamable_http
+      - LOGGING_LEVEL=DEBUG
+      
+      # Override performance settings
+      - POOL_SIZE=10
+      - TIMEOUT=60
+      - SESSION_TIMEOUT_MINUTES=120
+      - REQUESTS_PER_MINUTE=100
+      - RATE_LIMIT_MAX_WAIT_SECONDS=60
+    
+    ports:
+      - "8080:8080"
+    
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+
+  odoo:
+    environment:
+      - HOST=db
+      - USER=odoo
+      - PASSWORD=your_secure_password
+      - POSTGRES_DB=your_database
+    ports:
+      - "8069:8069"
+    volumes:
+      - odoo-data:/var/lib/odoo
+      - ./odoo-addons:/mnt/extra-addons
+
+  db:
+    environment:
+      - POSTGRES_DB=your_database
+      - POSTGRES_USER=odoo
+      - POSTGRES_PASSWORD=your_secure_password

@@ -1,49 +1,90 @@
 version: '3.8'
 
 services:
-  odoo-mcp-server:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    container_name: odoo_mcp_server
+  mcp-odoo-server:
+    build: .
+    container_name: mcp-odoo-panda
     restart: unless-stopped
-    volumes:
-      - ./logs:/app/logs
     environment:
-      # Configurazione Odoo
-      - ODOO_URL=${ODOO_URL:-http://localhost:8069}
+      # Odoo connection settings (required)
+      - ODOO_URL=${ODOO_URL:-http://odoo:8069}
       - ODOO_DB=${ODOO_DB:-odoo}
       - ODOO_USER=${ODOO_USER:-admin}
       - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
-      - CONNECTION_TYPE=sse
+      
+      # MCP Server configuration
+      - PROTOCOL=${PROTOCOL:-xmlrpc}
+      - CONNECTION_TYPE=${CONNECTION_TYPE:-streamable_http}
+      - LOGGING_LEVEL=${LOGGING_LEVEL:-INFO}
+      
+      # Performance settings
+      - POOL_SIZE=${POOL_SIZE:-5}
+      - TIMEOUT=${TIMEOUT:-30}
+      - SESSION_TIMEOUT_MINUTES=${SESSION_TIMEOUT_MINUTES:-60}
+      - REQUESTS_PER_MINUTE=${REQUESTS_PER_MINUTE:-60}
+      - RATE_LIMIT_MAX_WAIT_SECONDS=${RATE_LIMIT_MAX_WAIT_SECONDS:-30}
+      
+      # Python settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+    
+    networks:
+      - mcp-network
+    
+    depends_on:
+      - odoo
+    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  odoo:
+    image: odoo:18.0
+    container_name: odoo-mcp
+    restart: unless-stopped
+    environment:
+      - HOST=${ODOO_HOST:-db}
+      - USER=${ODOO_DB_USER:-odoo}
+      - PASSWORD=${ODOO_DB_PASSWORD:-odoo}
+      - POSTGRES_DB=${ODOO_DB:-odoo}
+    ports:
+      - "${ODOO_PORT:-8069}:8069"
+    volumes:
+      - odoo-data:/var/lib/odoo
+      - ./odoo-addons:/mnt/extra-addons
+    networks:
+      - mcp-network
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    container_name: postgres-mcp
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${ODOO_DB:-odoo}
+      - POSTGRES_USER=${ODOO_DB_USER:-odoo}
+      - POSTGRES_PASSWORD=${ODOO_DB_PASSWORD:-odoo}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data/pgdata
     networks:
       - mcp-network
 
-  n8n:
-    image: n8nio/n8n:latest
-    container_name: n8n_mcp_client
-    restart: unless-stopped
-    ports:
-      - "5678:5678"
-    environment:
-      # Configurazione n8n
-      - N8N_HOST=${N8N_HOST:-localhost}
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - NODE_ENV=production
-      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
-      # Configurazione Client MCP
-      - MCP_SERVERS={"odoo-docker":{"url":"http://odoo-mcp-server:8080","enable":true,"autoApprove":[]}}
-    volumes:
-      - n8n_data:/home/node/.n8n
-    depends_on:
-      - odoo-mcp-server
-    networks:
-      - mcp-network
+volumes:
+  odoo-data:
+  postgres-data:
 
 networks:
   mcp-network:
     driver: bridge
-
-volumes:
-  n8n_data:
