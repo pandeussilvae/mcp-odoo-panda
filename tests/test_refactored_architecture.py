@@ -415,63 +415,47 @@ class TestConnectionPool:
         """Test getting a connection creates a new one."""
         with patch('odoo_mcp.core.xmlrpc_handler.ServerProxy'):
             pool = ConnectionPool(test_config, HandlerFactory.create_handler)
-            
-            connection = await pool.get_connection()
-            assert connection is not None
-            assert len(pool.connections) == 1
-            assert connection.in_use is True
+            async with pool.get_connection() as connection:
+                assert connection is not None
+                assert len(pool.connections) == 1
+                assert pool.connections[0].in_use is True
     
     @pytest.mark.asyncio
     async def test_get_connection_reuses_existing(self, test_config):
         """Test getting a connection reuses existing available one."""
         with patch('odoo_mcp.core.xmlrpc_handler.ServerProxy'):
             pool = ConnectionPool(test_config, HandlerFactory.create_handler)
-            
-            # Get first connection
-            conn1 = await pool.get_connection()
-            
-            # Release it
-            await pool.release_connection(conn1.connection)
-            
-            # Get second connection (should reuse)
-            conn2 = await pool.get_connection()
-            
-            assert conn1 is conn2
+            handler_id_first = None
+            async with pool.get_connection() as conn1:
+                handler_id_first = id(conn1)
             assert len(pool.connections) == 1
+            async with pool.get_connection() as conn2:
+                assert id(conn2) == handler_id_first
+                assert len(pool.connections) == 1
     
     @pytest.mark.asyncio
     async def test_max_connections_limit(self, test_config):
         """Test maximum connections limit."""
         test_config["max_connections"] = 2
-        
         with patch('odoo_mcp.core.xmlrpc_handler.ServerProxy'):
             pool = ConnectionPool(test_config, HandlerFactory.create_handler)
-            
-            # Get max connections
-            conn1 = await pool.get_connection()
-            conn2 = await pool.get_connection()
-            
-            assert len(pool.connections) == 2
-            
-            # Try to get another (should fail)
-            with pytest.raises(Exception):  # PoolTimeoutError
-                await pool.get_connection()
+            async with pool.get_connection():
+                async with pool.get_connection():
+                    assert len(pool.connections) == 2
+                    with pytest.raises(Exception):  # PoolTimeoutError
+                        async with pool.get_connection():
+                            pass
     
     @pytest.mark.asyncio
     async def test_close_all_connections(self, test_config):
         """Test closing all connections."""
         with patch('odoo_mcp.core.xmlrpc_handler.ServerProxy'):
             pool = ConnectionPool(test_config, HandlerFactory.create_handler)
-            
-            # Create some connections
-            conn1 = await pool.get_connection()
-            conn2 = await pool.get_connection()
-            
-            assert len(pool.connections) == 2
-            
+            async with pool.get_connection():
+                async with pool.get_connection():
+                    assert len(pool.connections) == 2
             # Close all
             await pool.close_all()
-            
             assert len(pool.connections) == 0
 
 
@@ -535,15 +519,11 @@ class TestIntegration:
     async def test_factory_with_pool_integration(self, test_config):
         """Test factory pattern integration with connection pool."""
         with patch('odoo_mcp.core.xmlrpc_handler.ServerProxy'):
-            # Create pool with factory
             pool = ConnectionPool(test_config, HandlerFactory.create_handler)
-            
-            # Get connection (should create handler via factory)
-            connection = await pool.get_connection()
-            
-            assert connection.connection is not None
-            assert isinstance(connection.connection, XMLRPCHandler)
-            assert connection.connection.odoo_url == test_config["odoo_url"]
+            async with pool.get_connection() as connection:
+                assert connection is not None
+                assert isinstance(connection, XMLRPCHandler)
+                assert connection.odoo_url == test_config["odoo_url"]
     
     @pytest.mark.asyncio
     async def test_protocol_switching(self, test_config):
