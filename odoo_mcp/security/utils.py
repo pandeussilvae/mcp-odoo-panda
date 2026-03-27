@@ -137,6 +137,15 @@ if PYDANTIC_AVAILABLE:
         service: Optional[str] = Field(
             None, description="Optional service name, primarily for JSON-RPC (e.g., 'object')."
         )
+        # Story 19.4: correlation (additive; optional)
+        wa_message_id: Optional[str] = None
+        execution_id: Optional[str] = None
+        tenant_id: Optional[str] = None
+        agent_id: Optional[str] = None
+        workflow_id: Optional[str] = None
+        partner_id: Optional[str] = None
+        sale_order_id: Optional[str] = None
+        attachment_id: Optional[str] = None
 
         @field_validator("model", "odoo_method")
         def _must_be_non_empty(cls, value: str) -> str:
@@ -261,6 +270,21 @@ def validate_request_data(raw_data: Dict[str, Any]) -> ValidatedRequestDict:
         }
 
         logger.debug(f"Input validation successful for method '{method_name}'.")
+        if method_name == "call_odoo" and hasattr(final_params, "model_dump"):
+            _d = final_params.model_dump(exclude_none=True)
+            _corr_keys = (
+                "wa_message_id",
+                "execution_id",
+                "tenant_id",
+                "agent_id",
+                "workflow_id",
+                "partner_id",
+                "sale_order_id",
+                "attachment_id",
+            )
+            _corr = {k: _d[k] for k in _corr_keys if k in _d}
+            if _corr:
+                logger.info("call_odoo correlation context: %s", _corr)
         return validated_dict
 
     except ValidationError as e:

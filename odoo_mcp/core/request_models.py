@@ -41,6 +41,15 @@ class CallOdooParams(BaseModel):
     session_id: Optional[str] = None
     uid: Optional[int] = None
     password: Optional[str] = None  # Potrebbe essere api_key a seconda della config
+    # Story 19.4: correlation (additive)
+    wa_message_id: Optional[str] = None
+    execution_id: Optional[str] = None
+    tenant_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    workflow_id: Optional[str] = None
+    partner_id: Optional[str] = None
+    sale_order_id: Optional[str] = None
+    attachment_id: Optional[str] = None
 
     @validator("password", always=True)
     def check_password_with_uid(cls, v, values):

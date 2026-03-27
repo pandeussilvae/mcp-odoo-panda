@@ -1,5 +1,6 @@
 import asyncio
 import time
+import logging
 import pytest
 from odoo_mcp.security.utils import (
     RateLimiter,
@@ -291,6 +292,42 @@ def test_validate_request_data_call_odoo_success():
     assert validated_dict["params"].args == [[1], ["name", "email"]]
     assert validated_dict["params"].kwargs == {"context": {"lang": "en_US"}}
     assert validated_dict["params"].session_id == "xyz"
+
+
+@pytestmark_pydantic
+def test_validate_request_data_call_odoo_logs_correlation_context(caplog):
+    """Story 19.4: correlation fields remain additive and are logged explicitly."""
+    raw_data = {
+        "jsonrpc": "2.0",
+        "method": "call_odoo",
+        "params": {
+            "model": "res.partner",
+            "method": "read",
+            "args": [[1], ["name"]],
+            "wa_message_id": "wamid.HBgL.correlation",
+            "execution_id": "exec-123",
+            "tenant_id": "tenant-1",
+            "agent_id": "agent-1",
+            "workflow_id": "wf-1",
+            "partner_id": "42",
+        },
+        "id": "req-corr-001",
+    }
+
+    with caplog.at_level(logging.INFO):
+        validated_dict = validate_request_data(raw_data)
+
+    params = validated_dict["params"]
+    assert isinstance(params, CallOdooParams)
+    assert params.wa_message_id == "wamid.HBgL.correlation"
+    assert params.execution_id == "exec-123"
+    assert params.tenant_id == "tenant-1"
+    assert params.agent_id == "agent-1"
+    assert params.workflow_id == "wf-1"
+    assert params.partner_id == "42"
+    assert "call_odoo correlation context" in caplog.text
+    assert "wamid.HBgL.correlation" in caplog.text
+    assert "exec-123" in caplog.text
 
 @pytestmark_pydantic
 def test_validate_request_data_missing_required_param():
