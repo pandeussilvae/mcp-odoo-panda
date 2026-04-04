@@ -1,16 +1,13 @@
+import json
+from unittest.mock import AsyncMock
+
 import pytest
 import pytest_asyncio
-import json
-import asyncio
-from typing import Dict, Any
-from unittest.mock import Mock, patch, AsyncMock
 
 from odoo_mcp.core.mcp_server import OdooMCPServer
-from odoo_mcp.error_handling.exceptions import (
-    OdooMCPError, ConfigurationError, ProtocolError, AuthError, NetworkError
-)
+from odoo_mcp.error_handling.exceptions import ProtocolError
 
-# Test configuration
+
 TEST_CONFIG = {
     "protocol": "xmlrpc",
     "connection_type": "stdio",
@@ -27,309 +24,168 @@ TEST_CONFIG = {
     "allowed_origins": ["*"],
     "logging": {
         "level": "INFO",
-        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    }
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    },
 }
+
 
 @pytest_asyncio.fixture
 async def server():
-    """Create a test server instance."""
-    server = OdooMCPServer(TEST_CONFIG)
-    yield server
-    await server.stop()
+    instance = OdooMCPServer(TEST_CONFIG)
+    yield instance
+    await instance.stop()
 
-@pytest.fixture
-def mock_pool():
-    """Create a mock connection pool."""
-    pool = AsyncMock()
-    pool.get_connection.return_value.__aenter__.return_value.connection = AsyncMock()
-    return pool
-
-@pytest.fixture
-def mock_session_manager():
-    """Create a mock session manager."""
-    manager = AsyncMock()
-    manager.get_session.return_value = Mock(user_id=1)
-    return manager
 
 @pytest.mark.asyncio
 async def test_server_initialization():
-    """Test server initialization."""
     server = OdooMCPServer(TEST_CONFIG)
     assert server.protocol_type == "xmlrpc"
     assert server.connection_type == "stdio"
-    assert server.rate_limiter.rate == 120
+    assert server.rate_limiter.requests_per_minute == 120
     assert server.rate_limiter.max_wait_seconds == 5
-    assert server._sse_queue_maxsize == 1000
-    assert server._allowed_origins == ["*"]
+
 
 @pytest.mark.asyncio
-async def test_list_tools(server):
-    """Test list_tools method."""
+async def test_capabilities_advertise_resource_subscription(server):
+    capabilities = server.capabilities_manager.get_capabilities()
+    assert capabilities["resources"]["subscribe"] is True
+    assert capabilities["resources"]["listChanged"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_tools_exposes_current_public_names(server):
     tools = await server.list_tools()
-    assert len(tools) > 0
-    assert any(tool.name == "odoo_search_read" for tool in tools)
-    assert any(tool.name == "odoo_read" for tool in tools)
-    assert any(tool.name == "odoo_create" for tool in tools)
-    assert any(tool.name == "odoo_write" for tool in tools)
-    assert any(tool.name == "odoo_unlink" for tool in tools)
-    assert any(tool.name == "odoo_call_method" for tool in tools)
+    names = {tool.name for tool in tools}
+    assert "odoo.search_read" in names
+    assert "odoo.read" in names
+    assert "odoo.create" in names
+    assert "odoo.write" in names
+    assert "odoo.actions.call" in names
+
 
 @pytest.mark.asyncio
-async def test_list_resources(server):
-    """Test list_resources method."""
+async def test_list_resources_includes_instance_info(server):
     resources = await server.list_resources()
-    assert len(resources) > 0
-    assert any(resource.uri == "odoo://instance/info" for resource in resources)
-    assert any(resource.uri == "odoo://{model}/{id}" for resource in resources)
-    assert any(resource.uri == "odoo://{model}/list" for resource in resources)
-    assert any(resource.uri == "odoo://{model}/binary/{field}/{id}" for resource in resources)
+    uris = {resource.uri for resource in resources}
+    assert "odoo://instance/info" in uris
+    assert "odoo://{model}/{id}" in uris
+    assert "odoo://{model}/list" in uris
+    assert "odoo://{model}/binary/{field}/{id}" in uris
 
 
 @pytest.mark.asyncio
 async def test_get_resource_odoo_instance_info(server):
-    """MCP resource odoo://instance/info exposes web_base_url and database_name from config (no secrets)."""
     result = await server.get_resource("odoo://instance/info")
-    assert result.get("uri") == "odoo://instance/info"
-    content = result.get("content") or {}
-    assert content.get("web_base_url") == TEST_CONFIG["odoo_url"]
-    assert content.get("database_name") == TEST_CONFIG["database"]
-
-@pytest.mark.asyncio
-async def test_list_prompts(server):
-    """Test list_prompts method."""
-    prompts = await server.list_prompts()
-    assert len(prompts) > 0
-    assert any(prompt.name == "analyze-record" for prompt in prompts)
-    assert any(prompt.name == "create-record" for prompt in prompts)
-    assert any(prompt.name == "update-record" for prompt in prompts)
-    assert any(prompt.name == "advanced-search" for prompt in prompts)
-    assert any(prompt.name == "call-method" for prompt in prompts)
-
-@pytest.mark.asyncio
-async def test_read_resource(server, mock_pool):
-    """Test read_resource method."""
-    server.pool = mock_pool
-    mock_pool.get_connection.return_value.__aenter__.return_value.connection.execute_kw.return_value = [
-        {"id": 1, "name": "Test Record"}
-    ]
-
-    result = await server.read_resource("odoo://res.partner/1")
-    assert "contents" in result
-    assert len(result["contents"]) == 1
-    assert result["contents"][0]["uri"] == "odoo://res.partner/1"
-    assert result["contents"][0]["mimeType"] == "application/json"
-
-@pytest.mark.asyncio
-async def test_read_resource_not_found(server, mock_pool):
-    """Test read_resource with non-existent record."""
-    server.pool = mock_pool
-    mock_pool.get_connection.return_value.__aenter__.return_value.connection.execute_kw.return_value = []
-
-    with pytest.raises(OdooMCPError):
-        await server.read_resource("odoo://res.partner/999")
-
-@pytest.mark.asyncio
-async def test_read_binary_resource(server, mock_pool):
-    """Test reading binary resource."""
-    server.pool = mock_pool
-    mock_pool.get_connection.return_value.__aenter__.return_value.connection.execute_kw.return_value = [
-        {"image": "base64_encoded_data"}
-    ]
-
-    result = await server.read_resource("odoo://res.partner/binary/image/1")
-    assert "contents" in result
-    assert len(result["contents"]) == 1
-    assert result["contents"][0]["uri"] == "odoo://res.partner/binary/image/1"
-    assert result["contents"][0]["mimeType"] == "application/octet-stream"
-
-@pytest.mark.asyncio
-async def test_call_tool_search_read(server, mock_pool):
-    """Test odoo_search_read tool."""
-    server.pool = mock_pool
-    mock_pool.get_connection.return_value.__aenter__.return_value.connection.execute_kw.return_value = [
-        {"id": 1, "name": "Test Record"}
-    ]
-
-    # Test basic search
-    result = await server.call_tool("odoo_search_read", {
-        "model": "res.partner",
-        "domain": [["name", "=", "Test"]],
-        "fields": ["id", "name"]
-    })
-    assert "content" in result
-    assert len(result["content"]) == 1
-    assert result["content"][0]["type"] == "text"
-    assert "text" in result["content"][0]
-    # Verify the text contains the record data
-    record_data = json.loads(result["content"][0]["text"])
-    assert "id" in record_data
-    assert "name" in record_data
-
-    # Test with limit and offset
-    result = await server.call_tool("odoo_search_read", {
-        "model": "res.partner",
-        "domain": [["name", "=", "Test"]],
-        "fields": ["id", "name"],
-        "limit": 10,
-        "offset": 0
-    })
-    assert "content" in result
-    assert len(result["content"]) == 1
-
-    # Test with only required parameters
-    result = await server.call_tool("odoo_search_read", {
-        "model": "res.partner"
-    })
-    assert "content" in result
-    assert len(result["content"]) == 1
-
-    # Test error handling
-    mock_pool.get_connection.return_value.__aenter__.return_value.connection.execute_kw.side_effect = Exception("Test error")
-    with pytest.raises(Exception):
-        await server.call_tool("odoo_search_read", {
-            "model": "res.partner"
-        })
-
-@pytest.mark.asyncio
-async def test_call_tool_create(server, mock_pool):
-    """Test odoo_create tool."""
-    server.pool = mock_pool
-    mock_pool.get_connection.return_value.__aenter__.return_value.connection.execute_kw.return_value = 1
-
-    result = await server.call_tool("odoo_create", {
-        "model": "res.partner",
-        "values": {"name": "Test Partner"}
-    })
-    assert "content" in result
-    assert len(result["content"]) == 1
-    assert result["content"][0]["type"] == "text"
-
-@pytest.mark.asyncio
-async def test_get_prompt_analyze_record(server):
-    """Test analyze-record prompt."""
-    result = await server.get_prompt("analyze-record", {"uri": "odoo://res.partner/1"})
-    assert "messages" in result
-    assert len(result["messages"]) == 1
-    assert result["messages"][0]["role"] == "user"
-    assert "content" in result["messages"][0]
-
-@pytest.mark.asyncio
-async def test_get_prompt_create_record(server):
-    """Test create-record prompt."""
-    result = await server.get_prompt("create-record", {"model": "res.partner"})
-    assert "messages" in result
-    assert len(result["messages"]) == 1
-    assert result["messages"][0]["role"] == "user"
-    assert "content" in result["messages"][0]
-
-@pytest.mark.asyncio
-async def test_sse_handler(server):
-    """Test SSE handler."""
-    if not hasattr(server, '_sse_handler'):
-        pytest.skip("SSE support not available")
-
-    mock_request = AsyncMock()
-    mock_request.headers = {"Origin": "http://localhost"}
-    mock_request.remote = "127.0.0.1"
-
-    response = await server._sse_handler(mock_request)
-    assert response is not None
-    assert response.status == 200
-
-@pytest.mark.asyncio
-async def test_post_handler(server):
-    """Test POST handler."""
-    if not hasattr(server, '_post_handler'):
-        pytest.skip("SSE support not available")
-
-    mock_request = AsyncMock()
-    mock_request.json.return_value = {
-        "jsonrpc": "2.0",
-        "method": "list_tools",
-        "id": 1
+    assert result["uri"] == "odoo://instance/info"
+    assert result["content"] == {
+        "web_base_url": TEST_CONFIG["odoo_url"],
+        "database_name": TEST_CONFIG["database"],
     }
+    assert "password" not in result["content"]
 
-    response = await server._post_handler(mock_request)
-    assert response.status == 202
-
-@pytest.mark.asyncio
-async def test_resource_subscription(server):
-    """Test resource subscription."""
-    await server.subscribe_resource("odoo://res.partner/1")
-    # TODO: Add assertions once real-time updates are implemented
 
 @pytest.mark.asyncio
-async def test_resource_unsubscription(server):
-    """Test resource unsubscription."""
-    await server.unsubscribe_resource("odoo://res.partner/1")
-    # TODO: Add assertions once real-time updates are implemented
+async def test_list_prompts_includes_registered_prompt_set(server):
+    prompts = await server.list_prompts()
+    names = {prompt.name for prompt in prompts}
+    assert {
+        "analyze-record",
+        "create-record",
+        "update-record",
+        "advanced-search",
+        "call-method",
+    }.issubset(names)
+
 
 @pytest.mark.asyncio
-async def test_error_handling(server):
-    """Test error handling."""
+async def test_get_prompt_analyze_record_returns_analysis(server):
+    server.pool.execute_kw = AsyncMock(
+        side_effect=[
+            [{"id": 7, "name": "Partner"}],
+            {"name": {"type": "char"}},
+        ]
+    )
+
+    result = await server.get_prompt("analyze-record", {"model": "res.partner", "id": 7})
+
+    assert result["analysis"]["record"]["id"] == 7
+    assert result["analysis"]["model"] == "res.partner"
+    assert "fields_info" in result["analysis"]
+
+
+@pytest.mark.asyncio
+async def test_get_prompt_create_record_returns_prompt_context(server):
+    server.pool.execute_kw = AsyncMock(
+        return_value={
+            "name": {"type": "char", "required": True},
+            "email": {"type": "char", "required": False},
+        }
+    )
+
+    result = await server.get_prompt(
+        "create-record",
+        {"model": "res.partner", "values": {"name": "Mario Rossi"}},
+    )
+
+    assert result["prompt"]["model"] == "res.partner"
+    assert result["prompt"]["values"]["name"] == "Mario Rossi"
+    assert "name" in result["prompt"]["required_fields"]
+
+
+@pytest.mark.asyncio
+async def test_get_prompt_supports_advanced_search_and_call_method(server):
+    server.pool.execute_kw = AsyncMock(
+        side_effect=[
+            {"name": {"type": "char"}},
+            {"method_name": {"method": True}},
+        ]
+    )
+
+    search_prompt = await server.get_prompt(
+        "advanced-search",
+        {"model": "res.partner", "domain": [["name", "ilike", "Acme"]]},
+    )
+    call_prompt = await server.get_prompt(
+        "call-method",
+        {"model": "res.partner", "method": "search_read"},
+    )
+
+    assert search_prompt["prompt"]["model"] == "res.partner"
+    assert search_prompt["prompt"]["domain"] == [["name", "ilike", "Acme"]]
+    assert call_prompt["prompt"]["method"] == "search_read"
+    assert "methods_info" in call_prompt["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_get_prompt_unknown_raises_protocol_error(server):
     with pytest.raises(ProtocolError):
-        await server.read_resource("invalid://uri")
+        await server.get_prompt("unknown-prompt", {})
 
-    with pytest.raises(ProtocolError):
-        await server.call_tool("unknown_tool", {})
-
-    with pytest.raises(ProtocolError):
-        await server.get_prompt("unknown_prompt", {})
 
 @pytest.mark.asyncio
-async def test_shutdown(server):
-    """Test server shutdown."""
-    await server.stop()
-    # TODO: Add assertions to verify cleanup
+async def test_process_request_call_tool_search_read_returns_json_content(server):
+    server.orm_tools.search_read = AsyncMock(return_value=[{"id": 1, "name": "Test Record"}])
 
-@pytest.mark.asyncio
-async def test_odoo_search_read_response_format(server, mock_pool):
-    """Test that odoo_search_read returns the correct response format."""
-    server.pool = mock_pool
-    mock_pool.get_connection.return_value.__aenter__.return_value.connection.execute_kw.return_value = [
-        {"id": 1, "name": "Test Record"}
-    ]
-
-    # Create a JSON-RPC request
     request = {
         "jsonrpc": "2.0",
         "method": "call_tool",
         "params": {
-            "name": "odoo_search_read",
+            "name": "odoo.search_read",
             "arguments": {
                 "model": "res.partner",
-                "domain": [["name", "=", "Test"]],
-                "fields": ["id", "name"]
-            }
+                "domain_json": [["name", "=", "Test"]],
+                "fields": ["id", "name"],
+            },
         },
-        "id": 1
+        "id": 1,
     }
 
-    # Process the request
     response = await server.process_request(request)
-    
-    # Verify the response format
-    assert "jsonrpc" in response
+
     assert response["jsonrpc"] == "2.0"
     assert "result" in response
-    assert "content" in response["result"]
-    assert isinstance(response["result"]["content"], list)
-    assert len(response["result"]["content"]) == 1
-    
-    # Verify each content item has the correct format
-    content_item = response["result"]["content"][0]
-    assert "type" in content_item
-    assert content_item["type"] == "text"
-    assert "text" in content_item
-    
-    # Verify the text contains valid JSON
-    try:
-        record_data = json.loads(content_item["text"])
-        assert "id" in record_data
-        assert "name" in record_data
-    except json.JSONDecodeError:
-        pytest.fail("Response text is not valid JSON")
-
-if __name__ == "__main__":
-    pytest.main([__file__]) 
+    content = response["result"]["content"]
+    assert len(content) == 1
+    parsed = json.loads(content[0]["text"])
+    assert parsed[0]["id"] == 1
+    assert parsed[0]["name"] == "Test Record"

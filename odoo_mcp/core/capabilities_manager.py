@@ -72,7 +72,8 @@ class CapabilitiesManager:
         self.prompts: Dict[str, Prompt] = {}
         self.feature_flags: Dict[str, bool] = {
             "prompts.listChanged": True,
-            "resources.subscribelistChanged": True,
+            "resources.subscribe": True,
+            "resources.listChanged": True,
             "tools.listChanged": True,
             "logging": True,
             "completion": True,

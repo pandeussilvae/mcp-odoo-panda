@@ -556,6 +556,26 @@ class OdooMCPServer(Server):
                     "values": {"type": "object", "description": "Record values"},
                 },
             ),
+            Prompt(
+                name="advanced-search",
+                description="Prepare an advanced search for an Odoo model",
+                template="Search records in {model} with domain {domain}",
+                parameters={
+                    "model": {"type": "string", "description": "Model name"},
+                    "domain": {"type": "array", "description": "Optional search domain", "optional": True},
+                },
+            ),
+            Prompt(
+                name="call-method",
+                description="Inspect a model method call before execution",
+                template="Call method {method} on {model}",
+                parameters={
+                    "model": {"type": "string", "description": "Model name"},
+                    "method": {"type": "string", "description": "Method name"},
+                    "args": {"type": "array", "description": "Optional positional arguments", "optional": True},
+                    "kwargs": {"type": "object", "description": "Optional keyword arguments", "optional": True},
+                },
+            ),
         ]
 
         for prompt in prompts:
@@ -1073,13 +1093,14 @@ class OdooMCPServer(Server):
     async def get_prompt(self, name: str, args: Dict[str, Any]) -> Any:
         """Get a prompt by name."""
         try:
-            # Find the prompt in capabilities
-            prompt = next((p for p in self.capabilities_manager._prompts if p.name == name), None)
+            prompt = self.capabilities_manager.get_prompt(name)
             if not prompt:
                 raise ProtocolError(f"Prompt not found: {name}")
 
             # Validate arguments
             for param_name, param_info in prompt.parameters.items():
+                if param_info.get("optional"):
+                    continue
                 if param_name not in args:
                     raise ProtocolError(f"Missing required parameter: {param_name}")
                 # TODO: Add type validation if needed
