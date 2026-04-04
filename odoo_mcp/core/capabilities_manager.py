@@ -30,6 +30,10 @@ class ResourceTemplate:
     operations: List[str]
     parameters: Optional[Dict[str, Any]] = None
 
+    @property
+    def uri_template(self) -> str:
+        return (self.parameters or {}).get("uri_template", f"odoo://{self.name}")
+
 
 @dataclass
 class Tool:

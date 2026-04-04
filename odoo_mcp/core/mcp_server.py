@@ -425,6 +425,11 @@ class OdooMCPServer(Server):
         """Register resource handlers."""
         logger.info("Registering resource handlers...")
 
+        # Static instance metadata (must register before odoo://{model}/{id} so "instance/info" is not captured as model/id)
+        logger.info("Registering Odoo instance info resource handler...")
+        self.resource_manager.register_resource_handler("odoo://instance/info", self._handle_odoo_instance_info)
+        logger.info("Odoo instance info handler registered successfully")
+
         # Register Odoo record handler
         logger.info("Registering Odoo record handler...")
         self.resource_manager.register_resource_handler("odoo://{model}/{id}", self._handle_odoo_record)
@@ -481,6 +486,13 @@ class OdooMCPServer(Server):
         # Register resource templates
         logger.info("Registering resource templates...")
         templates = [
+            ResourceTemplate(
+                name="Odoo Instance Info",
+                type=ResourceType.RECORD,
+                description="Non-sensitive Odoo instance metadata (web base URL and database name) for building record links",
+                operations=["read"],
+                parameters={"uri_template": "odoo://instance/info"},
+            ),
             ResourceTemplate(
                 name="Odoo Record",
                 type=ResourceType.RECORD,
@@ -677,6 +689,23 @@ class OdooMCPServer(Server):
             logger.info(f"Registering ORM tool: {tool.name}")
             self.capabilities_manager.register_tool(tool)
             logger.info(f"ORM tool {tool.name} registered successfully")
+
+    async def _handle_odoo_instance_info(self, uri: str) -> Resource:
+        """Expose web_base_url and database_name from server config (no secrets)."""
+        _ = uri
+        base = (self.config.get("odoo_url") or "").strip()
+        db = (self.config.get("database") or "").strip()
+        payload = {
+            "web_base_url": base,
+            "database_name": db,
+        }
+        return Resource(
+            uri="odoo://instance/info",
+            type="record",
+            content=payload,
+            mime_type="application/json",
+            metadata={"description": "Odoo instance metadata (non-sensitive)"},
+        )
 
     async def _handle_odoo_record(self, uri: str, model: Optional[str] = None) -> Resource:
         """Handle Odoo record resource requests."""
@@ -994,6 +1023,17 @@ class OdooMCPServer(Server):
                                         )
                                     )
                     return resources
+
+                elif template.uri_template == "odoo://instance/info":
+                    return [
+                        Resource(
+                            uri="odoo://instance/info",
+                            type="record",
+                            content=None,
+                            mime_type="application/json",
+                            metadata={"name": template.name, "description": template.description},
+                        )
+                    ]
 
                 else:
                     raise ProtocolError(f"Unsupported resource template: {template.uri_template}")

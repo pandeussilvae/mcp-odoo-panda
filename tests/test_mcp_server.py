@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 import json
 import asyncio
 from typing import Dict, Any
@@ -30,12 +31,12 @@ TEST_CONFIG = {
     }
 }
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def server():
     """Create a test server instance."""
     server = OdooMCPServer(TEST_CONFIG)
     yield server
-    await server.shutdown()
+    await server.stop()
 
 @pytest.fixture
 def mock_pool():
@@ -79,9 +80,20 @@ async def test_list_resources(server):
     """Test list_resources method."""
     resources = await server.list_resources()
     assert len(resources) > 0
+    assert any(resource.uri == "odoo://instance/info" for resource in resources)
     assert any(resource.uri == "odoo://{model}/{id}" for resource in resources)
     assert any(resource.uri == "odoo://{model}/list" for resource in resources)
     assert any(resource.uri == "odoo://{model}/binary/{field}/{id}" for resource in resources)
+
+
+@pytest.mark.asyncio
+async def test_get_resource_odoo_instance_info(server):
+    """MCP resource odoo://instance/info exposes web_base_url and database_name from config (no secrets)."""
+    result = await server.get_resource("odoo://instance/info")
+    assert result.get("uri") == "odoo://instance/info"
+    content = result.get("content") or {}
+    assert content.get("web_base_url") == TEST_CONFIG["odoo_url"]
+    assert content.get("database_name") == TEST_CONFIG["database"]
 
 @pytest.mark.asyncio
 async def test_list_prompts(server):
@@ -268,7 +280,7 @@ async def test_error_handling(server):
 @pytest.mark.asyncio
 async def test_shutdown(server):
     """Test server shutdown."""
-    await server.shutdown()
+    await server.stop()
     # TODO: Add assertions to verify cleanup
 
 @pytest.mark.asyncio

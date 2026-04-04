@@ -59,6 +59,12 @@ def get_cache_manager() -> "CacheManager":
     return _cache_manager
 
 
+def reset_cache_manager() -> None:
+    """Clear the global cache manager (for tests and process teardown)."""
+    global _cache_manager
+    _cache_manager = None
+
+
 class CacheManager:
     """Cache manager implementation."""
 
