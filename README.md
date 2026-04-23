@@ -63,24 +63,15 @@ The Odoo MCP Server is a standardized interface for interacting with Odoo instan
 ### Direct Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/pandeussilvae/mcp-odoo-panda.git
 cd mcp-odoo-panda
-
-# Install dependencies
-pip install .
-
-# To install with caching support
-pip install .[caching]
-
-# To install with development tools
-pip install .[dev]
+uv pip install .[caching,dev]
 
 # Copy the example configuration file
 cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
 
 # Edit config.json with your settings
-# nano odoo_mcp/config/config.json
+nano odoo_mcp/config/config.json
 ```
 
 ### Docker Installation
