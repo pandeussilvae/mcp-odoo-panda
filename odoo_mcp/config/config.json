@@ -16,7 +16,7 @@
     "username": "your_user",
     "api_key": "your_password",
     "protocol": "jsonrpc",
-    "connection_type": "streamable_http",
+    "connection_type": "mcp_2026_07_28",
     "log_level": "INFO",
     "requests_per_minute": 120,
     "rate_limit_max_wait_seconds": 60,

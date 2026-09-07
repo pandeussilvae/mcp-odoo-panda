@@ -19,11 +19,13 @@ COPY odoo_mcp/config/config.json ./odoo_mcp/config/
 RUN pip install --upgrade pip && \
     pip install -e .[caching] && \
     pip install \
-    fastmcp \
+    "mcp>=2.1.1,<3" \
     aiohttp \
     httpx \
     pydantic \
     cachetools \
+    uvicorn \
+    starlette \
     pytest \
     pytest-asyncio \
     flake8 \
@@ -40,7 +42,7 @@ RUN mkdir -p /app/logs /app/config && \
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PROTOCOL=xmlrpc \
-    CONNECTION_TYPE=streamable_http \
+    CONNECTION_TYPE=mcp_2026_07_28 \
     LOGGING_LEVEL=INFO \
     ODOO_URL=http://odoo:8069 \
     ODOO_DB=odoo \

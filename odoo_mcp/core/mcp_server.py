@@ -9,6 +9,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -45,7 +46,10 @@ from odoo_mcp.tools.orm_tools import ORMTools
 # Constants
 SERVER_NAME = "odoo-mcp-server"
 SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
-PROTOCOL_VERSION = "2025-03-26"  # Current protocol version
+# Legacy StreamableHTTPProtocol speaks 2025-03-26 when connection_type=streamable_http.
+# Prefer connection_type=mcp_2026_07_28 (see mcp_modern_http.PROTOCOL_VERSION).
+PROTOCOL_VERSION = "2025-03-26"  # Legacy path only
+PROTOCOL_VERSION_MODERN = "2026-07-28"
 LEGACY_PROTOCOL_VERSIONS = ["2024-11-05"]  # Supported legacy versions
 
 logger = logging.getLogger(__name__)
@@ -408,6 +412,18 @@ class OdooMCPServer(Server):
         # Initialize protocol
         if self.connection_type == "stdio":
             self.protocol = StdioProtocol(self._handle_request)
+        elif self.connection_type in ("mcp_2026_07_28", "modern_http"):
+            from .mcp_sdk_server import dispatch_orm_tool
+
+            async def _dispatch(
+                name: str,
+                arguments: Dict[str, Any],
+                connection: Optional[Dict[str, str]] = None,
+            ) -> Any:
+                return await dispatch_orm_tool(self.orm_tools, name, arguments, connection)
+
+            self._sdk_dispatch = _dispatch
+            self.protocol = None  # run() uses SDK modern HTTP path
         elif self.connection_type in ["streamable_http", "sse"]:
             # Both streamable_http and sse use the same protocol implementation
             self.protocol = StreamableHTTPProtocol(self._handle_request, self.config)
@@ -1366,15 +1382,33 @@ class OdooMCPServer(Server):
         """Run the server."""
         try:
             logger.info("Starting server...")
-            if self.config.get("protocol") == "stdio":
+            if self.connection_type == "stdio" or self.config.get("protocol") == "stdio":
                 logger.info("Starting server in stdio mode")
                 await self._run_stdio()
+            elif self.connection_type in ("mcp_2026_07_28", "modern_http"):
+                logger.info("Starting server in MCP 2026-07-28 modern HTTP mode")
+                await self._run_modern_http()
+            elif self.protocol is not None and hasattr(self.protocol, "run"):
+                logger.info("Starting server via protocol.run (%s)", self.connection_type)
+                await self.protocol.run()
             else:
-                logger.info("Starting server in streamable_http mode")
+                logger.info("Starting server in legacy streamable_http mode")
                 await self._run_http()
         except Exception as e:
             logger.error(f"Error running server: {e}")
             raise
+
+    async def _run_modern_http(self):
+        """Run MCP 2026-07-28 via official SDK Streamable HTTP (uvicorn)."""
+        from .mcp_sdk_server import run_sdk_http_server
+
+        dispatch = getattr(self, "_sdk_dispatch", None)
+        if dispatch is None:
+            raise ConfigurationError("SDK MCP dispatch not initialized")
+        host = self.config.get("http", {}).get("host") or self.config.get("host", "0.0.0.0")
+        port = int(self.config.get("http", {}).get("port") or self.config.get("port", 8080))
+        self.running = True
+        await run_sdk_http_server(dispatch_tool=dispatch, host=host, port=port)
 
     async def _run_http(self):
         """Run the server in HTTP mode."""
@@ -2622,12 +2656,18 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
         logger.info(f"Loading configuration from {config_path}")
         try:
             with open(config_path, "r") as f:
-                config = yaml.safe_load(f)
+                if config_path.endswith((".yaml", ".yml")):
+                    config = yaml.safe_load(f) or {}
+                else:
+                    config = json.load(f)
             logger.info("Configuration loaded successfully")
             logger.debug(f"Configuration content: {config}")
         except Exception as e:
             logger.error(f"Failed to load configuration: {e}")
             raise
+
+        # Overlay environment variables (Docker / Odward compose)
+        config = _apply_env_overrides(config)
 
         # Setup logging from config
         logger.info("Setting up logging from configuration...")
@@ -2687,6 +2727,34 @@ async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
     except Exception as e:
         logger.error(f"Error running server: {e}")
         raise
+
+
+def _apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply Docker/Compose env overrides without Odward-specific keys."""
+    out = dict(config or {})
+    if os.getenv("ODOO_URL"):
+        out["odoo_url"] = os.environ["ODOO_URL"]
+    if os.getenv("ODOO_DB"):
+        out["database"] = os.environ["ODOO_DB"]
+    if os.getenv("ODOO_USER"):
+        out["username"] = os.environ["ODOO_USER"]
+    if os.getenv("ODOO_PASSWORD"):
+        out["api_key"] = os.environ["ODOO_PASSWORD"]
+        out["password"] = os.environ["ODOO_PASSWORD"]
+    if os.getenv("PROTOCOL"):
+        out["protocol"] = os.environ["PROTOCOL"]
+    if os.getenv("CONNECTION_TYPE"):
+        out["connection_type"] = os.environ["CONNECTION_TYPE"]
+    if os.getenv("LOGGING_LEVEL"):
+        out["log_level"] = os.environ["LOGGING_LEVEL"]
+    http = dict(out.get("http") or {})
+    if os.getenv("HTTP_HOST"):
+        http["host"] = os.environ["HTTP_HOST"]
+    if os.getenv("HTTP_PORT"):
+        http["port"] = int(os.environ["HTTP_PORT"])
+    if http:
+        out["http"] = http
+    return out
 
 
 def main_cli():

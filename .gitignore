@@ -61,6 +61,7 @@ log/
 .env.production
 .env.development
 .venv
+.venv-mcp
 env/
 venv/
 ENV/
