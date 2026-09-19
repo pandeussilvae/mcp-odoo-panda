@@ -659,6 +659,61 @@ class ORMTools:
             )
             raise
 
+    async def unlink(
+        self,
+        user_id: int,
+        model: str,
+        record_ids: List[int],
+        operation_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Unlink (delete) records with rate limit, hard cap, and audit.
+
+        Closes the gap where odoo.unlink is advertised on MCP tools but was
+        missing on the pool-backed ORMTools path (no X-Odoo-* headers).
+        """
+        start_time = time.time()
+
+        try:
+            if not self.rate_limiter.check_rate_limit(user_id=user_id):
+                raise Exception("Rate limit exceeded")
+
+            if len(record_ids) > self.security_config.max_records_limit:
+                record_ids = record_ids[:self.security_config.max_records_limit]
+
+            result = await self.pool.execute_kw(
+                model=model,
+                method="unlink",
+                args=[record_ids]
+            )
+
+            latency_ms = (time.time() - start_time) * 1000
+            self.audit_logger.log_operation(
+                operation="unlink",
+                user_id=user_id,
+                model=model,
+                record_ids=record_ids,
+                result={"success": result},
+                latency_ms=latency_ms
+            )
+
+            return {
+                "success": result,
+                "operation_id": operation_id
+            }
+
+        except Exception as e:
+            logger.error(f"Error in unlink for model {model}: {e}")
+            self.audit_logger.log_operation(
+                operation="unlink",
+                user_id=user_id,
+                model=model,
+                record_ids=record_ids,
+                error=str(e),
+                latency_ms=(time.time() - start_time) * 1000
+            )
+            raise
+
     async def actions_next_steps(
         self,
         user_id: int,
