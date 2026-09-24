@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy configuration files
 COPY pyproject.toml ./
 COPY LICENSE ./
-COPY odoo_mcp/config/config.json ./odoo_mcp/config/
+# Ship example config as default; override via env (ODOO_*) or mounted volume
+COPY odoo_mcp/config/config.example.yaml ./odoo_mcp/config/config.yaml
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
@@ -53,6 +54,7 @@ ENV PYTHONUNBUFFERED=1 \
     REQUESTS_PER_MINUTE=60 \
     RATE_LIMIT_MAX_WAIT_SECONDS=30
 
+# DEV-ONLY: ODOO_USER=admin above is a local-lab default.
 # Note: ODOO_PASSWORD should be set via environment variable or secrets
 # Never hardcode passwords in Docker images
 

@@ -15,14 +15,14 @@ async def run_example():
     Runs the Odoo MCP server using a configuration file.
     """
     # --- Configuration ---
-    # 1. COPY `odoo_mcp/config/config.dev.yaml` to a new file (e.g., `my_config.yaml`).
+    # 1. COPY `odoo_mcp/config/config.example.yaml` to a new file (e.g., `my_config.yaml`).
     # 2. EDIT `my_config.yaml` with your actual Odoo instance details:
     #    - odoo_url
     #    - database
     #    - username
     #    - api_key (or password)
     # 3. Specify the path to your config file below.
-    config_file_path = "odoo_mcp/config/config.dev.yaml" # CHANGE THIS to your config file path if needed
+    config_file_path = "odoo_mcp/config/config.yaml"  # CHANGE THIS to your config file path if needed
 
     print("--- Odoo MCP Server Example ---")
     print(f"Attempting to run server using config: {config_file_path}")

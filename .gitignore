@@ -20,12 +20,17 @@ wheels/
 .installed.cfg
 *.egg
 
-# Configuration files
+# Configuration files (keep only config.example.yaml tracked)
+odoo_mcp/config/config.json
 odoo_mcp/config/config2.json
 odoo_mcp/config/config.yaml
+odoo_mcp/config/config.yml
 odoo_mcp/config/config.dev.yaml
 odoo_mcp/config/config.prod.yaml
 odoo_mcp/config/config.local.json
+odoo_mcp/config/config.local.yaml
+!odoo_mcp/config/config.example.yaml
+!odoo_mcp/config/config.example.json
 
 # MCP Server specific cache files
 cache/

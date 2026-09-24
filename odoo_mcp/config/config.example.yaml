@@ -1,22 +1,27 @@
-# Configurazione Server MCP Odoo
+# Example configuration for mcp-odoo-panda
+# Copy this file and fill in your values:
+#   cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+#
+# Security:
+# - Never commit real passwords or API keys.
+# - Prefer environment variables (ODOO_URL, ODOO_DB, ODOO_USER, ODOO_PASSWORD)
+#   over hardcoding credentials here.
 
-# Configurazione Odoo
+# Odoo connection (REQUIRED — replace placeholders)
 odoo_url: http://localhost:8069
-database: odoo
-username: admin
-api_key: admin
+database: your_database
+username: your_username
+api_key: your_password_or_api_key   # placeholder — do not commit real secrets
 
-# Configurazione Server
-protocol: xmlrpc  # o jsonrpc
+# Odoo RPC protocol
+protocol: xmlrpc  # or jsonrpc
 
-# Configurazione Connessione
-connection_type: stdio  # stdio, sse
-transport_type: stdio  # stdio, http, streamable_http, sse
-
-# Se si usa SSE, entrambi connection_type e transport_type devono essere 'sse'
-# Esempio configurazione SSE:
-# connection_type: sse
-# transport_type: sse
+# How MCP clients talk to this server:
+# - stdio           → Claude Desktop / Cursor (local process, recommended for desktop)
+# - streamable_http → remote / HTTP clients (POST /mcp)
+# - sse             → legacy SSE transport (avoid for new setups)
+connection_type: stdio
+transport_type: stdio
 
 requests_per_minute: 120
 rate_limit_max_wait_seconds: 5
@@ -24,21 +29,22 @@ pool_size: 5
 timeout: 30
 session_timeout_minutes: 60
 
-# Configurazione HTTP (solo se transport_type: http o streamable_http)
+# HTTP settings — only used when connection_type/transport_type is http or streamable_http
+# DEV-ONLY defaults below. For production: bind 127.0.0.1 (or a private interface)
+# and set explicit CORS origins (never "*").
 http:
-  host: 0.0.0.0
+  host: 0.0.0.0   # DEV-ONLY: all interfaces. Prefer 127.0.0.1 for local-only.
   port: 8080
-  streamable: false  # true per streamable_http
+  streamable: false  # true when using streamable_http
 
-# Configurazione SSE (solo se connection_type: sse)
+# SSE settings — only used when connection_type is sse
 sse:
-  host: 0.0.0.0
+  host: 0.0.0.0   # DEV-ONLY
   port: 8080
   queue_maxsize: 1000
-  allowed_origins: ["*"]
-  ping_interval: 30  # secondi tra i ping SSE
+  allowed_origins: ["*"]  # DEV-ONLY. Production: list explicit origins.
+  ping_interval: 30
 
-# Configurazione Logging
 logging:
   level: INFO
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -47,4 +53,4 @@ logging:
       level: INFO
     - type: FileHandler
       filename: server.log
-      level: DEBUG 
+      level: DEBUG

@@ -2760,7 +2760,11 @@ def _apply_env_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
 def main_cli():
     """Command line entry point."""
     parser = argparse.ArgumentParser(description="Odoo MCP Server")
-    parser.add_argument("--config", default="odoo_mcp/config/config.json", help="Path to configuration file")
+    parser.add_argument(
+        "--config",
+        default="odoo_mcp/config/config.yaml",
+        help="Path to configuration file (copy from config.example.yaml)",
+    )
     args = parser.parse_args()
 
     try:
