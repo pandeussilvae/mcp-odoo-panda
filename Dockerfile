@@ -43,7 +43,7 @@ RUN mkdir -p /app/logs /app/config && \
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PROTOCOL=xmlrpc \
-    CONNECTION_TYPE=mcp_2026_07_28 \
+    CONNECTION_TYPE=mcp_2026_07_28 \  # MCP protocolVersion 2026-07-28
     LOGGING_LEVEL=INFO \
     ODOO_URL=http://odoo:8069 \
     ODOO_DB=odoo \
@@ -67,7 +67,7 @@ CMD ["python", "-m", "odoo_mcp.core.mcp_server"]
 # - ODOO_USER (required)
 # - ODOO_PASSWORD (required - must be set at runtime for security)
 # - PROTOCOL (xmlrpc/jsonrpc)
-# - CONNECTION_TYPE (stdio/streamable_http/sse)
+# - CONNECTION_TYPE (stdio | mcp_2026_07_28) — protocol 2026-07-28 only; sse/streamable_http removed
 # - LOGGING_LEVEL (DEBUG/INFO/WARNING/ERROR)
 # - POOL_SIZE (connection pool size)
 # - TIMEOUT (request timeout)

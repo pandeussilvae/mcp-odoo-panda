@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![MCP](https://img.shields.io/badge/protocol-MCP-green.svg)](https://modelcontextprotocol.io/)
+[![MCP](https://img.shields.io/badge/protocol-2026--07--28-green.svg)](https://modelcontextprotocol.io/specification/2026-07-28/)
 
 **Un server MCP per Odoo** — permette a Claude, Cursor o qualsiasi client MCP di cercare, leggere, creare, aggiornare e chiamare metodi sul tuo ERP Odoo.
 
@@ -31,11 +31,11 @@ Per sviluppatori e integrator che vogliono gli strumenti Odoo nel client LLM sen
    # modifica config.yaml — odoo_url, database, username, api_key
    ```
 
-3. **Scegli come si collega il client**
+3. **Scegli come si collega il client** (solo protocollo MCP **`2026-07-28`**)
    | Modalità | Quando usarla |
    |----------|----------------|
-   | `stdio` (default) | Claude Desktop / Cursor sulla stessa macchina |
-   | `streamable_http` | Client remoti o HTTP (`POST /mcp`) |
+   | `stdio` (default) | Claude Desktop / Cursor sulla stessa macchina (SDK ufficiale) |
+   | `mcp_2026_07_28` | Streamable HTTP remoto (`POST /mcp` via `mcp_sdk_server`) |
 
 4. **Avvia**
    ```bash
@@ -61,12 +61,18 @@ transport_type: stdio
 
 Le variabili d'ambiente hanno priorità sul file: `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD`.
 
-## stdio vs streamable_http
+## stdio vs Streamable HTTP
 
-- **stdio** — il client MCP avvia il processo e comunica su stdin/stdout. Ideale per app desktop. Nessuna porta aperta.
-- **streamable_http** — il server ascolta in HTTP (`POST /mcp`). Per client remoti o endpoint di rete.
+Entrambi i transport parlano MCP **`protocolVersion: 2026-07-28`** tramite l'SDK Python `mcp` ufficiale (≥2.1.1).
 
-`0.0.0.0` e CORS `*` sono **solo per sviluppo**. In produzione: loopback / interfaccia privata e origini esplicite.
+- **stdio** — il client avvia il processo su stdin/stdout (SDK, solo moderno). Ideale per desktop. Nessuna porta aperta.
+- **mcp_2026_07_28** (alias `http`) — Streamable HTTP su `POST /mcp`. Per client remoti / Docker.
+
+### Nota di migrazione
+
+**SSE / HTTP pre-2026-07-28 rimossi.** `connection_type: sse`, `streamable_http` e `modern_http` falliscono all'avvio.
+
+`0.0.0.0` è **solo per sviluppo**. In produzione: loopback / interfaccia privata.
 
 ## Collega Claude o Cursor
 

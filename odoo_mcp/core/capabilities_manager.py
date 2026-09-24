@@ -70,11 +70,13 @@ class CapabilitiesManager:
         self.resources: Dict[str, ResourceTemplate] = {}
         self.tools: Dict[str, Tool] = {}
         self.prompts: Dict[str, Prompt] = {}
+        # Only advertise capabilities we actually implement (no fake subscribe /
+        # listChanged notifications). Default = honest False for unimplemented.
         self.feature_flags: Dict[str, bool] = {
-            "prompts.listChanged": True,
-            "resources.subscribe": True,
-            "resources.listChanged": True,
-            "tools.listChanged": True,
+            "prompts.listChanged": False,
+            "resources.subscribe": False,
+            "resources.listChanged": False,
+            "tools.listChanged": False,
             "logging": True,
             "completion": True,
         }
@@ -771,23 +773,10 @@ class CapabilitiesManager:
 
     def get_capabilities(self) -> Dict[str, Any]:
         """
-        Get server capabilities following MCP 2025-03-26 specification.
+        Get server capabilities for MCP protocol 2026-07-28.
 
-        Returns:
-            Dict[str, Any]: Server capabilities with the following structure:
-            {
-                "logging": {},
-                "prompts": {
-                    "listChanged": True
-                },
-                "resources": {
-                    "subscribe": True,
-                    "listChanged": True
-                },
-                "tools": {
-                    "listChanged": True
-                }
-            }
+        Flags reflect implemented handlers only (subscribe / listChanged stay
+        False unless notification handlers exist).
         """
         return {
             "logging": {},  # Empty object indicates basic logging support

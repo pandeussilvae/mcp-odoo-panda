@@ -95,7 +95,7 @@ ODOO_PASSWORD=your_password        # Password (sicura)
 #### **Configurazione MCP Server**
 ```bash
 PROTOCOL=xmlrpc                    # xmlrpc o jsonrpc
-CONNECTION_TYPE=streamable_http    # stdio/streamable_http/sse
+CONNECTION_TYPE=mcp_2026_07_28    # stdio/mcp_2026_07_28/sse
 LOGGING_LEVEL=INFO                 # DEBUG/INFO/WARNING/ERROR
 ```
 

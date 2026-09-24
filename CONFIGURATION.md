@@ -31,9 +31,10 @@ Then modify the parameters according to your needs.
 - `protocol`: Odoo communication protocol
   - Possible values: "xmlrpc" or "jsonrpc"
   - Default: "xmlrpc"
-- `connection_type`: MCP server connection type
-  - Possible values: "stdio" or "sse"
-  - Default: "stdio"
+- `connection_type`: MCP transport (protocolVersion **2026-07-28** only)
+  - Possible values: `"stdio"` or `"mcp_2026_07_28"` (alias `"http"`)
+  - Default: `"stdio"`
+  - Removed: `"sse"`, `"streamable_http"`, `"modern_http"` (startup error)
 
 ## Rate Limiting Configuration
 
@@ -57,8 +58,7 @@ Then modify the parameters according to your needs.
   - Default: "0.0.0.0"
 - `http.port`: Port the server listens on
   - Default: 8080
-- `http.streamable`: Enable/disable response streaming
-  - Default: false
+- ~~`http.streamable`~~: removed (Streamable HTTP is always the SDK path)
 
 ## Logging Configuration
 
@@ -115,9 +115,10 @@ Poi modifica i parametri in base alle tue esigenze.
 - `protocol`: Protocollo di comunicazione con Odoo
   - Valori possibili: "xmlrpc" o "jsonrpc"
   - Default: "xmlrpc"
-- `connection_type`: Tipo di connessione per il server MCP
-  - Valori possibili: "stdio" o "sse"
-  - Default: "stdio"
+- `connection_type`: Transport MCP (solo protocolVersion **2026-07-28**)
+  - Valori possibili: `"stdio"` o `"mcp_2026_07_28"` (alias `"http"`)
+  - Default: `"stdio"`
+  - Rimossi: `"sse"`, `"streamable_http"`, `"modern_http"` (errore all'avvio)
 
 ## Configurazione Rate Limiting
 
@@ -141,8 +142,7 @@ Poi modifica i parametri in base alle tue esigenze.
   - Default: "0.0.0.0"
 - `http.port`: Porta su cui il server ascolta
   - Default: 8080
-- `http.streamable`: Abilita/disabilita lo streaming delle risposte
-  - Default: false
+- ~~`http.streamable`~~: rimosso (Streamable HTTP sempre via SDK)
 
 ## Configurazione Logging
 

@@ -20,7 +20,6 @@ TEST_CONFIG = {
     "pool_size": 5,
     "timeout": 30,
     "session_timeout_minutes": 60,
-    "sse_queue_maxsize": 1000,
     "allowed_origins": ["*"],
     "logging": {
         "level": "INFO",
@@ -46,10 +45,13 @@ async def test_server_initialization():
 
 
 @pytest.mark.asyncio
-async def test_capabilities_advertise_resource_subscription(server):
+async def test_capabilities_do_not_advertise_unimplemented_subscription(server):
+    """Honest ads: subscribe/listChanged stay False without handlers."""
     capabilities = server.capabilities_manager.get_capabilities()
-    assert capabilities["resources"]["subscribe"] is True
-    assert capabilities["resources"]["listChanged"] is True
+    assert capabilities["resources"]["subscribe"] is False
+    assert capabilities["resources"]["listChanged"] is False
+    assert capabilities["tools"]["listChanged"] is False
+    assert capabilities["prompts"]["listChanged"] is False
 
 
 @pytest.mark.asyncio
@@ -189,3 +191,26 @@ async def test_process_request_call_tool_search_read_returns_json_content(server
     parsed = json.loads(content[0]["text"])
     assert parsed[0]["id"] == 1
     assert parsed[0]["name"] == "Test Record"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("obsolete", ["sse", "streamable_http", "modern_http"])
+async def test_obsolete_connection_type_fails_loud(obsolete):
+    from odoo_mcp.error_handling.exceptions import ConfigurationError
+
+    cfg = dict(TEST_CONFIG)
+    cfg["connection_type"] = obsolete
+    with pytest.raises(ConfigurationError) as exc:
+        OdooMCPServer(cfg)
+    assert obsolete in str(exc.value)
+    assert "removed" in str(exc.value).lower() or "2026-07-28" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_sdk_http_connection_type_wires_dispatch():
+    cfg = dict(TEST_CONFIG)
+    cfg["connection_type"] = "mcp_2026_07_28"
+    server = OdooMCPServer(cfg)
+    assert server.connection_type == "mcp_2026_07_28"
+    assert callable(server._sdk_dispatch)
+    await server.stop()

@@ -6,6 +6,9 @@
 # - Never commit real passwords or API keys.
 # - Prefer environment variables (ODOO_URL, ODOO_DB, ODOO_USER, ODOO_PASSWORD)
 #   over hardcoding credentials here.
+#
+# Protocol pin: MCP wire protocolVersion is always 2026-07-28
+# (official `mcp` Python SDK ≥2.1.1). SSE / pre-2026-07-28 HTTP were removed.
 
 # Odoo connection (REQUIRED — replace placeholders)
 odoo_url: http://localhost:8069
@@ -16,10 +19,11 @@ api_key: your_password_or_api_key   # placeholder — do not commit real secrets
 # Odoo RPC protocol
 protocol: xmlrpc  # or jsonrpc
 
-# How MCP clients talk to this server:
-# - stdio           → Claude Desktop / Cursor (local process, recommended for desktop)
-# - streamable_http → remote / HTTP clients (POST /mcp)
-# - sse             → legacy SSE transport (avoid for new setups)
+# How MCP clients talk to this server (official SDK transports only):
+# - stdio            → Claude Desktop / Cursor (local process; modern 2026-07-28)
+# - mcp_2026_07_28   → Streamable HTTP (POST /mcp via mcp_sdk_server)
+# Alias for HTTP: http
+# Removed: sse, streamable_http, modern_http (startup fails loud if set)
 connection_type: stdio
 transport_type: stdio
 
@@ -29,21 +33,11 @@ pool_size: 5
 timeout: 30
 session_timeout_minutes: 60
 
-# HTTP settings — only used when connection_type/transport_type is http or streamable_http
-# DEV-ONLY defaults below. For production: bind 127.0.0.1 (or a private interface)
-# and set explicit CORS origins (never "*").
+# HTTP settings — only used when connection_type is mcp_2026_07_28 (or http)
+# DEV-ONLY defaults below. For production: bind 127.0.0.1 (or a private interface).
 http:
   host: 0.0.0.0   # DEV-ONLY: all interfaces. Prefer 127.0.0.1 for local-only.
   port: 8080
-  streamable: false  # true when using streamable_http
-
-# SSE settings — only used when connection_type is sse
-sse:
-  host: 0.0.0.0   # DEV-ONLY
-  port: 8080
-  queue_maxsize: 1000
-  allowed_origins: ["*"]  # DEV-ONLY. Production: list explicit origins.
-  ping_interval: 30
 
 logging:
   level: INFO

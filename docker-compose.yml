@@ -17,7 +17,7 @@ services:
       
       # MCP Server configuration
       - PROTOCOL=${PROTOCOL:-xmlrpc}
-      - CONNECTION_TYPE=${CONNECTION_TYPE:-streamable_http}
+      - CONNECTION_TYPE=${CONNECTION_TYPE:-mcp_2026_07_28}
       - LOGGING_LEVEL=${LOGGING_LEVEL:-INFO}
       
       # Performance settings
