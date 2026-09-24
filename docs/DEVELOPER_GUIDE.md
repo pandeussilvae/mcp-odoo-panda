@@ -790,10 +790,9 @@ def setup_logging(level='INFO', log_file=None):
 ## 📚 Additional Resources
 
 - [API Reference](API_REFERENCE.md)
-- [Configuration Guide](CONFIGURATION.md)
-- [Performance Tuning](PERFORMANCE.md)
-- [Security Best Practices](SECURITY.md)
-- [Troubleshooting Guide](TROUBLESHOOTING.md)
+- [Configuration Guide](../CONFIGURATION.md)
+- [README — Security](../README.md#security)
+- [Docker Deployment](DOCKER_DEPLOYMENT.md)
 
 ## 🤝 Contributing
 

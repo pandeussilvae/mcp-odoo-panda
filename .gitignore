@@ -30,7 +30,6 @@ odoo_mcp/config/config.prod.yaml
 odoo_mcp/config/config.local.json
 odoo_mcp/config/config.local.yaml
 !odoo_mcp/config/config.example.yaml
-!odoo_mcp/config/config.example.json
 
 # MCP Server specific cache files
 cache/

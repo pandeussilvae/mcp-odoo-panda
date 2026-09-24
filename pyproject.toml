@@ -79,7 +79,7 @@ odoo-mcp-server = "odoo_mcp.core.mcp_server:main_cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["mcp*", "odoo_mcp*"]
+include = ["odoo_mcp*"]
 exclude = ["odoo_mcp.tests*", "odoo_mcp.examples*"]
 
 [tool.mypy]

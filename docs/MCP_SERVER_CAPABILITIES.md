@@ -376,7 +376,7 @@ RATE_LIMIT_BURST=100
 
 ## 📚 **DOCUMENTAZIONE AGGIUNTIVA**
 
-- 📖 **`README_REFACTORED.md`** - Panoramica generale
+- 📖 **[README.md](../README.md)** - Panoramica generale
 - 🔧 **`docs/API_REFERENCE.md`** - Riferimento API completo
 - 👨‍💻 **`docs/DEVELOPER_GUIDE.md`** - Guida sviluppatori
 - 🐳 **`docs/DOCKER_DEPLOYMENT.md`** - Guida deployment Docker

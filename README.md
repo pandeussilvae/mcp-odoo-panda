@@ -132,7 +132,7 @@ Optional: used by [Odward Connect](https://www.techlab.it) as an upstream engine
 | [docs/server_usage.md](docs/server_usage.md) | Server usage |
 | [LEGGIMI.md](LEGGIMI.md) | Italian quickstart |
 
-Historical fix notes and root `test_*.py` files are for maintainers — not required for first-time setup.
+Historical refactor notes (when present) live under [`docs/archive/`](docs/archive/).
 
 ## License
 
