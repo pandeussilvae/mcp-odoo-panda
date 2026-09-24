@@ -1,717 +1,143 @@
-# Panda Odoo MCP Server
+# mcp-odoo-panda
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![MCP](https://img.shields.io/badge/protocol-MCP-green.svg)](https://modelcontextprotocol.io/)
+
+**An MCP server for Odoo** — let Claude, Cursor, or any MCP client search, read, create, update, and call methods on your Odoo ERP.
+
+For developers and integrators who want Odoo tools inside an LLM client without writing a custom connector.
 
 <div align="center">
-  <img src="assets/Odoo MCP Server.png" alt="Odoo MCP Server Logo" width="100%"/> 
+  <img src="assets/Odoo%20MCP%20Server.png" alt="Odoo MCP Server" width="100%"/>
 </div>
 
-## Developed by
+## Quickstart
 
-This module was developed by [Paolo Nugnes](https://github.com/pandeussilvae) and [TechLab](https://www.techlab.it).
+**Requirements:** Python 3.10+, an Odoo 15+ instance you can reach (local or remote).
 
-TechLab is a company specialized in custom software development and enterprise system integration. Visit our website [www.techlab.it](https://www.techlab.it) for more information about our services.
+1. **Install**
+   ```bash
+   git clone https://github.com/pandeussilvae/mcp-odoo-panda.git
+   cd mcp-odoo-panda
+   pip install .
+   ```
 
-## Overview
+2. **Configure from the example**
+   ```bash
+   cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
+   # edit config.yaml — set odoo_url, database, username, api_key
+   ```
 
-The Odoo MCP Server is a standardized interface for interacting with Odoo instances through the MCP (Model Context Protocol). It provides support for:
+3. **Choose how clients connect**
+   | Mode | When to use |
+   |------|-------------|
+   | `stdio` (default) | Claude Desktop / Cursor on the same machine |
+   | `streamable_http` | Remote or HTTP clients (`POST /mcp`) |
 
-- **Communication Protocols**:
-  - stdio: Direct communication via stdin/stdout
-  - streamable_http: HTTP communication with streaming response support
+   Set `connection_type` / `transport_type` in `config.yaml` (see [stdio vs HTTP](#stdio-vs-streamable_http)).
 
-- **Resource Management**:
-  - Odoo records (single and list)
-  - Binary fields
-  - Real-time updates
+4. **Run**
+   ```bash
+   odoo-mcp-server --config odoo_mcp/config/config.yaml
+   # or: python -m odoo_mcp.core.mcp_server --config odoo_mcp/config/config.yaml
+   ```
 
-- **Tools**:
-  - Search and read records
-  - Create and update records
-  - Delete records
-  - Call custom methods
+5. **Connect your MCP client** (Claude Desktop / Cursor) — see [Connect Claude or Cursor](#connect-claude-or-cursor).
 
-- **Security**:
-  - Authentication and session management
-  - Rate limiting
-  - CORS for streamable_http connections
+Docker alternative: `docker compose up -d` (lab stack; [dev-only defaults](#security)).
 
-## System Requirements
+## Minimal config
 
-### Hardware Requirements
-- CPU: 2+ cores
-- RAM: 4GB minimum (8GB recommended)
-- Disk Space: 1GB minimum
+Copy-paste starting point (`odoo_mcp/config/config.yaml`):
 
-### Software Requirements
-- Python 3.9+
-- Odoo 15.0+
-  - Required modules: base, web, bus
-  - Database configured with admin user
-- Docker (optional)
+```yaml
+odoo_url: http://localhost:8069
+database: your_database
+username: your_username
+api_key: your_password_or_api_key
 
-### Network Requirements
-- Port 8069 (Odoo)
-- Port 8080 (streamable_http, optional)
-- Port 5432 (PostgreSQL, if local)
-
-### Security Requirements
-- SSL certificate for HTTPS (production)
-- Configured firewall
-- VPN access (optional)
-
-## Installation
-
-### Direct Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/pandeussilvae/mcp-odoo-panda.git
-cd mcp-odoo-panda
-
-# Install dependencies
-pip install .
-
-# To install with caching support
-pip install .[caching]
-
-# To install with development tools
-pip install .[dev]
-
-# Copy the example configuration file
-cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
-
-# Edit config.json with your settings
-# nano odoo_mcp/config/config.json
+protocol: xmlrpc
+connection_type: stdio
+transport_type: stdio
 ```
 
-### Docker Installation
+Environment variables override the file when set: `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD`.
 
-```bash
-# Clone the repository
-git clone https://github.com/pandeussilvae/mcp-odoo-panda.git
-cd mcp-odoo-panda
+## stdio vs streamable_http
 
-# Start with Docker Compose
-docker-compose up -d
+- **stdio** — the MCP client starts this process and talks over stdin/stdout. Best for desktop apps (Claude, Cursor). No open port.
+- **streamable_http** — the server listens on HTTP (`POST /mcp`). Use when the client is remote or you need a network endpoint.
+
+Legacy `sse` exists for older setups; prefer `stdio` or `streamable_http` for new work.
+
+HTTP example (dev):
+
+```yaml
+connection_type: streamable_http
+transport_type: streamable_http
+http:
+  host: 127.0.0.1   # prefer loopback; 0.0.0.0 is DEV-ONLY
+  port: 8080
+  streamable: true
 ```
 
-## Configuration
+## Connect Claude or Cursor
 
-The server can be configured through a JSON file. Several configuration templates are available:
-
-- `config.example.json`: Main template to copy and modify
-- `config.dev.json`: Development environment template (optional)
-- `config.prod.json`: Production environment template (optional)
-
-To get started:
-
-```bash
-# Copy the example configuration file
-cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
-
-# Edit config.json with your settings
-# nano odoo_mcp/config/config.json
-```
-
-### Selecting the Connection Type
-
-The Odoo MCP server supports several connection types, configurable via the `connection_type` field in `config.json`. Supported values:
-
-- `stdio`: Default, direct communication via stdin/stdout
-- `streamable_http`: HTTP with streaming/chunked responses (real-time data flows)
-- `http`: Classic HTTP POST (stateless, single request/response)
-
-Example configuration:
-```json
-{
-  "connection_type": "streamable_http",  // or "http" or "stdio"
-  "http": {
-    "host": "0.0.0.0",
-    "port": 8080
-  }
-}
-```
-
-- Use `streamable_http` for real-time streaming over HTTP (endpoint: `POST /mcp`)
-- Use `http` for classic REST requests (endpoint: `POST /mcp`)
-- Use `stdio` for direct communication (default)
-
-Example of complete configuration:
-
-```json
-{
-    "mcpServers": {
-        "mcp-odoo-panda": {
-            "command": "/usr/bin/python3",
-            "args": [
-                "--directory",
-                "/path/to/mcp-odoo-panda",
-                "mcp/server.py",
-                "--config",
-                "/path/to/mcp-odoo-panda/odoo_mcp/config/config.json"
-            ]
-        }
-    },
-    "odoo_url": "http://localhost:8069",
-    "database": "my_database",
-    "username": "admin",
-    "api_key": "admin",
-    "protocol": "xmlrpc",
-    "connection_type": "streamable_http",
-    "requests_per_minute": 120,
-    "rate_limit_max_wait_seconds": 5,
-    "pool_size": 5,
-    "timeout": 30,
-    "session_timeout_minutes": 60,
-    "http": {
-        "host": "0.0.0.0",
-        "port": 8080,
-        "streamable": true
-    },
-    "logging": {
-        "level": "INFO",
-        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        "handlers": [
-            {
-                "type": "StreamHandler",
-                "level": "INFO"
-            },
-            {
-                "type": "FileHandler",
-                "filename": "server.log",
-                "level": "DEBUG"
-            }
-        ]
-    }
-}
-```
-
-### Configuration
-
-You can configure the server via environment variables in your `.env` file or directly in `docker-compose.yml`.
-
-**Note:** Environment variables (from `.env` or the container environment) always take precedence over values in `config.json`.
-
-Main variables:
-- `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` (Odoo connection)
-- `PROTOCOL`, `CONNECTION_TYPE`, `LOGGING_LEVEL` (MCP server)
-- `REQUESTS_PER_MINUTE`, `SSE_QUEUE_MAXSIZE`, `ALLOWED_ORIGINS` (advanced)
-
-Example `.env`:
-```
-ODOO_URL=http://host.docker.internal:8069
-ODOO_DB=odoo
-ODOO_USER=admin
-ODOO_PASSWORD=admin
-PROTOCOL=xmlrpc
-CONNECTION_TYPE=streamable_http
-LOGGING_LEVEL=INFO
-```
-
-## Starting the Server
-
-The server can be started in two modes: stdio (default) and streamable_http. The configuration file is optional and, if not specified, the server will automatically look for the file in `odoo_mcp/config/config.json`.
-
-### stdio Mode (default)
-
-```bash
-# Start the server in stdio mode without specifying the configuration file
-python -m odoo_mcp.server
-
-# Start the server in stdio mode with a specific configuration file
-python -m odoo_mcp.server /path/to/config.json
-```
-
-### streamable_http Mode
-
-```bash
-# Start the server in streamable_http mode without specifying the configuration file
-python -m odoo_mcp.server streamable_http
-
-# Start the server in streamable_http mode with a specific configuration file
-python -m odoo_mcp.server streamable_http /path/to/config.json
-```
-
-### HTTP Modes
-
-The Odoo MCP server supports two HTTP modes:
-
-1. **HTTP Streaming Chunked** (`streamable_http`):
-   - Endpoint: `POST /mcp`
-   - Keeps the connection open and streams data
-   - Ideal for real-time data flows
-   - Required headers:
-     ```
-     Content-Type: application/json
-     Connection: keep-alive
-     ```
-
-2. **Classic HTTP POST** (`http`):
-   - Endpoint: `POST /mcp`
-   - Handles a single request/response (stateless)
-   - Standard REST behavior
-   - Required headers:
-     ```
-     Content-Type: application/json
-     ```
-
-3. **Server-Sent Events** (SSE):
-   - Endpoint: `GET /sse`
-   - Server-push event support
-   - Required headers:
-     ```
-     Accept: text/event-stream
-     ```
-
-To configure the HTTP mode, set `connection_type` in `config.json`:
-```json
-{
-  "connection_type": "streamable_http",  // or "http"
-  "http": {
-    "host": "0.0.0.0",
-    "port": 8080
-  }
-}
-```
-
-### Example Calls
-
-1. **HTTP Streaming Chunked**:
-```bash
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -H "Connection: keep-alive" \
-  -d '{"jsonrpc": "2.0", "method": "initialize", "id": 1}'
-```
-
-2. **Classic HTTP POST**:
-```bash
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "method": "initialize", "id": 1}'
-```
-
-3. **Server-Sent Events**:
-```bash
-curl -N http://localhost:8080/sse \
-  -H "Accept: text/event-stream"
-```
-
-## Server Verification
-
-### stdio Mode
-
-```bash
-# Test a request without specifying the configuration file
-echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server
-
-# Test a request with a specific configuration file
-echo '{"method": "get_resource", "params": {"uri": "odoo://res.partner/1"}}' | python -m odoo_mcp.server /path/to/config.json
-```
-
-### streamable_http Mode
-
-```bash
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -H "Connection: keep-alive" \
-  -d '{"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}'
-```
-
-### http Mode (Classic HTTP POST)
-
-```bash
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}'
-```
-
-### Server-Sent Events (SSE)
-
-```bash
-curl -N http://localhost:8080/sse \
-  -H "Accept: text/event-stream"
-```
-
-## Usage
-
-### stdio Connection
-
-```python
-import asyncio
-from mcp import Client
-
-async def main():
-    client = Client(connection_type="stdio")
-    await client.initialize()
-    
-    # Example: Read a record
-    resource = await client.get_resource("odoo://res.partner/1")
-    print(resource.data)
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-### streamable_http Connection
-
-```python
-import asyncio
-from mcp import Client
-
-async def main():
-    client = Client(connection_type="streamable_http")
-    await client.initialize()
-    
-    # Example: Read a record
-    resource = await client.get_resource("odoo://res.partner/1")
-    print(resource.data)
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-### Connecting Claude Desktop to the Odoo MCP server (stdio)
-
-To connect Claude Desktop to the Odoo MCP server using the stdio protocol:
-
-1. Make sure the Odoo MCP server is installed and working.
-2. Open Claude Desktop settings (Claude menu → Settings → Developer → Edit Config).
-3. Add the following configuration to the `mcpServers` section of your `claude_desktop_config.json` file:
+**Cursor** — add an MCP server entry (Settings → MCP), for example:
 
 ```json
 {
   "mcpServers": {
-    "odoo-mcp": {
-      "command": "python",
-      "args": [
-        "-m",
-        "odoo_mcp.server",
-        "C:/absolute/path/to/your/config.json"
-      ]
+    "odoo": {
+      "command": "odoo-mcp-server",
+      "args": ["--config", "/absolute/path/to/mcp-odoo-panda/odoo_mcp/config/config.yaml"]
     }
   }
 }
 ```
-> Replace `C:/absolute/path/to/your/config.json` with the actual path to your configuration file.
 
-4. Save and restart Claude Desktop. You should see the MCP tools available.
+**Claude Desktop** — same shape in its MCP config file (`claude_desktop_config.json`): `command` + `args` pointing at your install and config.
 
-**Note:** Claude Desktop only communicates via stdio. Do not use `streamable_http` for connecting with Claude Desktop.
+Use absolute paths. Do not commit client configs that embed real passwords.
 
-## Documentation
+## What you get
 
-Complete documentation is available in the `docs/` directory:
+- Search / read / create / write / unlink Odoo records
+- Call custom model methods
+- Session handling, rate limiting, optional HTTP CORS
+- Optional modern MCP Streamable HTTP (`CONNECTION_TYPE=mcp_2026_07_28` in Docker/env)
 
-- `mcp_protocol.md`: MCP protocol documentation
-- `odoo_server.md`: Odoo server documentation
-- `server_usage.md`: Server usage guide
+## Security
 
-## Contributing
+- **Never commit real passwords or API keys.** Keep `config.yaml` local (it is gitignored); only `config.example.yaml` is tracked.
+- Compose / Dockerfile `admin` password defaults are **DEV-ONLY** for a local lab.
+- Binding `0.0.0.0` and CORS `allowed_origins: ["*"]` are **DEV-ONLY**. In production use loopback or a private interface and explicit origins.
+- Prefer env vars or a secrets manager for credentials.
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+## Standalone
+
+This project is a standalone MIT MCP server for a single Odoo connection. It is not a multi-tenant SaaS gateway. See [ODWARD_BOUNDARY.md](ODWARD_BOUNDARY.md).
+
+Optional: used by [Odward Connect](https://www.techlab.it) as an upstream engine; that integration lives outside this repo.
+
+## Deeper docs
+
+| Doc | Topic |
+|-----|--------|
+| [CONFIGURATION.md](CONFIGURATION.md) | Full configuration reference |
+| [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | Tools / API |
+| [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) | Architecture for contributors |
+| [docs/DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md) | Docker notes |
+| [docs/server_usage.md](docs/server_usage.md) | Server usage |
+| [LEGGIMI.md](LEGGIMI.md) | Italian quickstart |
+
+Historical fix notes and root `test_*.py` files are for maintainers — not required for first-time setup.
 
 ## License
 
-This project is released under the MIT License. See the `LICENSE` file for details.
+MIT — see [LICENSE](LICENSE).
 
-## Update
+---
 
-### Update from Source
-```bash
-# Update the repository
-git pull origin main
-
-# Reinstall the package
-pip install --upgrade .
-
-# Restart the server
-systemctl restart odoo-mcp-server
-```
-
-### Update with Docker
-```bash
-# Update images
-docker-compose pull
-
-# Restart containers
-docker-compose up -d
-```
-
-## Uninstallation
-
-### Uninstall from Source
-```bash
-# Uninstall the package
-pip uninstall odoo-mcp-server
-
-# Remove configuration files
-rm -rf ~/.odoo-mcp-server
-```
-
-### Uninstall with Docker
-```bash
-# Stop and remove containers
-docker-compose down
-
-# Remove images
-docker-compose rm -f
-```
-
-## Advanced Configuration
-
-### Environment Configuration
-
-#### Development
-```json
-{
-    "protocol": "xmlrpc",
-    "connection_type": "stdio",
-    "odoo_url": "http://localhost:8069",
-    "database": "dev_db",
-    "username": "admin",
-    "api_key": "admin",
-    "logging": {
-        "level": "DEBUG",
-        "handlers": [
-            {
-                "type": "FileHandler",
-                "filename": "logs/dev.log",
-                "level": "DEBUG"
-            }
-        ]
-    }
-}
-```
-
-#### Production
-```json
-{
-    "protocol": "jsonrpc",
-    "connection_type": "streamable_http",
-    "odoo_url": "https://odoo.example.com",
-    "database": "prod_db",
-    "username": "admin",
-    "api_key": "your-secure-api-key",
-    "http": {
-        "host": "0.0.0.0",
-        "port": 8080,
-        "streamable": true
-    },
-    "logging": {
-        "level": "INFO",
-        "handlers": [
-            {
-                "type": "FileHandler",
-                "filename": "logs/prod.log",
-                "level": "INFO"
-            }
-        ]
-    }
-}
-```
-
-### Configuration Backup
-```bash
-# Backup configuration
-cp odoo_mcp/config/config.json odoo_mcp/config/config.json.backup
-
-# Restore configuration
-cp odoo_mcp/config/config.json.backup odoo_mcp/config/config.json
-```
-
-## Advanced Usage
-
-### Error Handling
-```python
-from odoo_mcp.error_handling.exceptions import (
-    AuthError, NetworkError, ProtocolError
-)
-
-try:
-    await client.get_resource("odoo://res.partner/1")
-except AuthError as e:
-    logger.error(f"Authentication error: {e}")
-    # Error handling
-except NetworkError as e:
-    logger.error(f"Network error: {e}")
-    # Error handling
-except ProtocolError as e:
-    logger.error(f"Protocol error: {e}")
-    # Error handling
-```
-
-### Best Practices
-
-1. **Connection Management**:
-   ```python
-   async with Client() as client:
-       await client.initialize()
-       # Operations
-   ```
-
-2. **Cache Management**:
-   ```python
-   # Cache configuration
-   cache_config = {
-       'enabled': True,
-       'ttl': 300,
-       'max_size': 1000
-   }
-   ```
-
-3. **Session Management**:
-   ```python
-   # Create session
-   session = await client.create_session()
-   
-   # Validate session
-   if await client.validate_session(session_id):
-       # Operations
-   ```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Connection Error**:
-   ```
-   ERROR: Could not connect to Odoo server
-   ```
-   Solution:
-   - Verify that Odoo is running on port 8069
-   - Check that the firewall allows access to port 8069
-   - Verify that the Odoo URL in the configuration file is correct
-   - Check that the database is accessible
-
-2. **Authentication Error**:
-   ```
-   ERROR: Authentication failed
-   ```
-   Solution:
-   - Verify that username and api_key in the configuration file are correct
-   - Check that the user has the necessary permissions in the Odoo database
-   - Verify that the specified database exists
-   - Check that the base, web, and bus modules are installed
-
-3. **Protocol Error**:
-   ```
-   ERROR: Protocol error
-   ```
-   Solution:
-   - Verify that the specified protocol (xmlrpc/jsonrpc) is supported
-   - Check that the Odoo version is compatible (15.0+)
-   - Verify that the connection type (stdio/streamable_http) is correct
-   - Check the logs for specific error details
-
-4. **Rate Limiting Error**:
-   ```
-   ERROR: Rate limit exceeded
-   ```
-   Solution:
-   - Increase the `requests_per_minute` value in the configuration file
-   - Implement a retry mechanism with backoff
-   - Optimize requests to reduce the number of calls
-
-5. **Cache Error**:
-   ```
-   ERROR: Cache error
-   ```
-   Solution:
-   - Verify that the configured cache type is supported
-   - Check that there is sufficient space for the cache
-   - Temporarily disable the cache if necessary
-
-### Error Logs
-
-**Important note:** In the current version, the Odoo MCP server can write logs to multiple destinations depending on configuration:
-
-- If the `logging` section in `config.json` includes a `StreamHandler`, logs are written to the **console** (stderr).
-- If a `FileHandler` is present, logs are also written to a **file** at the path specified by `filename`.
-- If there is no `logging`, logs are written only to stderr (console).
-
-**Example:**
-```json
-"logging": {
-    "level": "INFO",
-    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    "handlers": [
-        {
-            "type": "StreamHandler",
-            "level": "INFO"
-        },
-        {
-            "type": "FileHandler",
-            "filename": "server.log",
-            "level": "DEBUG"
-        }
-    ]
-}
-```
-- In this example, logs go both to the console and to the file `server.log` in the directory where you start the server.
-- You can change the log file path by editing the `filename` field (e.g., `"filename": "logs/dev.log"` or an absolute path).
-
-### Support
-
-For technical support:
-1. Check the [documentation](docs/)
-2. Open an [issue](https://github.com/pandeussilvae/mcp-odoo-panda/issues)
-3. Contact [support@techlab.it](mailto:support@techlab.it)
-
-## Running with Docker
-
-You can run the Odoo MCP Server in a Docker container using the provided `Dockerfile` and `docker-compose.yml`.
-
-### Quick Start
-
-```bash
-docker-compose up -d
-```
-
-This will:
-- Build the image from the Dockerfile.
-- Start the MCP server on port 8080 (default).
-- Persist logs in the `./logs` directory.
-
-### Configuration
-
-You can configure the server via environment variables in your `.env` file or directly in `docker-compose.yml`.
-
-Main variables:
-- `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` (Odoo connection)
-- `PROTOCOL`, `CONNECTION_TYPE`, `LOGGING_LEVEL` (MCP server)
-- `REQUESTS_PER_MINUTE`, `SSE_QUEUE_MAXSIZE`, `ALLOWED_ORIGINS` (advanced)
-
-Example `.env`:
-```
-ODOO_URL=http://host.docker.internal:8069
-ODOO_DB=odoo
-ODOO_USER=admin
-ODOO_PASSWORD=admin
-PROTOCOL=xmlrpc
-CONNECTION_TYPE=streamable_http
-LOGGING_LEVEL=INFO
-```
-
-#### Custom Configuration File
-
-You can mount your own config file:
-```yaml
-volumes:
-  - ./odoo_mcp/config/config.json:/app/odoo_mcp/config/config.json
-```
-
-#### Accessing the Server
-
-- HTTP streaming: `POST http://localhost:8080/mcp`
-- SSE: `GET http://localhost:8080/sse`
-
-#### Stopping the Server
-
-```bash
-docker-compose down
-```
-
+Developed by [Paolo Nugnes](https://github.com/pandeussilvae) and [TechLab](https://www.techlab.it) · [info@techlab.it](mailto:info@techlab.it) · [support@techlab.it](mailto:support@techlab.it)

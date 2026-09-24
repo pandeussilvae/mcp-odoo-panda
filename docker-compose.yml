@@ -1,3 +1,5 @@
+# Local development stack. Defaults (admin / 0.0.0.0-style binds via app config)
+# are DEV-ONLY — never use them as production credentials or public bind hints.
 version: '3.8'
 
 services:
@@ -7,6 +9,7 @@ services:
     restart: unless-stopped
     environment:
       # Odoo connection settings (required)
+      # DEV-ONLY defaults for ODOO_USER / ODOO_PASSWORD — override for anything beyond local lab
       - ODOO_URL=${ODOO_URL:-http://odoo:8069}
       - ODOO_DB=${ODOO_DB:-odoo}
       - ODOO_USER=${ODOO_USER:-admin}
