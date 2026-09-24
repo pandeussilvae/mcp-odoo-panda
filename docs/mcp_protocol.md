@@ -1,3 +1,5 @@
+> **2026-09 cutover:** Supported transports are **stdio** and **Streamable HTTP** via the official `mcp` SDK only (`protocolVersion: 2026-07-28`). HTTP+SSE / hand-rolled modern HTTP / pre-2026-07-28 handshake paths were removed.
+
 # MCP (Model Context Protocol)
 
 Il modulo MCP fornisce l'implementazione base del protocollo Model Context Protocol, un'interfaccia standardizzata per l'interazione con modelli di dati attraverso diversi protocolli di comunicazione.

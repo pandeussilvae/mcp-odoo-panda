@@ -15,7 +15,7 @@ class OdooMCPServer(Server):
     Args:
         config (Dict[str, Any]): Configurazione del server
             - protocol (str): Protocollo Odoo ('xmlrpc' o 'jsonrpc')
-            - connection_type (str): Tipo di connessione MCP ('stdio' o 'sse')
+            - connection_type (str): Tipo di connessione MCP ('stdio' o 'mcp_2026_07_28')
             - odoo_url (str): URL del server Odoo
             - database (str): Nome del database
             - uid (str): ID utente

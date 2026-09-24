@@ -65,7 +65,7 @@ def setup_logging(level: str = "INFO", protocol: str = "stdio") -> None:
 
     Args:
         level: Logging level (default: 'INFO')
-        protocol: Server protocol ('stdio' or 'streamable_http')
+        protocol: Server transport ('stdio' or 'mcp_2026_07_28')
     """
     # Remove any existing handlers from the root logger
     root_logger = logging.getLogger()
@@ -272,7 +272,7 @@ if __name__ == "__main__":
         "log_format": "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         "log_mask_sensitive": False,
     }
-    setup_logging(example_config_file["log_level"], "streamable_http")
+    setup_logging(example_config_file["log_level"], "mcp_2026_07_28")
     logger.info("This INFO message should go to the file.")
     logger.debug("This DEBUG message should NOT appear in the file.")
     logger.error("API Key: another_secret456")  # Should NOT be masked

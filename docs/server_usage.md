@@ -213,13 +213,12 @@ Il server può essere configurato attraverso un file di configurazione YAML:
 ```yaml
 # config.yaml
 protocol: jsonrpc # or xmlrpc
-connection_type: stdio  # or sse
+connection_type: stdio  # or mcp_2026_07_28
 odoo_url: http://localhost:8069
 database: mio_database
 uid: admin
 password: admin
 requests_per_minute: 120
-sse_queue_maxsize: 1000
 allowed_origins: ["*"]  # per connessioni SSE
 ```
 
@@ -708,13 +707,12 @@ The server can be configured through a YAML configuration file:
 ```yaml
 # config.yaml
 protocol: jsonrpc # or xmlrpc
-connection_type: stdio  # or sse
+connection_type: stdio  # or mcp_2026_07_28
 odoo_url: http://localhost:8069
 database: my_database
 uid: admin
 password: admin
 requests_per_minute: 120
-sse_queue_maxsize: 1000
 allowed_origins: ["*"]  # for SSE connections
 ```
 

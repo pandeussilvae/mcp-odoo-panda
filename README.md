@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![MCP](https://img.shields.io/badge/protocol-MCP-green.svg)](https://modelcontextprotocol.io/)
+[![MCP](https://img.shields.io/badge/protocol-2026--07--28-green.svg)](https://modelcontextprotocol.io/specification/2026-07-28/)
 
 **An MCP server for Odoo** — let Claude, Cursor, or any MCP client search, read, create, update, and call methods on your Odoo ERP.
 
@@ -29,13 +29,13 @@ For developers and integrators who want Odoo tools inside an LLM client without 
    # edit config.yaml — set odoo_url, database, username, api_key
    ```
 
-3. **Choose how clients connect**
+3. **Choose how clients connect** (MCP **protocolVersion `2026-07-28` only**)
    | Mode | When to use |
    |------|-------------|
-   | `stdio` (default) | Claude Desktop / Cursor on the same machine |
-   | `streamable_http` | Remote or HTTP clients (`POST /mcp`) |
+   | `stdio` (default) | Claude Desktop / Cursor on the same machine (official `mcp` SDK) |
+   | `mcp_2026_07_28` | Remote Streamable HTTP (`POST /mcp` via `mcp_sdk_server`) |
 
-   Set `connection_type` / `transport_type` in `config.yaml` (see [stdio vs HTTP](#stdio-vs-streamable_http)).
+   Set `connection_type` in `config.yaml` (see [stdio vs Streamable HTTP](#stdio-vs-streamable-http)).
 
 4. **Run**
    ```bash
@@ -64,22 +64,24 @@ transport_type: stdio
 
 Environment variables override the file when set: `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD`.
 
-## stdio vs streamable_http
+## stdio vs Streamable HTTP
 
-- **stdio** — the MCP client starts this process and talks over stdin/stdout. Best for desktop apps (Claude, Cursor). No open port.
-- **streamable_http** — the server listens on HTTP (`POST /mcp`). Use when the client is remote or you need a network endpoint.
+Both transports speak MCP **`protocolVersion: 2026-07-28`** via the official Python `mcp` SDK (≥2.1.1).
 
-Legacy `sse` exists for older setups; prefer `stdio` or `streamable_http` for new work.
+- **stdio** — the MCP client starts this process and talks over stdin/stdout (SDK modern-only). Best for desktop apps (Claude, Cursor). No open port.
+- **mcp_2026_07_28** (alias `http`) — Streamable HTTP on `POST /mcp` (`mcp_sdk_server` + uvicorn). Use for remote / Docker.
+
+### Migration note
+
+**SSE / pre-2026-07-28 HTTP were removed.** `connection_type: sse`, `streamable_http`, and `modern_http` fail at startup. Upgrade clients to `2026-07-28` envelopes (`server/discover`, per-request `_meta`).
 
 HTTP example (dev):
 
 ```yaml
-connection_type: streamable_http
-transport_type: streamable_http
+connection_type: mcp_2026_07_28
 http:
   host: 127.0.0.1   # prefer loopback; 0.0.0.0 is DEV-ONLY
   port: 8080
-  streamable: true
 ```
 
 ## Connect Claude or Cursor
@@ -106,7 +108,7 @@ Use absolute paths. Do not commit client configs that embed real passwords.
 - Search / read / create / write / unlink Odoo records
 - Call custom model methods
 - Session handling, rate limiting, optional HTTP CORS
-- Optional modern MCP Streamable HTTP (`CONNECTION_TYPE=mcp_2026_07_28` in Docker/env)
+- MCP Streamable HTTP via official SDK (`CONNECTION_TYPE=mcp_2026_07_28`; protocol `2026-07-28`)
 
 ## Security
 

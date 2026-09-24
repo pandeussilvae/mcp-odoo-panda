@@ -48,13 +48,12 @@ Il server può essere configurato attraverso un file YAML:
 ```yaml
 # config.yaml
 protocol: xmlrpc  # o jsonrpc
-connection_type: stdio  # o sse
+connection_type: stdio  # o mcp_2026_07_28
 odoo_url: http://localhost:8069
 database: my_database
 uid: admin
 password: admin
 requests_per_minute: 120
-sse_queue_maxsize: 1000
 allowed_origins: ["*"]  # per connessioni SSE
 ```
 

@@ -433,12 +433,45 @@ async def run_sdk_http_server(
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server = uvicorn.Server(config)
     logger.info(
-        "MCP SDK modern HTTP listening on %s:%s (POST /mcp, protocol %s)",
+        "MCP SDK Streamable HTTP listening on %s:%s (POST /mcp, protocol %s)",
         host,
         port,
         PROTOCOL_VERSION,
     )
     await server.serve()
+
+
+async def run_sdk_stdio_server(*, dispatch_tool: ToolDispatch) -> None:
+    """Serve MCP over stdio using the official SDK, modern protocol only (2026-07-28).
+
+    Uses the SDK's modern stream loop (no handshake-era initialize). Clients must
+    send per-request ``params._meta`` with ``io.modelcontextprotocol/protocolVersion``.
+    """
+    from mcp.server.stdio import stdio_server
+
+    # Modern-only entry: prefer the SDK's modern stream driver when available.
+    try:
+        from mcp.server.runner import _serve_modern_stream as serve_modern_stream
+    except ImportError as exc:  # pragma: no cover - requires mcp>=2.1.1 modern
+        raise RuntimeError(
+            "mcp SDK modern stdio requires mcp>=2.1.1 with _serve_modern_stream; "
+            f"upgrade the mcp package ({exc})"
+        ) from exc
+
+    server = build_sdk_server(dispatch_tool=dispatch_tool)
+    logger.info(
+        "MCP SDK stdio starting (protocol %s, modern-only)",
+        PROTOCOL_VERSION,
+    )
+    async with stdio_server() as (read_stream, write_stream):
+        async with server.lifespan(server) as lifespan_state:
+            await serve_modern_stream(
+                server,
+                read_stream,
+                write_stream,
+                lifespan_state=lifespan_state,
+                raise_exceptions=False,
+            )
 
 
 async def dispatch_orm_tool(

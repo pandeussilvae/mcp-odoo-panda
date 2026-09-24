@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
-import aiohttp.web as web
 import yaml
 
 from odoo_mcp.core.authenticator import Authenticator
@@ -45,12 +44,15 @@ from odoo_mcp.tools.orm_tools import ORMTools
 
 # Constants
 SERVER_NAME = "odoo-mcp-server"
-SERVER_VERSION = "2024.2.5"  # Using CalVer: YYYY.MM.DD
-# Legacy StreamableHTTPProtocol speaks 2025-03-26 when connection_type=streamable_http.
-# Prefer connection_type=mcp_2026_07_28 (see mcp_modern_http.PROTOCOL_VERSION).
-PROTOCOL_VERSION = "2025-03-26"  # Legacy path only
-PROTOCOL_VERSION_MODERN = "2026-07-28"
-LEGACY_PROTOCOL_VERSIONS = ["2024-11-05"]  # Supported legacy versions
+SERVER_VERSION = "2026.9.24"  # CalVer aligned with protocol cutover
+# Single supported MCP protocol revision (official SDK path only).
+PROTOCOL_VERSION = "2026-07-28"
+
+# connection_type values accepted by this process
+CONNECTION_TYPE_STDIO = "stdio"
+CONNECTION_TYPE_HTTP = "mcp_2026_07_28"
+CONNECTION_TYPE_HTTP_ALIASES = frozenset({"mcp_2026_07_28", "http"})
+OBSOLETE_CONNECTION_TYPES = frozenset({"sse", "streamable_http", "modern_http"})
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +154,7 @@ class ClientInfo:
 
     def is_compatible(self) -> bool:
         """Check if the client's protocol version is compatible."""
-        return self.protocol_version == PROTOCOL_VERSION or self.protocol_version in LEGACY_PROTOCOL_VERSIONS
+        return self.protocol_version == PROTOCOL_VERSION
 
 
 @dataclass
@@ -216,158 +218,6 @@ class Server(ABC):
         pass
 
 
-class StdioProtocol:
-    """Stdio-based communication protocol."""
-
-    def __init__(self, request_handler: Callable):
-        self.request_handler = request_handler
-        self.running = False
-
-    async def run(self):
-        """Run the protocol."""
-        self.running = True
-        while self.running:
-            try:
-                # Use asyncio.get_event_loop().run_in_executor to read from stdin
-                line = await asyncio.get_event_loop().run_in_executor(None, input)
-                if not line:
-                    continue
-
-                request = json.loads(line)
-                response = self.request_handler(request)
-                print(json.dumps(response))
-                sys.stdout.flush()
-            except EOFError:
-                logger.info("Received EOF, shutting down")
-                self.running = False
-                break
-            except json.JSONDecodeError:
-                logger.error("Invalid JSON received")
-            except Exception as e:
-                logger.error(f"Error processing request: {e}")
-                if not self.running:
-                    break
-
-    def stop(self):
-        """Stop the protocol."""
-        self.running = False
-
-
-class StreamableHTTPProtocol:
-    """HTTP-based communication protocol with streaming support."""
-
-    def __init__(self, request_handler: Callable, config: Dict[str, Any]):
-        self.request_handler = request_handler
-        self.config = config
-        self.running = False
-        self.app = web.Application()
-
-        # Configura CORS
-        self.app.router.add_post("/mcp", self._handle_request)
-        self.app.router.add_get("/sse", self._handle_sse)
-        self.app.router.add_options("/mcp", self._handle_options)
-        self.app.router.add_options("/sse", self._handle_options)
-
-        # Aggiungi middleware per CORS
-        @web.middleware
-        async def cors_middleware(request, handler):
-            response = await handler(request)
-            response.headers["Access-Control-Allow-Origin"] = "*"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-            response.headers["Content-Type"] = "application/json; charset=utf-8"
-            return response
-
-        self.app.middlewares.append(cors_middleware)
-
-        self.runner = None
-        self.site = None
-
-    async def _handle_request(self, request: web.Request) -> web.Response:
-        """Handle HTTP request."""
-        try:
-            # Leggi il corpo della richiesta come bytes
-            body = await request.read()
-
-            # Prova a decodificare con UTF-8, se fallisce prova con latin-1
-            try:
-                data = json.loads(body.decode("utf-8"))
-            except UnicodeDecodeError:
-                data = json.loads(body.decode("latin-1"))
-
-            response = self.request_handler(data)
-
-            # Assicurati che la risposta sia codificata correttamente
-            return web.json_response(response, content_type="application/json; charset=utf-8")
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in request: {e}")
-            return web.json_response(
-                {
-                    "jsonrpc": "2.0",
-                    "error": {"code": -32700, "message": "Parse error: Invalid JSON"},
-                    "id": None,
-                },
-                status=400,
-            )
-        except Exception as e:
-            logger.error(f"Error handling request: {e}")
-            return web.json_response(
-                {"jsonrpc": "2.0", "error": {"code": -32603, "message": str(e)}, "id": None},
-                status=500,
-            )
-
-    async def _handle_sse(self, request: web.Request) -> web.StreamResponse:
-        """Handle Server-Sent Events request."""
-        response = web.StreamResponse()
-        response.headers["Content-Type"] = "text/event-stream"
-        response.headers["Cache-Control"] = "no-cache"
-        response.headers["Connection"] = "keep-alive"
-        await response.prepare(request)
-
-        try:
-            while self.running:
-                # Send a heartbeat every 30 seconds
-                await response.write(b"event: heartbeat\ndata: {}\n\n")
-                await asyncio.sleep(30)
-        except Exception as e:
-            logger.error(f"Error in SSE handler: {e}")
-        finally:
-            await response.write_eof()
-        return response
-
-    async def _handle_options(self, request: web.Request) -> web.Response:
-        """Handle OPTIONS request for CORS preflight."""
-        response = web.Response()
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        return response
-
-    async def run(self):
-        """Run the protocol."""
-        self.running = True
-        try:
-            self.runner = web.AppRunner(self.app)
-            await self.runner.setup()
-            host = self.config.get("http", {}).get("host", "0.0.0.0")
-            port = self.config.get("http", {}).get("port", 8080)
-            self.site = web.TCPSite(self.runner, host, port)
-            await self.site.start()
-            logger.info(f"HTTP server started on {host}:{port}")
-
-            # Keep the server running
-            while self.running:
-                await asyncio.sleep(1)
-        except Exception as e:
-            logger.error(f"Error running HTTP server: {e}")
-            raise
-
-    def stop(self):
-        """Stop the protocol."""
-        self.running = False
-        if self.runner:
-            asyncio.create_task(self.runner.cleanup())
-
 
 class OdooMCPServer(Server):
     """
@@ -409,26 +259,30 @@ class OdooMCPServer(Server):
         self.orm_tools = ORMTools(self.pool, self.config)
         logger.info("ORM tools initialized successfully")
 
-        # Initialize protocol
-        if self.connection_type == "stdio":
-            self.protocol = StdioProtocol(self._handle_request)
-        elif self.connection_type in ("mcp_2026_07_28", "modern_http"):
-            from .mcp_sdk_server import dispatch_orm_tool
+        # Transport: official MCP SDK only (stdio or Streamable HTTP, protocol 2026-07-28).
+        if self.connection_type in OBSOLETE_CONNECTION_TYPES:
+            raise ConfigurationError(
+                f"connection_type={self.connection_type!r} was removed. "
+                f"Use {CONNECTION_TYPE_STDIO!r} (SDK stdio) or {CONNECTION_TYPE_HTTP!r} "
+                "(SDK Streamable HTTP). SSE / pre-2026-07-28 HTTP are gone."
+            )
+        if self.connection_type not in {CONNECTION_TYPE_STDIO} | set(CONNECTION_TYPE_HTTP_ALIASES):
+            raise ConfigurationError(
+                f"Unsupported connection type: {self.connection_type!r}. "
+                f"Supported: {CONNECTION_TYPE_STDIO!r}, {CONNECTION_TYPE_HTTP!r}."
+            )
 
-            async def _dispatch(
-                name: str,
-                arguments: Dict[str, Any],
-                connection: Optional[Dict[str, str]] = None,
-            ) -> Any:
-                return await dispatch_orm_tool(self.orm_tools, name, arguments, connection)
+        from .mcp_sdk_server import dispatch_orm_tool
 
-            self._sdk_dispatch = _dispatch
-            self.protocol = None  # run() uses SDK modern HTTP path
-        elif self.connection_type in ["streamable_http", "sse"]:
-            # Both streamable_http and sse use the same protocol implementation
-            self.protocol = StreamableHTTPProtocol(self._handle_request, self.config)
-        else:
-            raise ConfigurationError(f"Unsupported connection type: {self.connection_type}")
+        async def _dispatch(
+            name: str,
+            arguments: Dict[str, Any],
+            connection: Optional[Dict[str, str]] = None,
+        ) -> Any:
+            return await dispatch_orm_tool(self.orm_tools, name, arguments, connection)
+
+        self._sdk_dispatch = _dispatch
+        self.protocol = None  # transports run via mcp_sdk_server
 
         # Register resource handlers
         self._register_resource_handlers()
@@ -942,10 +796,10 @@ class OdooMCPServer(Server):
         client_version = client_info.protocol_version
 
         # Validate protocol version
-        if client_version != PROTOCOL_VERSION and client_version not in LEGACY_PROTOCOL_VERSIONS:
+        if client_version != PROTOCOL_VERSION:
             raise ProtocolError(
                 f"Unsupported protocol version: {client_version}. "
-                f"Supported versions: {PROTOCOL_VERSION} and {', '.join(LEGACY_PROTOCOL_VERSIONS)}"
+                f"Supported version: {PROTOCOL_VERSION} only"
             )
 
         # Create server info
@@ -1379,26 +1233,22 @@ class OdooMCPServer(Server):
             }
 
     async def run(self):
-        """Run the server."""
+        """Run the server over the configured official SDK transport."""
         try:
-            logger.info("Starting server...")
-            if self.connection_type == "stdio" or self.config.get("protocol") == "stdio":
-                logger.info("Starting server in stdio mode")
-                await self._run_stdio()
-            elif self.connection_type in ("mcp_2026_07_28", "modern_http"):
-                logger.info("Starting server in MCP 2026-07-28 modern HTTP mode")
-                await self._run_modern_http()
-            elif self.protocol is not None and hasattr(self.protocol, "run"):
-                logger.info("Starting server via protocol.run (%s)", self.connection_type)
-                await self.protocol.run()
+            logger.info("Starting server (protocol %s)...", PROTOCOL_VERSION)
+            if self.connection_type == CONNECTION_TYPE_STDIO:
+                logger.info("Starting SDK stdio transport (modern %s)", PROTOCOL_VERSION)
+                await self._run_sdk_stdio()
+            elif self.connection_type in CONNECTION_TYPE_HTTP_ALIASES:
+                logger.info("Starting SDK Streamable HTTP (protocol %s)", PROTOCOL_VERSION)
+                await self._run_sdk_http()
             else:
-                logger.info("Starting server in legacy streamable_http mode")
-                await self._run_http()
+                raise ConfigurationError(f"Unsupported connection type: {self.connection_type}")
         except Exception as e:
             logger.error(f"Error running server: {e}")
             raise
 
-    async def _run_modern_http(self):
+    async def _run_sdk_http(self):
         """Run MCP 2026-07-28 via official SDK Streamable HTTP (uvicorn)."""
         from .mcp_sdk_server import run_sdk_http_server
 
@@ -1410,241 +1260,15 @@ class OdooMCPServer(Server):
         self.running = True
         await run_sdk_http_server(dispatch_tool=dispatch, host=host, port=port)
 
-    async def _run_http(self):
-        """Run the server in HTTP mode."""
-        try:
-            host = self.config.get("host", "0.0.0.0")
-            port = self.config.get("port", 8080)
-            logger.info(f"HTTP server started on {host}:{port}")
+    async def _run_sdk_stdio(self):
+        """Run MCP 2026-07-28 via official SDK stdio (modern-only)."""
+        from .mcp_sdk_server import run_sdk_stdio_server
 
-            # Initialize the server first
-            await self.initialize(ClientInfo())
-
-            # Create the HTTP server
-            server = await asyncio.start_server(self._handle_http_connection, host, port)
-
-            async with server:
-                await server.serve_forever()
-        except Exception as e:
-            logger.error(f"Error in HTTP server: {e}")
-            raise
-
-    async def _handle_http_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        """Handle an HTTP connection."""
-        try:
-            # Read the request line and headers
-            try:
-                request_line = await reader.readline()
-                if not request_line:
-                    logger.warning("Empty request received")
-                    return
-
-                # Try to decode request line with different encodings
-                encodings = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
-                decoded_line = None
-                for encoding in encodings:
-                    try:
-                        decoded_line = request_line.decode(encoding)
-                        logger.debug(f"Successfully decoded request line with {encoding}: {decoded_line}")
-                        break
-                    except UnicodeDecodeError:
-                        continue
-
-                if not decoded_line:
-                    logger.error("Could not decode request line with any supported encoding")
-                    return
-
-                # Validate HTTP request line format
-                if not decoded_line.startswith(("GET", "POST", "PUT", "DELETE", "OPTIONS")):
-                    logger.error(f"Invalid HTTP request line: {decoded_line}")
-                    return
-
-                # Read headers
-                headers = {}
-                while True:
-                    try:
-                        line = await reader.readline()
-                        if not line or line == b"\r\n":
-                            break
-
-                        # Try to decode header line
-                        decoded_header = None
-                        for encoding in encodings:
-                            try:
-                                decoded_header = line.decode(encoding)
-                                break
-                            except UnicodeDecodeError:
-                                continue
-
-                        if not decoded_header:
-                            logger.error("Could not decode header line")
-                            continue
-
-                        if ":" in decoded_header:
-                            key, value = decoded_header.split(":", 1)
-                            headers[key.strip().lower()] = value.strip()
-                    except Exception as e:
-                        logger.error(f"Error reading header: {e}")
-                        continue
-
-                logger.debug(f"Request headers: {headers}")
-
-                # Read content length if present
-                content_length = int(headers.get("content-length", 0))
-                logger.debug(f"Content length: {content_length}")
-
-                if content_length > 0:
-                    # Read the request body
-                    try:
-                        request_data = await reader.read(content_length)
-                        logger.debug(f"Request body (raw): {request_data}")
-                        # Try different encodings for request body
-                        decoded_data = None
-                        for encoding in encodings:
-                            try:
-                                decoded_data = request_data.decode(encoding)
-                                logger.debug(f"Successfully decoded request body with {encoding}")
-                                break
-                            except UnicodeDecodeError:
-                                continue
-                        if decoded_data is None:
-                            raise UnicodeDecodeError("Could not decode request data with any supported encoding")
-                        # Parse the request
-                        request = json.loads(decoded_data)
-                        logger.debug(f"Parsed request: {request}")
-                        # Process the request
-                        response = await self.process_request(request)
-                        logger.debug(f"Got response from process_request: {response}")
-                        logger.debug(f"Response type: {type(response)}")
-                        logger.debug(f"Response attributes: {dir(response)}")
-                        try:
-                            # FIX: Se la risposta è già un dict, restituiscila così com'è
-                            if isinstance(response, dict):
-                                response_data = json.dumps(response).encode("utf-8")
-                            else:
-                                response_dict = {
-                                    "jsonrpc": getattr(response, "jsonrpc", "2.0"),
-                                    "id": getattr(response, "id", None),
-                                }
-                                error = getattr(response, "error", None)
-                                if error is not None:
-                                    response_dict["error"] = error
-                                else:
-                                    response_dict["result"] = getattr(response, "result", None)
-                                logger.debug(f"Converted response dict: {response_dict}")
-                                response_data = json.dumps(response_dict).encode("utf-8")
-                            writer.write(b"HTTP/1.1 200 OK\r\n")
-                            writer.write(b"Content-Type: application/json; charset=utf-8\r\n")
-                            writer.write(f"Content-Length: {len(response_data)}\r\n".encode("utf-8"))
-                            writer.write(b"\r\n")
-                            writer.write(response_data)
-                            await writer.drain()
-                        except Exception as e:
-                            logger.error(f"Error converting response to dict: {e}")
-                            logger.exception("Full traceback for conversion error:")
-                            error_response = {
-                                "error": f"Error converting response: {str(e)}",
-                                "status": "error",
-                            }
-                            response_data = json.dumps(error_response).encode("utf-8")
-                            writer.write(b"HTTP/1.1 500 Internal Server Error\r\n")
-                            writer.write(b"Content-Type: application/json; charset=utf-8\r\n")
-                            writer.write(f"Content-Length: {len(response_data)}\r\n".encode("utf-8"))
-                            writer.write(b"\r\n")
-                            writer.write(response_data)
-                            await writer.drain()
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Invalid JSON in request: {e}")
-                        error_response = {"error": "Invalid JSON in request", "status": "error"}
-                        response_data = json.dumps(error_response).encode("utf-8")
-                        writer.write(b"HTTP/1.1 400 Bad Request\r\n")
-                        writer.write(b"Content-Type: application/json; charset=utf-8\r\n")
-                        writer.write(f"Content-Length: {len(response_data)}\r\n".encode("utf-8"))
-                        writer.write(b"\r\n")
-                        writer.write(response_data)
-                        await writer.drain()
-                    except UnicodeDecodeError as e:
-                        logger.error(f"Error decoding request data: {e}")
-                        error_response = {
-                            "error": "Invalid character encoding in request",
-                            "status": "error",
-                        }
-                        response_data = json.dumps(error_response).encode("utf-8")
-                        writer.write(b"HTTP/1.1 400 Bad Request\r\n")
-                        writer.write(b"Content-Type: application/json; charset=utf-8\r\n")
-                        writer.write(f"Content-Length: {len(response_data)}\r\n".encode("utf-8"))
-                        writer.write(b"\r\n")
-                        writer.write(response_data)
-                        await writer.drain()
-                else:
-                    logger.warning("No content length in request")
-                    error_response = {"error": "No content length specified", "status": "error"}
-                    response_data = json.dumps(error_response).encode("utf-8")
-                    writer.write(b"HTTP/1.1 400 Bad Request\r\n")
-                    writer.write(b"Content-Type: application/json; charset=utf-8\r\n")
-                    writer.write(f"Content-Length: {len(response_data)}\r\n".encode("utf-8"))
-                    writer.write(b"\r\n")
-                    writer.write(response_data)
-                    await writer.drain()
-
-            except ConnectionResetError as e:
-                logger.warning(f"Connection reset by peer: {e}")
-                return
-            except Exception as e:
-                logger.error(f"Error handling HTTP connection: {e}")
-                try:
-                    error_response = {"error": str(e), "status": "error"}
-                    response_data = json.dumps(error_response).encode("utf-8")
-                    writer.write(b"HTTP/1.1 500 Internal Server Error\r\n")
-                    writer.write(b"Content-Type: application/json; charset=utf-8\r\n")
-                    writer.write(f"Content-Length: {len(response_data)}\r\n".encode("utf-8"))
-                    writer.write(b"\r\n")
-                    writer.write(response_data)
-                    await writer.drain()
-                except Exception as write_error:
-                    logger.error(f"Error sending error response: {write_error}")
-        finally:
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception as e:
-                logger.error(f"Error closing connection: {e}")
-
-    async def _run_stdio(self):
-        """Run the server in stdio mode."""
-        try:
-            # Initialize the server first
-            await self.initialize(ClientInfo())
-
-            while True:
-                try:
-                    # Read a line from stdin
-                    line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
-                    if not line:
-                        break
-
-                    # Parse the request
-                    request = json.loads(line)
-                    logger.debug(f"Received request: {request}")
-
-                    # Process the request
-                    response = await self.process_request(request)
-
-                    # Send the response
-                    print(json.dumps(response), flush=True)
-
-                except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON: {e}")
-                    error_response = {"error": "Invalid JSON", "status": "error"}
-                    print(json.dumps(error_response), flush=True)
-                except Exception as e:
-                    logger.error(f"Error processing request: {e}")
-                    error_response = {"error": str(e), "status": "error"}
-                    print(json.dumps(error_response), flush=True)
-
-        except Exception as e:
-            logger.error(f"Error in stdio server: {e}")
-            raise
+        dispatch = getattr(self, "_sdk_dispatch", None)
+        if dispatch is None:
+            raise ConfigurationError("SDK MCP dispatch not initialized")
+        self.running = True
+        await run_sdk_stdio_server(dispatch_tool=dispatch)
 
     async def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Process a JSON-RPC request."""
@@ -2414,7 +2038,7 @@ class OdooMCPServer(Server):
             logger.debug(f"Client requested protocol version: {client_version}")
 
             # Use client's version if it's a supported legacy version
-            response_version = client_version if client_version in LEGACY_PROTOCOL_VERSIONS else PROTOCOL_VERSION
+            response_version = PROTOCOL_VERSION
             logger.debug(f"Using protocol version in response: {response_version}")
 
             # Create response directly
@@ -2537,8 +2161,8 @@ class OdooMCPServer(Server):
             logger.info("Stopping server...")
             self.running = False
 
-            # Stop the protocol
-            if hasattr(self, "protocol"):
+            # Stop the protocol (legacy protocol objects only; SDK transports set protocol=None)
+            if getattr(self, "protocol", None) is not None:
                 logger.info("Stopping protocol...")
                 self.protocol.stop()
 
@@ -2563,82 +2187,26 @@ class OdooMCPServer(Server):
             logger.error(f"Error stopping server: {e}")
             raise
 
-    async def _handle_request(self, request: Union[web.Request, Dict[str, Any]]) -> Union[web.Response, Dict[str, Any]]:
-        """Handle incoming requests."""
+    async def _handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle an in-process JSON-RPC dict (tests / internal). Wire MCP uses SDK transports."""
         try:
-            if isinstance(request, web.Request):
-                # Handle HTTP request
-                data = await request.json()
-                logger.debug("Received HTTP request data")
-                response = await self.process_request(data)
-                logger.debug(f"Got response from process_request: {response}")
-                logger.debug(f"Response type: {type(response)}")
-                logger.debug(f"Response attributes: {dir(response)}")
-                try:
-                    # Build JSON-RPC response dict with only 'result' OR 'error'
-                    response_dict = {
-                        "jsonrpc": getattr(response, "jsonrpc", "2.0"),
-                        "id": getattr(response, "id", None),
-                    }
-                    error = getattr(response, "error", None)
-                    if error is not None:
-                        response_dict["error"] = error
-                    else:
-                        response_dict["result"] = getattr(response, "result", None)
-                    logger.debug(f"Converted response dict: {response_dict}")
-                    return web.json_response(response_dict)
-                except Exception as e:
-                    logger.error(f"Error converting response to dict: {e}")
-                    logger.exception("Full traceback for conversion error:")
-                    return web.json_response(
-                        {"error": f"Error converting response: {str(e)}", "status": "error"},
-                        status=500,
-                    )
+            response = await self.process_request(request)
+            if isinstance(response, dict):
+                return response
+            response_dict = {
+                "jsonrpc": getattr(response, "jsonrpc", "2.0"),
+                "id": getattr(response, "id", None),
+            }
+            error = getattr(response, "error", None)
+            if error is not None:
+                response_dict["error"] = error
             else:
-                # Handle stdio request
-                logger.debug("Received stdio request")
-                response = await self.process_request(request)
-                logger.debug(f"Got response from process_request: {response}")
-                logger.debug(f"Response type: {type(response)}")
-                logger.debug(f"Response attributes: {dir(response)}")
-                try:
-                    # Build JSON-RPC response dict with only 'result' OR 'error'
-                    response_dict = {
-                        "jsonrpc": getattr(response, "jsonrpc", "2.0"),
-                        "id": getattr(response, "id", None),
-                    }
-                    error = getattr(response, "error", None)
-                    if error is not None:
-                        response_dict["error"] = error
-                    else:
-                        response_dict["result"] = getattr(response, "result", None)
-                    logger.debug(f"Converted response dict: {response_dict}")
-                    return response_dict
-                except Exception as e:
-                    logger.error(f"Error converting response to dict: {e}")
-                    logger.exception("Full traceback for conversion error:")
-                    return {"error": f"Error converting response: {str(e)}", "status": "error"}
+                response_dict["result"] = getattr(response, "result", None)
+            return response_dict
         except Exception as e:
             logger.error(f"Error handling request: {e}")
-            logger.exception("Full traceback for request handling error:")
-            if isinstance(request, web.Request):
-                return web.json_response({"error": str(e), "status": "error"}, status=500)
-            else:
-                return {"error": str(e), "status": "error"}
+            return {"error": str(e), "status": "error"}
 
-
-def run_async(coro):
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import nest_asyncio
-
-            nest_asyncio.apply()
-            return loop.run_until_complete(coro)
-        else:
-            return loop.run_until_complete(coro)
-    except RuntimeError:
-        return asyncio.run(coro)
 
 
 async def main(config_path: str = "odoo_mcp/config/config.dev.yaml"):
