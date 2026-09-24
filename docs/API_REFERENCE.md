@@ -599,4 +599,4 @@ result = await call_odoo_tool("odoo.search_read", {
 
 ---
 
-For more information, see the [README](README_REFACTORED.md) and [Configuration Guide](CONFIGURATION.md).
+For more information, see the [README](../README.md) and [Configuration Guide](../CONFIGURATION.md).

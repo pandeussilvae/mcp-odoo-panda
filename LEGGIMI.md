@@ -99,7 +99,7 @@ Opzionale: usato da [Odward Connect](https://www.techlab.it) come motore MCP a m
 
 ## Documentazione approfondita
 
-Vedi la tabella in [README.md](README.md#deeper-docs) (`CONFIGURATION.md`, `docs/`, …). Note storiche `README_*_fix.md` e `test_*.py` in root sono per i maintainer, non per il primo avvio.
+Vedi la tabella in [README.md](README.md#deeper-docs) (`CONFIGURATION.md`, `docs/`, …). Note storiche di refactoring: [`docs/archive/`](docs/archive/).
 
 ## Licenza
 

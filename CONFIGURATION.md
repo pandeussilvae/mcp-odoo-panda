@@ -5,16 +5,16 @@
 <a name="english"></a>
 # MCP Server Configuration
 
-This document describes all available parameters in the `config.json` configuration file.
+This document describes all available parameters in the `config.yaml` configuration file.
 
 ## Configuration Files Location
 
-- Example configuration file: `odoo_mcp/config/config.example.json`
-- Default configuration file: `odoo_mcp/config/config.json`
+- Example configuration file: `odoo_mcp/config/config.example.yaml`
+- Default configuration file: `odoo_mcp/config/config.yaml`
 
 To get started, copy the example configuration file to create your own:
 ```bash
-cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
+cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
 ```
 
 Then modify the parameters according to your needs.
@@ -89,16 +89,16 @@ Then modify the parameters according to your needs.
 <a name="italiano"></a>
 # Configurazione MCP Server
 
-Questo documento descrive tutti i parametri disponibili nel file di configurazione `config.json`.
+Questo documento descrive tutti i parametri disponibili nel file di configurazione `config.yaml`.
 
 ## Posizione dei File di Configurazione
 
-- File di configurazione di esempio: `odoo_mcp/config/config.example.json`
-- File di configurazione predefinito: `odoo_mcp/config/config.json`
+- File di configurazione di esempio: `odoo_mcp/config/config.example.yaml`
+- File di configurazione predefinito: `odoo_mcp/config/config.yaml`
 
 Per iniziare, copia il file di configurazione di esempio per crearne uno tuo:
 ```bash
-cp odoo_mcp/config/config.example.json odoo_mcp/config/config.json
+cp odoo_mcp/config/config.example.yaml odoo_mcp/config/config.yaml
 ```
 
 Poi modifica i parametri in base alle tue esigenze.

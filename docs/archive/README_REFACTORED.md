@@ -1,7 +1,7 @@
 # 🚀 MCP Odoo Server - Refactored Architecture
 
 <div align="center">
-  <img src="assets/Odoo MCP Server.png" alt="Odoo MCP Server Logo" width="100%"/> 
+  <img src="../../assets/Odoo MCP Server.png" alt="Odoo MCP Server Logo" width="100%"/> 
 </div>
 
 ## 🎯 Overview
@@ -345,7 +345,7 @@ pytest tests/
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
 
 ## 👥 Authors
 

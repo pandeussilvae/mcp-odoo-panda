@@ -4,9 +4,9 @@
 
 ### ✅ **Problemi Risolti**
 
-#### **1. Errore README.md**
-- ❌ **Prima**: `COPY README.md ./` (file non esistente)
-- ✅ **Ora**: `COPY README_REFACTORED.md ./` (file corretto)
+#### **1. Immagine Docker**
+- ✅ Dockerfile copia `pyproject.toml`, `LICENSE`, `odoo_mcp/`, e `config.example.yaml` come default config
+- ✅ Nessuna dipendenza da README nel layer immagine
 
 #### **2. Sicurezza Password**
 - ❌ **Prima**: `ODOO_PASSWORD=admin` hardcoded nel Dockerfile
@@ -63,7 +63,7 @@ docker run -d \
 FROM python:3.11-slim-bookworm
 
 # Dependencies e configurazione
-# ✅ README_REFACTORED.md (corretto)
+# ✅ config.example.yaml → config.yaml
 # ✅ Password sicura (no hardcode)
 # ✅ Ottimizzazioni build
 ```
@@ -254,10 +254,10 @@ echo "your_password" | docker secret create odoo_password -
 
 ### **Errori Comuni**
 
-#### **1. "README.md not found"**
+#### **1. Build / COPY failures**
 ```bash
-# Soluzione: Dockerfile aggiornato
-COPY README_REFACTORED.md ./
+# Dockerfile copies package sources only (no README COPY). Rebuild:
+docker build -t mcp-odoo-panda .
 ```
 
 #### **2. "Connection refused to Odoo"**
