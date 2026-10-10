@@ -47,6 +47,7 @@ HEADER_ODOO_URL = "X-Odoo-Url"
 HEADER_ODOO_DB = "X-Odoo-Db"
 HEADER_ODOO_USER = "X-Odoo-User"
 HEADER_ODOO_PASSWORD = "X-Odoo-Password"
+HEADER_ODOO_CONNECT_IP = "X-Odoo-Connect-Ip"
 
 TASKS_EXTENSION_ID = "io.modelcontextprotocol/tasks"
 
@@ -68,9 +69,15 @@ def connection_from_headers(headers: Any) -> Optional[Dict[str, str]]:
     password = str(
         get(HEADER_ODOO_PASSWORD) or get(HEADER_ODOO_PASSWORD.lower()) or ""
     ).strip()
+    connect_ip = str(
+        get(HEADER_ODOO_CONNECT_IP) or get(HEADER_ODOO_CONNECT_IP.lower()) or ""
+    ).strip()
     if not (url and db and user and password):
         return None
-    return {"url": url, "db": db, "username": user, "password": password}
+    out = {"url": url, "db": db, "username": user, "password": password}
+    if connect_ip:
+        out["connect_ip"] = connect_ip
+    return out
 
 
 def get_request_connection() -> Optional[Dict[str, str]]:

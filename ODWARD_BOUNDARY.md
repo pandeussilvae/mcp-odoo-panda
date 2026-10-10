@@ -20,3 +20,13 @@ Integrators that need multi-tenant routing, hosted connect UX, or product-specif
 ## Optional note
 
 Used by [Odward Connect](https://www.techlab.it) as an upstream MCP engine; Odward integration stays outside this repository.
+
+## Anti-SSRF ephemeral destination pin (PR-S1)
+
+Indispensable hardening for per-request `X-Odoo-*` overlays:
+
+- `odoo_mcp/core/safe_destination.py` — fail-closed destination policy + IP-pinned TCP/TLS
+- `ephemeral_odoo.py` uses that transport; optional `connect_ip` / `X-Odoo-Connect-Ip`
+- No Odward domain imports; env flags `ODWARD_ALLOW_*` default off
+
+When an integrator ships a pin update, record the submodule SHA in the parent repo.
