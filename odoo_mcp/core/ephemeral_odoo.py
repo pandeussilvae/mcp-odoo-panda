@@ -1,6 +1,9 @@
 """Ephemeral Odoo JSON-RPC/XML-RPC calls for per-request connection overlay.
 
 Standalone helper — accepts url/db/user/password dicts only (no Odward types).
+TCP uses IP-pinned transport from ``safe_destination`` (anti-SSRF / DNS rebinding).
+Optional ``connect_ip`` (from a trusted gateway) forces the dial address after
+classification; otherwise the URL is validated and pinned locally.
 """
 
 from __future__ import annotations
@@ -8,6 +11,13 @@ from __future__ import annotations
 import asyncio
 import xmlrpc.client
 from typing import Any, Dict, List, Optional
+
+from odoo_mcp.core.safe_destination import (
+    DestinationPolicyError,
+    open_xmlrpc_proxy,
+    pin_from_url_and_ip,
+    validate_odoo_destination,
+)
 
 
 def _xmlrpc_execute_kw(
@@ -20,13 +30,17 @@ def _xmlrpc_execute_kw(
     method: str,
     args: Optional[List[Any]] = None,
     kwargs: Optional[Dict[str, Any]] = None,
+    connect_ip: Optional[str] = None,
 ) -> Any:
-    base = url.rstrip("/")
-    common = xmlrpc.client.ServerProxy(f"{base}/xmlrpc/2/common", allow_none=True)
+    if connect_ip:
+        pinned = pin_from_url_and_ip(url, connect_ip)
+    else:
+        pinned = validate_odoo_destination(url)
+    common = open_xmlrpc_proxy(url, "/xmlrpc/2/common", pinned=pinned)
     uid = common.authenticate(db, username, password, {})
     if not uid:
         raise PermissionError("Odoo authentication failed")
-    models = xmlrpc.client.ServerProxy(f"{base}/xmlrpc/2/object", allow_none=True)
+    models = open_xmlrpc_proxy(url, "/xmlrpc/2/object", pinned=pinned)
     return models.execute_kw(db, uid, password, model, method, args or [], kwargs or {})
 
 
@@ -48,6 +62,7 @@ async def ephemeral_execute_kw(
         method=method,
         args=args,
         kwargs=kwargs,
+        connect_ip=conn.get("connect_ip") or None,
     )
 
 

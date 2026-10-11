@@ -36,6 +36,13 @@ from starlette.responses import Response
 from starlette.types import ASGIApp
 
 from .ephemeral_odoo import ephemeral_dispatch_tool
+from .internal_auth import (
+    HEADER_INTERNAL_TOKEN,
+    InternalAuthMiddleware,
+    assert_internal_auth_boot,
+    configured_internal_token,
+    internal_auth_required,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +54,9 @@ HEADER_ODOO_URL = "X-Odoo-Url"
 HEADER_ODOO_DB = "X-Odoo-Db"
 HEADER_ODOO_USER = "X-Odoo-User"
 HEADER_ODOO_PASSWORD = "X-Odoo-Password"
+HEADER_ODOO_CONNECT_IP = "X-Odoo-Connect-Ip"
+# Re-export for integrators / tests.
+HEADER_ODWARD_INTERNAL_TOKEN = HEADER_INTERNAL_TOKEN
 
 TASKS_EXTENSION_ID = "io.modelcontextprotocol/tasks"
 
@@ -68,9 +78,15 @@ def connection_from_headers(headers: Any) -> Optional[Dict[str, str]]:
     password = str(
         get(HEADER_ODOO_PASSWORD) or get(HEADER_ODOO_PASSWORD.lower()) or ""
     ).strip()
+    connect_ip = str(
+        get(HEADER_ODOO_CONNECT_IP) or get(HEADER_ODOO_CONNECT_IP.lower()) or ""
+    ).strip()
     if not (url and db and user and password):
         return None
-    return {"url": url, "db": db, "username": user, "password": password}
+    out = {"url": url, "db": db, "username": user, "password": password}
+    if connect_ip:
+        out["connect_ip"] = connect_ip
+    return out
 
 
 def get_request_connection() -> Optional[Dict[str, str]]:
@@ -380,6 +396,7 @@ def build_asgi_app(
     *,
     dispatch_tool: ToolDispatch,
     host: str = "0.0.0.0",
+    require_internal_auth: bool | None = None,
 ) -> ASGIApp:
     server = build_sdk_server(dispatch_tool=dispatch_tool)
     starlette_app = server.streamable_http_app(
@@ -391,7 +408,7 @@ def build_asgi_app(
     # Prepend connection middleware
     starlette_app.add_middleware(OdooConnectionMiddleware)
 
-    # Health endpoints used by compose healthcheck
+    # Health endpoints used by compose healthcheck (still behind internal auth).
     async def health(_request: Request) -> Response:
         import json
 
@@ -418,6 +435,20 @@ def build_asgi_app(
             "/healthz", health, methods=["GET"]
         ),
     )
+
+    # Prefer protecting the entire HTTP surface when auth is required/configured.
+    enforce = (
+        internal_auth_required()
+        if require_internal_auth is None
+        else bool(require_internal_auth)
+    )
+    if enforce:
+        token = assert_internal_auth_boot(require=True)
+        starlette_app.add_middleware(InternalAuthMiddleware, expected_token=token)
+    elif configured_internal_token() is not None:
+        token = assert_internal_auth_boot(require=True)
+        starlette_app.add_middleware(InternalAuthMiddleware, expected_token=token)
+
     return starlette_app
 
 
@@ -426,10 +457,19 @@ async def run_sdk_http_server(
     dispatch_tool: ToolDispatch,
     host: str = "0.0.0.0",
     port: int = 8080,
+    require_internal_auth: bool = True,
 ) -> None:
     import uvicorn
 
-    app = build_asgi_app(dispatch_tool=dispatch_tool, host=host)
+    # Sidecar HTTP is fail-closed: missing/weak token aborts before listen.
+    if require_internal_auth:
+        assert_internal_auth_boot(require=True)
+
+    app = build_asgi_app(
+        dispatch_tool=dispatch_tool,
+        host=host,
+        require_internal_auth=require_internal_auth,
+    )
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server = uvicorn.Server(config)
     logger.info(
