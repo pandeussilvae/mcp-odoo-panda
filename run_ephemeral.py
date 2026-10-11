@@ -17,10 +17,16 @@ logger = logging.getLogger("panda-ephemeral")
 
 async def main() -> None:
     from odoo_mcp.core.ephemeral_odoo import ephemeral_dispatch_tool
+    from odoo_mcp.core.internal_auth import assert_internal_auth_boot
     from odoo_mcp.core.mcp_sdk_server import run_sdk_http_server
 
     host = os.getenv("PANDA_HTTP_HOST", "0.0.0.0")
     port = int(os.getenv("PANDA_HTTP_PORT", "8090"))
+
+    # Fail-closed before listen: dedicated integrator secret required.
+    # Default ODWARD_REQUIRE_INTERNAL_AUTH for this entrypoint.
+    os.environ.setdefault("ODWARD_REQUIRE_INTERNAL_AUTH", "1")
+    assert_internal_auth_boot(require=True)
 
     async def dispatch(name: str, arguments: dict, connection: dict | None):
         if not connection:
@@ -30,7 +36,12 @@ async def main() -> None:
         return await ephemeral_dispatch_tool(connection, name, arguments)
 
     logger.info("Starting headers-only panda on %s:%s (POST /mcp)", host, port)
-    await run_sdk_http_server(dispatch_tool=dispatch, host=host, port=port)
+    await run_sdk_http_server(
+        dispatch_tool=dispatch,
+        host=host,
+        port=port,
+        require_internal_auth=True,
+    )
 
 
 if __name__ == "__main__":

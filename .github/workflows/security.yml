@@ -1,0 +1,52 @@
+name: Security
+
+on:
+  push:
+    branches: [main, "cursor/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  security-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio cryptography httpx starlette
+
+      - name: Anti-SSRF / destination policy
+        env:
+          ODWARD_INTERNAL_TOKEN: ci-test-odward-internal-token-min-32b
+          ODWARD_REQUIRE_INTERNAL_AUTH: "1"
+        run: |
+          pytest tests/test_connect_ip_trust.py tests/test_pinned_tls_live.py -v --tb=short
+
+      - name: Entrypoint isolation (no legacy XML-RPC path)
+        env:
+          ODWARD_INTERNAL_TOKEN: ci-test-odward-internal-token-min-32b
+          ODWARD_REQUIRE_INTERNAL_AUTH: "1"
+        run: |
+          pytest tests/test_ephemeral_entrypoint_isolation.py -v --tb=short
+
+      - name: Internal auth gateway/panda
+        env:
+          ODWARD_INTERNAL_TOKEN: ci-test-odward-internal-token-min-32b
+          ODWARD_REQUIRE_INTERNAL_AUTH: "1"
+        run: |
+          pytest tests/test_internal_auth.py -v --tb=short
+
+      # Pre-existing suite failures (SDK / domain DSL) are intentionally NOT
+      # gated here — see docs note in ODWARD_BOUNDARY.md. Do not add
+      # continue-on-error on the security jobs above.
