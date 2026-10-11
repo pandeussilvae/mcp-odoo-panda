@@ -23,8 +23,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio cryptography httpx starlette
+          # Install the package so `import odoo_mcp` works (conftest + security tests).
+          pip install -e .
+          pip install pytest pytest-asyncio cryptography
 
       - name: Anti-SSRF / destination policy
         env:
